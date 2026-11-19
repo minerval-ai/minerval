@@ -34,8 +34,11 @@
  * the second stamping rule).
  *
  * Whose material it is does not depend on who asked: the source belongs to
- * the connection's party, and that party's stake is recorded on it
- * (source_interests), as a fact about it and never a finding against it.
+ * the connection's party, and where the connection's administrator gave
+ * that party's stake, it is recorded on it (source_interests), as a fact
+ * about it and never a finding against it. Where none was given, none is
+ * recorded: an interest that bears on one claim is the Steward's to record
+ * for that claim (§9).
  *
  * The one limit on calls is a rate an administrator may set on a
  * connection. There is no count of calls per run: a run is bounded by its
@@ -353,6 +356,8 @@ export interface KeptReading {
   content_sha256: string;
   /** True when the reading had been kept before, and this is the source made then. */
   already_kept: boolean;
+  /** Whether the connection's party's stake is recorded on the source: true where its administrator gave one. */
+  stake_recorded: boolean;
 }
 
 /**
@@ -360,7 +365,8 @@ export interface KeptReading {
  * call as it was recorded. The same reading kept twice is one source. The
  * source carries the call's label, which is the label of the run that made
  * the call and of the run that keeps it, and the party the connection had
- * then, with that party's stake recorded on it at the same label.
+ * then, with the stake its administrator gave for that party, where one
+ * was given, recorded on it at the same label.
  *
  * Its facts are marked as checked, so the worker that looks sources up at
  * Crossref and the Wayback Machine (workers/source-backfill.ts) leaves it
@@ -392,15 +398,17 @@ export async function keepReading(readingId: string): Promise<KeptReading> {
     );
     if (!row || !readable.has(row.sensitivity_label)) throw noSuchReading(id);
     if (!row.source_id && row.sensitivity_label !== currentLabel()) throw madeByOtherWork(id);
-    const [connection] = await tx.query<{ name: string; tool_prefix: string; stake: string }>(
+    const [connection] = await tx.query<{ name: string; tool_prefix: string; stake: string | null }>(
       `SELECT name, tool_prefix, stake FROM connections WHERE id = $1`,
       [row.connection_id]
     );
     const address = readingAddress(connection!.tool_prefix, id);
     if (row.source_id) {
-      const [source] = await tx.query<{ id: string; url: string; title: string; content_hash: string }>(
-        `SELECT id, url, title, content_hash FROM sources WHERE id = $1`,
-        [row.source_id]
+      const [source] = await tx.query<{ id: string; url: string; title: string; content_hash: string; stake_recorded: boolean }>(
+        `SELECT s.id, s.url, s.title, s.content_hash,
+                EXISTS (SELECT 1 FROM source_interests i WHERE i.source_id = s.id AND i.recorded_by = $2) AS stake_recorded
+           FROM sources s WHERE s.id = $1`,
+        [row.source_id, READING_INTEREST_RECORDED_BY]
       );
       return {
         reading: id,
@@ -409,6 +417,7 @@ export async function keepReading(readingId: string): Promise<KeptReading> {
         title: source!.title,
         content_sha256: source!.content_hash,
         already_kept: true,
+        stake_recorded: source!.stake_recorded,
       };
     }
     if (row.result === null || row.result_hash === null) {
@@ -443,13 +452,17 @@ export async function keepReading(readingId: string): Promise<KeptReading> {
        RETURNING id`,
       [address, title, text, contentHash, calledAt, row.sensitivity_label, row.party_id]
     );
-    if (party) {
+    // The stake, where the connection's administrator gave one. None given,
+    // none is recorded: the source still belongs to the party, and its text
+    // says whose system it was read from.
+    const stakeRecorded = party !== undefined && connection!.stake !== null;
+    if (stakeRecorded) {
       await tx.query(
         `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, run_id, sensitivity_label)
          VALUES ($1, NULL, $2, $3, $4, $5, $6)`,
         [
           source!.id,
-          party.name,
+          party!.name,
           connection!.stake,
           READING_INTEREST_RECORDED_BY,
           getUsageContext().runId ?? null,
@@ -465,6 +478,7 @@ export async function keepReading(readingId: string): Promise<KeptReading> {
       title,
       content_sha256: contentHash,
       already_kept: false,
+      stake_recorded: stakeRecorded,
     };
   });
   // The source's passages, so an instance recorded from it is anchored like

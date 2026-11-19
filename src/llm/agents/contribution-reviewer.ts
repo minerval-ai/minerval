@@ -26,6 +26,7 @@ import {
 import { loadConfig } from "../../config.js";
 import { withAgent, withDefaultPassBudget, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
@@ -77,7 +78,13 @@ async function runContributionReviewImpl(input: {
   // web for a citation the graph does not hold.
   const webSearch = createWebSearch(model);
 
+  // The systems this deployment is connected to, where an administrator
+  // offered them to this role. A contribution may cite or contradict what an organization's systems hold.
+  // Read, never kept: a judgment that should rest on a reading is recorded
+  // by an agent that keeps it (tools/connection-tools.ts).
+  const connectionTools = await createConnectionTools({ config, role: "contribution_reviewer", keeps: false });
   const tools = [
+    ...connectionTools.definitions,
     ...getGovernanceToolDefinitions(),
     // Less get_prize_claim_details while the prizes feature is off
     // (src/features.ts).
@@ -91,7 +98,7 @@ async function runContributionReviewImpl(input: {
     ...reportTools.definitions, ...findingTools.definitions,
   ];
 
-  const system = getContributionReviewerSystemPromptBlocks();
+  const system = withConnectionsBlock(getContributionReviewerSystemPromptBlocks(), connectionTools);
 
   // Money bounds the run (#712); the turn cap only halts a loop that has
   // stopped spending (CLAUDE.md, "Prefer money to counts").
@@ -141,6 +148,8 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const connection = await connectionTools.execute(name, toolInput);
+      if (connection !== null) return connection;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
       const governanceTools = getGovernanceToolDefinitions().map((t) => t.name);

@@ -36,6 +36,14 @@ import { openReassessmentsForVersionsMadeBesideEarlier } from "../../src/service
 import { A, B, C, asPerson, attachSource, caught, seedNode, seedUser, system, unwall, wall, personDecidesAt } from "./review-3-common.js";
 
 const SECRET = "4711 units";
+
+/**
+ * A response's text with every id taken out, to look for a figure in. An id
+ * is random hex, and "4500" turns up in one by chance (a party id
+ * 6485d2f4-0ab1-4500-... failed CI), which says nothing about what was shown.
+ */
+const withoutIds = (value: unknown): string =>
+  JSON.stringify(value).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<id>");
 const id: Record<string, string> = {};
 const actor: Record<string, GateActor> = {};
 
@@ -408,7 +416,7 @@ describe("the gate", () => {
     const said = JSON.stringify(forBorealis);
     // No removed passage: the figure, and the target that bounds it. Each is in a part that rests on Acme's material too.
     expect(said).not.toContain(SECRET);
-    expect(said).not.toContain("4500");
+    expect(withoutIds(forBorealis)).not.toContain("4500");
     // No word of the Redactor's notes or of why it flagged a part, and none of Audit's reasons.
     for (const written of [
       "An output figure a counterparty could use",
@@ -452,7 +460,7 @@ describe("the gate", () => {
     // The same figure removed from a paragraph that rests on Borealis's material too is not shown to them.
     const figure = forAcmeOutside.items.find((i) => i.part === 3);
     expect(figure.removals).toBeUndefined();
-    expect(JSON.stringify(forAcmeOutside)).not.toContain("4500");
+    expect(withoutIds(forAcmeOutside)).not.toContain("4500");
     expect(JSON.stringify(forAcmeOutside)).not.toContain("The same figure, quoted in the reading");
     expect(forAcmeOutside.items.every((i) => i.as_written === undefined && i.why_least_sure === undefined)).toBe(true);
   });

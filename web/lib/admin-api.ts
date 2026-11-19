@@ -407,8 +407,11 @@ export interface ConnectionView {
     stored: { given_at: string; key: "current" | "previous" | "missing" } | null;
   };
   party: { id: string; name: string; is_own_organization: boolean };
-  stake: string;
+  /** Where an administrator gave one; recorded on every reading kept. */
+  stake: string | null;
   label: string;
+  /** The agent roles a run is offered the connection in. */
+  offered_to: string[];
   calls_per_minute: number | null;
   timeout_seconds: number;
   enabled: boolean;
@@ -485,22 +488,34 @@ export interface ConnectionSettings {
   credential_header?: string;
   party_id?: string;
   label?: string;
-  stake?: string;
+  stake?: string | null;
   calls_per_minute?: number | null;
   timeout_seconds?: number;
   enabled?: boolean;
+  /** The agent roles a run is offered the connection in. */
+  offered_to?: string[];
+}
+
+/** An agent role a connection may be offered to, as the API describes it. */
+export interface ConnectionRoleView {
+  role: string;
+  name: string;
+  /** Whether the role may keep a reading as a source: always, when its work records sources, or never. */
+  keeps: "yes" | "when_recording" | "no";
+  /** Why a new connection starts this role unticked; absent where it starts ticked. */
+  off_at_first?: string;
 }
 
 export function fetchConnections(
   externalId: string
-): Promise<{ notice: string; can_keep_credentials: boolean; connections: ConnectionView[] } & NotShown> {
+): Promise<{ notice: string; can_keep_credentials: boolean; roles: ConnectionRoleView[]; connections: ConnectionView[] } & NotShown> {
   return accountFetch("/connections", { actingUser: externalId });
 }
 
 export function fetchConnection(
   externalId: string,
   id: string
-): Promise<{ notice: string; can_keep_credentials: boolean; connection: ConnectionView }> {
+): Promise<{ notice: string; can_keep_credentials: boolean; roles: ConnectionRoleView[]; connection: ConnectionView }> {
   return accountFetch(`/connections/${seg(id)}`, { actingUser: externalId });
 }
 

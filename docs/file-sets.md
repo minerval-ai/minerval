@@ -35,7 +35,7 @@ become), `src/llm/tools/file-set-tools.ts` (what an agent sees),
 | `slug` | A short lower-case word: the set's directory name in the store and in the sandbox, and the first part of the address of every file kept from it. Made from the name when left out. |
 | `description` | What the set holds, in a sentence or two. Agents are shown it as the words of whoever added the set. |
 | `party_id` | The party whose files these are: the organization itself, or an outside party that supplied them. |
-| `stake` | What that party stands to gain or lose from what the files show, in a sentence or two. |
+| `stake` | Optional, as a connection's is ([connections.md](connections.md), "Why the stake is optional"). What that party stands to gain or lose from what the files show, in a sentence or two. Given, it is recorded on every source kept from the set; left out, none is. |
 | `label` | The set's one label. |
 | `origin` | `upload` or `directory`: how it was filled. |
 | `state` | `open` while files are uploaded, `hashing` while a registered directory is walked, then `closed`, or `failed` with why. |
@@ -155,9 +155,10 @@ be told, as `notice`:
 > it is added and the set has one hash over all of them, so what an agent's
 > analysis read can be checked later. Agents whose work is at a label that
 > reads the set's label can read every file in it, by running commands in a
-> sandbox that has no network. The set belongs to the party you name, and
-> the stake you give for that party is recorded on every source an agent
-> keeps from it, as a fact about the source. A directory registered where it
+> sandbox that has no network. The set belongs to the party you name. A
+> stake you give for that party is recorded on every source an agent keeps
+> from it, as a fact about the source; give none where there is nothing to
+> say beyond whose files they are. A directory registered where it
 > lies is not copied: keep it as it is, because a file that no longer
 > matches its hash cannot be kept as a source.
 
@@ -375,8 +376,10 @@ a judgment can cite like any other:
   of its own is to rest on it.
 - **Its party** is the party of the sets the command could read, where
   that is one party, and no single party where it is several. Either way
-  each party's stake is recorded on it (`source_interests`, recorded by
-  `file_set`), as a fact about the source and never a finding against it. A
+  each party's stake, where one was given for its set, is recorded on it
+  (`source_interests`, recorded by `file_set`), as a fact about the source
+  and never a finding against it; a source kept from sets given none
+  carries no interest row, and the result says so (`stake_recorded`). A
   command "could read" every set mounted for it, which is every set the run
   has unless `sets` named fewer.
 - **Its address** is `analysis:<call id>`, which `keep_analysis` returns.
@@ -407,7 +410,8 @@ the agent is told both hashes.
   label, since a row is added only by work at its own. What that shows the
   set's readers is that some work rested on that file, or on those lines of
   it; the tool says that everyone who reads the set reads a kept file.
-- **Its party** is the set's, with the party's stake recorded on it.
+- **Its party** is the set's, with the party's stake recorded on it where
+  one was given.
 - **Its address** is `fileset:<slug>/<path>`, with `#L<first>-<last>` for a
   passage: `fileset:october-transcripts/runs/run-17.jsonl#L120-180`.
 
@@ -532,8 +536,8 @@ The same list is in `sandbox/README.md`.
   `sandbox_calls`. Whether those should expire, and when, is not decided,
   as for a connection's calls.
 - **A source has one party.** An analysis over two parties' sets belongs
-  to neither alone (its party is empty), and one interest row names both
-  with each one's stake. The gate reads the parties of an analysis
+  to neither alone (its party is empty), and one interest row names those
+  of them whose sets were given a stake, with each one's. The gate reads the parties of an analysis
   from the sets its command had mounted, so it asks each of them; the
   source's own row still names none.
 - **A set mounted is a set asked about.** A command is recorded with every

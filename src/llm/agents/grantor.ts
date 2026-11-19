@@ -36,6 +36,7 @@ import { runBudget, withAgent, withSkills } from "../usage-context.js";
 import { planningPassBudgetBasis } from "../prompts/pass-budget.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createMandateTools, planCostFloorOwls } from "../tools/mandate-tools.js";
 import { annotateOpenActions } from "../../services/open-actions-service.js";
@@ -187,10 +188,15 @@ async function runGrantorImpl(input: {
       "mandate's opening working memory, read in full by every review pass.",
     input_schema: PLAN_SCHEMA as Tool["input_schema"],
   };
+  // The systems this deployment is connected to, where an administrator
+  // offered them to Grantmakers: a plan is made over what they hold. Read,
+  // never kept (tools/connection-tools.ts).
+  const connectionTools = await createConnectionTools({ config, role: "grantmaker", keeps: false });
   const tools: Tool[] = [
     ...reportTools.definitions,
     ...findingTools.definitions,
     ...getGraphReadToolDefinitions(),
+    ...connectionTools.definitions,
     // The territory's signals (importance, contestation, standing, what is
     // stale or deferred) over a subtree or a set of nodes.
     getSqlToolDefinition(),
@@ -230,6 +236,7 @@ async function runGrantorImpl(input: {
       : `(empty: this is the mandate's first pass. Start the map: what ` +
         `the territory looks like, the sources you found and what each ` +
         `is good for, what you left for the review passes.)`) +
+    (connectionTools.note ? `\n\n### Systems you can read\n\n${connectionTools.note}` : ``) +
     `\n\n---\n\n` +
     `Survey the territory (graph and web), price the work, write your ` +
     `workspace, then call submit_plan with the items in execution order: as ` +
@@ -267,6 +274,8 @@ async function runGrantorImpl(input: {
         if (report !== null) return report;
         const finding = await findingTools.execute(name, toolInput);
         if (finding !== null) return finding;
+        const connection = await connectionTools.execute(name, toolInput);
+        if (connection !== null) return connection;
         // Each node a read returns carries the open actions on it.
         const graphRead = await executeGraphReadTool(name, toolInput);
         if (graphRead !== null) return annotateOpenActions(name, graphRead, grant.id);

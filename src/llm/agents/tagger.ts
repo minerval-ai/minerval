@@ -23,6 +23,7 @@ import { toolUseLoop } from "../client.js";
 import { loadConfig } from "../../config.js";
 import { withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import {
   getTaggerSystemPrompt,
@@ -135,6 +136,11 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
     input_schema: SUBMIT_SCHEMA as Tool["input_schema"],
   };
   const reportTools = createReportTools({ model });
+  // A connection's reading tools only where an administrator ticked the
+  // Tagger on it: a new connection is not offered to this role, which runs
+  // often enough that every run would carry the tool definitions
+  // (CONNECTION_ROLE_INFO in src/connections.ts). Read, never kept.
+  const connectionTools = await createConnectionTools({ config, role: "tagger", keeps: false });
 
   let decision: TaggingDecision | null = null;
   const accept = (toolInput: Record<string, unknown>): TaggingDecision => {
@@ -181,8 +187,10 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
           }) + `\n\n${turnBudgetLine(TAGGER_MAX_TURNS)}`,
       },
     ],
-    tools: [searchTool, submitTool, ...reportTools.definitions],
-    system: getTaggerSystemPrompt(),
+    tools: [searchTool, submitTool, ...reportTools.definitions, ...connectionTools.definitions],
+    // One string, as the tagger's own short prompt is, unless a connection
+    // adds its block.
+    system: connectionTools.note ? withConnectionsBlock([getTaggerSystemPrompt()], connectionTools) : getTaggerSystemPrompt(),
     model,
     maxTokens: 2048,
     // Enough for a broad and a couple of specific searches plus the submit.
@@ -190,6 +198,8 @@ async function tagClaimImpl(input: TagClaimInput): Promise<TaggingDecision> {
     executeTool: async (name, toolInput) => {
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const connection = await connectionTools.execute(name, toolInput);
+      if (connection !== null) return connection;
       if (name === TAGGER_SUBMIT_TOOL_NAME) {
         const problem = defect(toolInput);
         if (problem) {

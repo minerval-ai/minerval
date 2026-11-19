@@ -26,6 +26,7 @@ import {
   fetchMyLabels,
   fetchParties,
   type ConnectionCall,
+  type ConnectionRoleView,
   type ConnectionView,
 } from "@/lib/admin-api";
 import { callOutcome, withdrawnWords } from "@/lib/admin-words";
@@ -70,8 +71,9 @@ export default async function ConnectionPage({
   let notice: string;
   let connection: ConnectionView;
   let canKeepCredentials: boolean;
+  let roles: ConnectionRoleView[];
   try {
-    ({ notice, connection, can_keep_credentials: canKeepCredentials } = await fetchConnection(who.externalId, id));
+    ({ notice, connection, can_keep_credentials: canKeepCredentials, roles } = await fetchConnection(who.externalId, id));
   } catch (err) {
     if (err instanceof AccountApiError && (err.status === 404 || err.status === 400)) notFound();
     throw err;
@@ -175,6 +177,18 @@ export default async function ConnectionPage({
             </span>,
           ],
           [
+            <span key="k" className="w-row" style={{ gap: 6 }}>
+              Offered to <Tip>{roles.filter((r) => connection.offered_to.includes(r.role)).map((r) => r.name).join("; ") || "No agent: tick roles under Settings."}</Tip>
+            </span>,
+            <span key="to">
+              {connection.offered_to.length === 0 ? (
+                <span className="w-faint">No agent</span>
+              ) : (
+                `${connection.offered_to.length} of ${roles.length} roles`
+              )}
+            </span>,
+          ],
+          [
             "Offered as",
             <span key="o">
               <span className="w-mono">{connection.tool_prefix}__*</span>
@@ -185,12 +199,19 @@ export default async function ConnectionPage({
           ],
           [
             "Stake",
-            <span key="st" className="w-row" style={{ gap: 6, flexWrap: "nowrap", maxWidth: 280 }}>
-              <span className="w-muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {connection.stake}
+            connection.stake === null ? (
+              <span key="st" className="w-row" style={{ gap: 6, flexWrap: "nowrap" }}>
+                <span className="w-faint">None given</span>
+                <Tip>No stake is recorded on readings kept from this connection. They still belong to its party, and an interest that bears on one question is recorded by the agent weighing that question.</Tip>
               </span>
-              <Tip>{`${connection.stake} Recorded on every reading kept from the connection, as a fact about the source and never a finding against it.`}</Tip>
-            </span>,
+            ) : (
+              <span key="st" className="w-row" style={{ gap: 6, flexWrap: "nowrap", maxWidth: 280 }}>
+                <span className="w-muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {connection.stake}
+                </span>
+                <Tip>{`${connection.stake} Recorded on every reading kept from the connection, as a fact about the source and never a finding against it.`}</Tip>
+              </span>
+            ),
           ],
         ]}
       />
@@ -320,7 +341,7 @@ export default async function ConnectionPage({
                 }
               >
                 <input type="hidden" name="connection_id" value={connection.id} />
-                <ConnectionFields labels={labels} parties={parties} current={connection} />
+                <ConnectionFields labels={labels} parties={parties} current={connection} roles={roles} />
               </WorkForm>
             </div>
           </div>

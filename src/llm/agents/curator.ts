@@ -39,6 +39,7 @@ import {
 import { loadConfig } from "../../config.js";
 import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
@@ -113,7 +114,13 @@ async function runCuratorImpl(input: {
   const claimDomains = [...new Set((await Promise.all(anchors.map((c) => domainsForClaim(c)))).flat())];
   const skillLoader = createSkillLoadTools("curator", { domains: claimDomains });
 
+  // The systems this deployment is connected to, where an administrator
+  // offered them to this role. The Curator places nodes and finds what is the same claim; what an organization's own systems hold is part of what it places.
+  // Read, never kept: a judgment that should rest on a reading is recorded
+  // by an agent that keeps it (tools/connection-tools.ts).
+  const connectionTools = await createConnectionTools({ config, role: "curator", keeps: false });
   const tools = [
+    ...connectionTools.definitions,
     ...claimContextTools,
     getMatcherToolDefinition(),
     ...curatorTools,
@@ -138,7 +145,7 @@ async function runCuratorImpl(input: {
     ...researchTools.definitions,
   ];
 
-  const system = getCuratorSystemPromptBlocks();
+  const system = withConnectionsBlock(getCuratorSystemPromptBlocks(), connectionTools);
 
   const CURATOR_MAX_TURNS = RUN_TURN_GUARD;
   const userMessage = input.claimId ? `You have been triggered to curate the graph around a claim.
@@ -202,6 +209,8 @@ ${turnBudgetLine(CURATOR_MAX_TURNS, { canSpend: true })}${skillLoader.pointerNot
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const connection = await connectionTools.execute(name, toolInput);
+      if (connection !== null) return connection;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
       const research = await researchTools.execute(name, toolInput);

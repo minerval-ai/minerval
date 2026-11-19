@@ -24,7 +24,12 @@ vi.hoisted(() => {
 
 import { rawQuery } from "../../src/db/client.js";
 import { ensureEnforcement } from "../../src/db/enforcement.js";
-import { CONNECTION_NOTICE, CONNECTION_RESULT_MAX_CHARS } from "../../src/connections.js";
+import {
+  CONNECTION_NOTICE,
+  CONNECTION_RESULT_MAX_CHARS,
+  CONNECTION_ROLES,
+  DEFAULT_CONNECTION_ROLES,
+} from "../../src/connections.js";
 import { createConnectionTools, NO_CONNECTION_TOOLS, PRIVATE_PERSONS_REMINDER } from "../../src/llm/tools/connection-tools.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { runAtLabel, runWithUsageContext } from "../../src/llm/usage-context.js";
@@ -104,6 +109,7 @@ interface ConnectionView {
   url: string;
   label: string;
   credential: { source: "stored" | "environment" | null; env: string | null; header: string; set: boolean; stored: unknown };
+  offered_to: string[];
   party: { id: string; name: string; is_own_organization: boolean };
   state: { status: string; last_error: { at: string; message: string } | null };
   tools: ToolView[];
@@ -162,10 +168,14 @@ async function switchAllOff() {
   await rawQuery(`UPDATE connections SET enabled = false`);
 }
 
-/** The connection tools a run at `label` is given, as an agent's entry point builds them. */
-function bundleAt(label: string, context: { runId?: string; agent?: string; claimId?: string } = {}) {
+/** The connection tools a run at `label` is given, as an agent's entry point builds them: a Steward's unless `as` says. */
+function bundleAt(
+  label: string,
+  context: { runId?: string; agent?: string; claimId?: string } = {},
+  as: { role?: Parameters<typeof createConnectionTools>[0]["role"]; keeps?: boolean; onlyLabels?: string[] | null } = {}
+) {
   return runAtLabel(label, "the connections test", () =>
-    runWithUsageContext(context, () => createConnectionTools())
+    runWithUsageContext(context, () => createConnectionTools({ role: as.role ?? "steward", keeps: as.keeps, onlyLabels: as.onlyLabels }))
   );
 }
 
@@ -381,8 +391,18 @@ describe("an administrator's routes", () => {
     expect(unread.statusCode).toBe(403);
     expect(unread.json()).toMatchObject({ code: "LABEL_NOT_READABLE" });
     expect((await post({ party_id: randomUUID() })).json()).toMatchObject({ code: "UNKNOWN_PARTY" });
-    // The stake is asked for: every reading kept carries it.
-    expect((await post({ stake: "   " })).json()).toMatchObject({ code: "INVALID_STAKE" });
+    // The stake is optional, and an empty one is none; one past the length is refused.
+    expect((await post({ stake: "x".repeat(1001) })).statusCode).toBe(400);
+    const noStake = await post({ name: `No stake ${randomUUID()}`, stake: "   " });
+    expect(noStake.statusCode, noStake.body).toBe(201);
+    expect(noStake.json().connection.stake).toBeNull();
+    const omitted = await as(admin, {
+      method: "POST",
+      url: "/connections",
+      payload: { name: `Omitted ${randomUUID()}`, url: server.url, party_id: ownParty, label: INTERNAL },
+    });
+    expect(omitted.statusCode, omitted.body).toBe(201);
+    expect(omitted.json().connection.stake).toBeNull();
     expect((await post({ transport: "stdio" })).statusCode).toBe(400);
 
     const first = await connect({ name: "Taken name", tool_prefix: "taken" });
@@ -551,6 +571,71 @@ describe("an administrator's routes", () => {
     expect(own.find((e) => e.event === "connection_tools_offered" && e.connection === "Orrin evaluation logs")).toMatchObject({
       offered: ["read_rows"],
     });
+  });
+});
+
+describe("which agents a connection is offered to", () => {
+  it("is every role but those that start unticked, on a new connection, and the API lists each role with why", async () => {
+    const c = await connect({ name: "Roles warehouse", tool_prefix: "roles" });
+    expect(c.offered_to).toEqual([...DEFAULT_CONNECTION_ROLES]);
+    const res = await as(admin, { url: `/connections/${c.id}` });
+    const roles = res.json().roles as Array<{ role: string; keeps: string; off_at_first?: string }>;
+    expect(roles.map((r) => r.role)).toEqual([...CONNECTION_ROLES]);
+    for (const role of ["correspondent", "audit", "redactor", "matcher", "extractor", "tagger"]) {
+      expect(roles.find((r) => r.role === role)!.off_at_first, role).toBeTruthy();
+      expect(c.offered_to, role).not.toContain(role);
+    }
+  });
+
+  it("is chosen role by role, logged, and a run in a role it is not offered to has nothing from it", async () => {
+    await switchAllOff();
+    const c = await connect({ name: "Chosen warehouse", tool_prefix: "chosen", offered_to: ["steward"] });
+    await pick(c, ["read_rows"]);
+    expect((await bundleAt(INTERNAL)).definitions.map((d) => d.name)).toContain("chosen__read_rows");
+    for (const role of ["grantmaker", "lookout", "assistant", "researcher"] as const) {
+      const bundle = await bundleAt(INTERNAL, {}, { role, keeps: false, onlyLabels: null });
+      expect(bundle.definitions, role).toEqual([]);
+      expect(bundle.note, role).toBe("");
+    }
+
+    const changed = await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: ["steward", "grantmaker"] } });
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(changed.json().connection.offered_to).toEqual(["steward", "grantmaker"]);
+    const entry = (await log()).find((e) => e.event === "connection_changed" && e.connection === "Chosen warehouse");
+    expect(entry).toMatchObject({ changed: ["offered_to"] });
+    // The same roles in another order are no change.
+    const same = await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: ["grantmaker", "steward"] } });
+    expect(same.json().code).toBe("NOTHING_TO_CHANGE");
+    expect((await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: ["oracle"] } })).statusCode).toBe(400);
+
+    // A Grantmaker reads and keeps nothing, and is told so.
+    const grantmaker = await bundleAt(INTERNAL, {}, { role: "grantmaker", keeps: false });
+    expect(grantmaker.definitions.map((d) => d.name)).toEqual(["chosen__read_rows", "open_reading"]);
+    expect(grantmaker.note).toContain("You keep no reading as a source: what you read informs your own work.");
+    const read = await run(INTERNAL, grantmaker, "chosen__read_rows", { table: "refunds" });
+    expect(read).toMatchObject({ success: true });
+    expect(read.note).toContain("Where a judgment on the graph should rest on what this shows, say the tool and the arguments");
+    expect(await grantmaker.execute("keep_reading", { reading: read.reading })).toBeNull();
+
+    // Unticked everywhere, it is offered to no one.
+    await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: [] } });
+    expect((await bundleAt(INTERNAL)).definitions).toEqual([]);
+  });
+
+  it("is offered to the Assistant only at labels whose raw sources its person may open", async () => {
+    await switchAllOff();
+    const c = await connect({ name: "Assistant warehouse", tool_prefix: "asst" });
+    await pick(c, ["read_rows"]);
+    expect(c.offered_to).toContain("assistant");
+    const names = async (onlyLabels: string[] | null) =>
+      (await bundleAt(INTERNAL, {}, { role: "assistant", keeps: false, onlyLabels })).definitions.map((d) => d.name);
+    expect(await names([])).toEqual([]);
+    expect(await names([RESTRICTED])).toEqual([]);
+    expect(await names([INTERNAL])).toEqual(["asst__read_rows", "open_reading"]);
+    // A run above the connection's label, for a person who may open its sources.
+    expect(
+      (await bundleAt(RESTRICTED, {}, { role: "assistant", keeps: false, onlyLabels: [INTERNAL, RESTRICTED] })).definitions.map((d) => d.name)
+    ).toEqual(["asst__read_rows", "open_reading"]);
   });
 });
 
@@ -738,7 +823,7 @@ describe("what a run is told", () => {
     const steward = await bundleAt(INTERNAL);
     const asLookout = { runId: randomUUID(), agent: "lookout" };
     const lookout = await runAtLabel(INTERNAL, "the connections test", () =>
-      runWithUsageContext(asLookout, () => createConnectionTools({ keeps: false }))
+      runWithUsageContext(asLookout, () => createConnectionTools({ role: "lookout", keeps: false }))
     );
     // The administrator's picks, with the system's own descriptions, and open_reading. Not keep_reading.
     expect(lookout.definitions).toEqual(steward.definitions.filter((d) => d.name !== "keep_reading"));
@@ -883,6 +968,25 @@ describe("a reading", () => {
     expect(failed).toEqual({ outcome: "failed", result: null });
   });
 
+  it("kept from a connection given no stake, belongs to the party and records no interest, and says so", async () => {
+    await switchAllOff();
+    const c = await connect({ name: "Own notes", tool_prefix: "ownnotes", stake: null });
+    await pick(c, ["read_rows"]);
+    const bundle = await bundleAt(INTERNAL);
+    const made = await run(INTERNAL, bundle, "ownnotes__read_rows", { table: "refunds" });
+    const kept = await run(INTERNAL, bundle, "keep_reading", { reading: made.reading });
+    expect(kept).toMatchObject({ success: true, already_kept: false, stake_recorded: false });
+    expect(kept.note).toContain("No stake is recorded on it: the connection's administrator gave none.");
+    expect(kept.note).toContain("record_source_interest");
+    const [source] = await rawQuery<{ party_id: string; raw_content: string }>(`SELECT party_id, raw_content FROM sources WHERE id = $1`, [kept.source_id]);
+    expect(source!.party_id).toBe(ownParty);
+    // Its text still says whose system it was read from.
+    expect(source!.raw_content).toContain('A reading through the connection "Own notes", a system of Halden Evaluations.');
+    expect(await rawQuery(`SELECT 1 FROM source_interests WHERE source_id = $1`, [kept.source_id])).toEqual([]);
+    const again = await run(INTERNAL, bundle, "keep_reading", { reading: made.reading });
+    expect(again).toMatchObject({ already_kept: true, stake_recorded: false });
+  });
+
   it("becomes a source when kept: hashed, at the label of the run that read it, the party's, with its stake recorded", async () => {
     await switchAllOff();
     const c = await connect({ name: "Kept warehouse", tool_prefix: "kept" });
@@ -900,10 +1004,12 @@ describe("a reading", () => {
       reading: made.reading,
       address,
       already_kept: false,
+      stake_recorded: true,
       note:
         `Kept as a source. Cite it by its address, ${address}, wherever a tool takes a source's url, and in your ` +
         "reasoning where a judgment rests on it. Its text is the call and its result together, and reads back like " +
-        "any source's. It belongs to the party whose system it is, with that party's stake recorded on it.",
+        "any source's. It belongs to the party whose system it is, with the stake its administrator gave for that " +
+        "party recorded on it.",
     });
     expect(kept.title).toMatch(/^Kept warehouse: read_rows, read \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
 
@@ -951,7 +1057,7 @@ describe("a reading", () => {
 
     // Kept again, it is the same source.
     const again = await run(RESTRICTED, bundle, "keep_reading", { reading: made.reading });
-    expect(again).toMatchObject({ success: true, source_id: kept.source_id, address, already_kept: true });
+    expect(again).toMatchObject({ success: true, source_id: kept.source_id, address, already_kept: true, stake_recorded: true });
     const [n] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM sources WHERE url = $1`, [address]);
     expect(n!.n).toBe(1);
 

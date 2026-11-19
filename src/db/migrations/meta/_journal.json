@@ -1324,6 +1324,20 @@
       "when": 1795103348270,
       "tag": "0188_drop_deployment_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1795105037173,
+      "tag": "0189_optional_stake",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1795105747923,
+      "tag": "0190_connection_roles",
+      "breakpoints": true
     }
   ]
 }

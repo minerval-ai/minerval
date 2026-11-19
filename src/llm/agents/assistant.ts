@@ -23,6 +23,7 @@ import {
   getAssistantSystemPromptBlocks,
 } from "../prompts/assistant.js";
 import { permissionsNote } from "../permissions-note.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import {
   createAssistantTools,
   type AccountTools,
@@ -218,20 +219,35 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
     // message, since a copy sees nothing of this conversation.
     const permissions = permissionsNote(input.account.withheld ?? []);
 
+    // The systems the deployment is connected to, where an administrator
+    // offered them to the Assistant, and only at labels whose raw sources
+    // this user may open: what the Assistant reads goes on to them as it is
+    // (src/raw-sources.ts). It reads and keeps nothing; a source the graph
+    // should hold is kept by the agents its user directs.
+    const connectionTools = await createConnectionTools({
+      role: "assistant",
+      keeps: false,
+      onlyLabels: input.account.rawSourceLabels === undefined ? [] : input.account.rawSourceLabels,
+    });
+
     // A delegated copy: the same tools without delegate, a fresh
     // conversation holding only the task, on the same meter.
     const delegate = async (task: string): Promise<string> => {
-      const copy = createAssistantTools(input.account, {
-        hold: input.hold,
-        note: (text) => input.onNote?.(text),
-        used,
-      });
+      const copy = createAssistantTools(
+        input.account,
+        {
+          hold: input.hold,
+          note: (text) => input.onNote?.(text),
+          used,
+        },
+        connectionTools
+      );
       const result = await toolUseLoop({
         initialMessages: [
           { role: "user", content: permissions ? `${permissions}\n\n---\n\n${task}` : task },
         ],
         tools: copy.definitions,
-        system: blocks([DELEGATE_SECTION]),
+        system: withConnectionsBlock(blocks([DELEGATE_SECTION]), connectionTools),
         model: input.model,
         maxIterations: RUN_TURN_GUARD,
         stream: true,
@@ -242,12 +258,16 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
       return result.content || "(The copy ended without a report.)";
     };
 
-    const tools = createAssistantTools(input.account, {
-      hold: input.hold,
-      note: (text) => input.onNote?.(text),
-      delegate,
-      used,
-    });
+    const tools = createAssistantTools(
+      input.account,
+      {
+        hold: input.hold,
+        note: (text) => input.onNote?.(text),
+        delegate,
+        used,
+      },
+      connectionTools
+    );
 
     const messages: MessageParam[] = input.transcript.map((m, i) => ({
       role: m.role,
@@ -276,7 +296,7 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
       const result = await toolUseLoop({
         initialMessages: messages,
         tools: tools.definitions,
-        system: blocks(input.sections),
+        system: withConnectionsBlock(blocks(input.sections), connectionTools),
         model: input.model,
         // A halting guard only: what bounds the run is its user's balance
         // and their stop button (see the module comment).

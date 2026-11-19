@@ -36,12 +36,12 @@ export async function addFileSetAction(_previous: FormState, form: FormData): Pr
     name: text(form, "name"),
     description: text(form, "description") || undefined,
     party_id: text(form, "party_id"),
-    stake: text(form, "stake"),
+    // Optional: empty is none.
+    stake: text(form, "stake") || null,
     ...(text(form, "label") ? { label: text(form, "label") } : {}),
   };
   if (!body.name) return { error: "Give the set a name." };
   if (!body.party_id) return { error: "Choose whose files these are." };
-  if (!body.stake) return { error: "Say what that party stands to gain or lose from what the files show. Where it has no stake, say so." };
   if (way === "directory" && !directory) return { error: "Give the directory, as a path under the root this deployment registers directories from." };
   let id: string;
   try {

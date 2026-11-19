@@ -13,6 +13,7 @@ import { loadConfig } from "../../config.js";
 import { getRedactorSystemPromptBlocks } from "../prompts/redactor.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { executeRedactorTool, getRedactorToolDefinitions } from "../tools/redactor-tools.js";
 import { withAgent, withSkills } from "../usage-context.js";
 
@@ -46,12 +47,17 @@ export function runRedactor(input: { pageId: string; model?: string }): Promise<
     const page = await releasePage(input.pageId);
     if (!page) throw new Error(`No page ${input.pageId} is read at this run's label.`);
     const reportTools = createReportTools({ model });
+    // A connection's reading tools only where an administrator ticked the
+    // Redactor on it: a new connection is not offered to it, since it
+    // decides what leaves and works from the page and the sources it rests
+    // on (CONNECTION_ROLE_INFO in src/connections.ts). Read, never kept.
+    const connectionTools = await createConnectionTools({ config, role: "redactor", keeps: false });
     let finished = false;
     await withSkills([], () =>
       toolUseLoop({
         initialMessages: [{ role: "user", content: redactorTaskMessage({ round: page.round }) }],
-        tools: [...getRedactorToolDefinitions(), ...reportTools.definitions],
-        system: getRedactorSystemPromptBlocks(),
+        tools: [...getRedactorToolDefinitions(), ...reportTools.definitions, ...connectionTools.definitions],
+        system: withConnectionsBlock(getRedactorSystemPromptBlocks(), connectionTools),
         model,
         maxTokens: 16384,
         maxIterations: RUN_TURN_GUARD,
@@ -60,6 +66,8 @@ export function runRedactor(input: { pageId: string; model?: string }): Promise<
         executeTool: async (name, toolInput) => {
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
+          const connection = await connectionTools.execute(name, toolInput);
+          if (connection !== null) return connection;
           return executeRedactorTool(name, toolInput, { pageId: input.pageId, model, onFinished: () => (finished = true) });
         },
       })

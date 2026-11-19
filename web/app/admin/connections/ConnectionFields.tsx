@@ -1,5 +1,5 @@
 import { Lbl, Tip } from "@/components/work/ui";
-import type { ConnectionView, MyLabels, PartyView } from "@/lib/admin-api";
+import type { ConnectionRoleView, ConnectionView, MyLabels, PartyView } from "@/lib/admin-api";
 import { LabelField } from "../../sources/LabelField";
 
 // The settings of a connection, as the fields of a form: the same fields
@@ -28,12 +28,15 @@ export function ConnectionFields({
   parties,
   current,
   canKeepCredentials = false,
+  roles = [],
 }: {
   labels: MyLabels;
   parties: PartyView[];
   current?: ConnectionView;
   /** Whether the deployment has the key a pasted credential is kept with. */
   canKeepCredentials?: boolean;
+  /** The agent roles a connection may be offered to, as the API lists them. */
+  roles?: ConnectionRoleView[];
 }) {
   return (
     <>
@@ -144,14 +147,15 @@ export function ConnectionFields({
       </div>
       <div className="w-field">
         <label htmlFor="c-stake" className="w-row" style={{ gap: 6 }}>
-          Stake{" "}
+          Stake {optional}
           <Tip>
-            What the party stands to gain or lose from what the system shows, in a sentence or two. It is recorded on every reading kept from the connection, as a fact about the source and never a finding against it.
+            What the party stands to gain or lose from what the system shows, where that is worth saying: for an outside party&rsquo;s system, say, whose interest in what it shows the agents could not guess. Given, it is recorded on every reading kept from the connection, as a fact about the source and never a finding against it. Left empty, none is recorded, and an interest that bears on one question is recorded by the agent weighing that question.
           </Tip>
         </label>
-        <textarea id="c-stake" className="w-input" name="stake" required rows={2} maxLength={1000} defaultValue={current?.stake} />
-        <span className="w-help">What the party stands to gain or lose from what the system shows</span>
+        <textarea id="c-stake" className="w-input" name="stake" rows={2} maxLength={1000} defaultValue={current?.stake ?? ""} />
+        <span className="w-help">Usually empty for your own organisation&rsquo;s systems</span>
       </div>
+      {roles.length > 0 && <OfferedTo roles={roles} current={current} />}
       <div style={pair}>
         <div className="w-field">
           <label htmlFor="c-rate" className="w-row" style={{ gap: 6 }}>
@@ -175,5 +179,42 @@ export function ConnectionFields({
         )}
       </div>
     </>
+  );
+}
+
+// Which agents a run is offered the connection in, role by role. A new
+// connection starts with every role ticked but those the API says start
+// unticked, each with why; a connection being changed shows what it has.
+// The hidden field says the list was on the form, so that unticking every
+// role is a change and not a field left out.
+function OfferedTo({ roles, current }: { roles: ConnectionRoleView[]; current?: ConnectionView }) {
+  return (
+    <fieldset className="w-field" style={{ border: 0, padding: 0, margin: 0 }}>
+      <legend className="w-label w-row" style={{ gap: 6 }}>
+        Offered to{" "}
+        <Tip>
+          The agents that may read through this connection, when they work at a label that reads its label. Only the Stewards, and a Researcher whose work records sources, may keep what they read as a source; the others read to inform their own work.
+        </Tip>
+      </legend>
+      <input type="hidden" name="offered_to_listed" value="1" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "4px 14px" }}>
+        {roles.map((r) => (
+          <label key={r.role} className="w-row" style={{ gap: 6, alignItems: "flex-start", fontWeight: 400 }}>
+            <input
+              type="checkbox"
+              name="offered_to"
+              value={r.role}
+              defaultChecked={current ? current.offered_to.includes(r.role) : r.off_at_first === undefined}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              {r.name}
+              {r.keeps !== "no" && <span className="w-faint w-small"> · may keep readings</span>}
+              {r.off_at_first && <Tip>{`Unticked on a new connection: ${r.off_at_first}`}</Tip>}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }

@@ -258,13 +258,16 @@ export default async function FileSetsPage({ searchParams }: { searchParams: Pro
               </div>
               <div className="w-field">
                 <label htmlFor="fs-stake" className="w-row" style={{ gap: 6 }}>
-                  Stake
+                  Stake{" "}
+                  <span className="w-faint" style={{ fontWeight: 400 }}>
+                    optional
+                  </span>
                   <Tip>
-                    What the party stands to gain or lose from what the files show, in a sentence or two. It is recorded on every source an agent keeps from the set, as a fact about the source. It is not a finding against the source, and a stake does not make the files wrong.
+                    What the party stands to gain or lose from what the files show, where that is worth saying: for files an outside party supplied, say, whose interest in what they show the agents could not guess. Given, it is recorded on every source an agent keeps from the set, as a fact about the source; it is not a finding against the source. Left empty, none is recorded, and an interest that bears on one question is recorded by the agent weighing that question.
                   </Tip>
                 </label>
-                <textarea id="fs-stake" className="w-input" name="stake" rows={2} required />
-                <span className="w-help">What the party stands to gain or lose from what the files show</span>
+                <textarea id="fs-stake" className="w-input" name="stake" rows={2} maxLength={1000} />
+                <span className="w-help">Usually empty for your own organisation&rsquo;s files</span>
               </div>
               <LabelField
                 mine={labels}

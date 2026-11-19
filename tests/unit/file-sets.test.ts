@@ -102,14 +102,15 @@ describe("the tools", () => {
 });
 
 describe("what a person adding a set is told", () => {
-  it("says a set is closed once filled, hashed, read by label, and whose stake is recorded", () => {
+  it("says a set is closed once filled, hashed, read by label, whose it is, and that a stake given is recorded", () => {
     expect(FILE_SET_NOTICE).toBe(
       "A file set is closed once its files are in: nothing in it is changed or removed afterwards, and new files " +
         "are a new set. Each file is hashed when it is added and the set has one hash over all of them, so what an " +
         "agent's analysis read can be checked later. Agents whose work is at a label that reads the set's label can " +
         "read every file in it, by running commands in a sandbox that has no network. The set belongs to the party " +
-        "you name, and the stake you give for that party is recorded on every source an agent keeps from it, as a " +
-        "fact about the source. A directory registered where it lies is not copied: keep it as it is, because a " +
+        "you name. A stake you give for that party is recorded on every source an agent keeps from it, as a fact " +
+        "about the source; give none where there is nothing to say beyond whose files they are. A directory " +
+        "registered where it lies is not copied: keep it as it is, because a " +
         "file that no longer matches its hash cannot be kept as a source."
     );
   });

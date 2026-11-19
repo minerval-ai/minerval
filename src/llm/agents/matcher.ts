@@ -10,6 +10,7 @@ import { getUsageContext, runBudget, withAgent, withPassBudget, withSkills } fro
 import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
 import { SeenIds, resolveId } from "../seen-ids.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import {
   MATCHED_INSTANCE_STANCES,
   isMatchedInstanceStance,
@@ -299,6 +300,11 @@ async function matchClaimImpl(input: {
     });
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
+  // A connection's reading tools only where an administrator ticked the
+  // Matcher on it: a new connection is not offered to this role, which runs
+  // often enough that every run would carry the tool definitions
+  // (CONNECTION_ROLE_INFO in src/connections.ts). Read, never kept.
+  const connectionTools = await createConnectionTools({ config, role: "matcher", keeps: false });
 
   const acceptDecision = (toolInput: Record<string, unknown>): MatchDecision => {
     const submitted = toolInput as unknown as Omit<MatchDecision, "outcome">;
@@ -351,8 +357,8 @@ async function matchClaimImpl(input: {
               : prompt,
           },
         ],
-        tools: [searchTool, ...readTools, submitTool, ...skillLoader.definitions, ...reportTools.definitions],
-        system,
+        tools: [searchTool, ...readTools, submitTool, ...skillLoader.definitions, ...reportTools.definitions, ...connectionTools.definitions],
+        system: withConnectionsBlock(system, connectionTools),
         model,
         seenIds,
         // A cap, not a target: the decision itself is a few hundred tokens. But a
@@ -395,6 +401,8 @@ async function matchClaimImpl(input: {
           // The report channel first (#366): null means "not my tool".
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
+          const connection = await connectionTools.execute(name, toolInput);
+          if (connection !== null) return connection;
           if (MATCHER_READS.has(name)) {
             return (await executeGraphReadTool(name, toolInput)) ?? `Error: Unknown tool: ${name}`;
           }

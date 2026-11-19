@@ -3,11 +3,14 @@
  * deployment's sandbox against the sets it has, the three tools that work
  * on what it found, and the passage that tells the run what it has.
  *
- * Which roles get them. The roles a connection's tools go to, for the same
- * reason (tools/connection-tools.ts): the Claim Steward, the Question
- * Steward, and the Researcher when a Steward launched it or it takes up a
- * request. These weigh evidence about the world and record sources, so an
- * analysis has somewhere to go on the record. The agent files decide.
+ * Which roles get them. The Claim Steward, the Question Steward, and the
+ * Researcher when a Steward launched it or it takes up a request. These
+ * weigh evidence about the world and record sources, so an analysis has
+ * somewhere to go on the record. The agent files decide. (A connection's
+ * tools now go to every role an administrator offers it to, at the labels
+ * that read its own: tools/connection-tools.ts. Whether a set of files
+ * should follow is its own question: a command costs the run's budget,
+ * where a connection's call costs none.)
  *
  * What a run is offered. When the label it works at reads the label of at
  * least one closed set: run_command, where the sandbox is configured and
@@ -217,8 +220,10 @@ export function getKeepAnalysisToolDefinition(): Tool {
       "with it, the file sets it could read with the hash that fixes each, the sandbox it ran in, " +
       "how it ended and its output, stored whole with a hash and the time, so that a reader with the " +
       "same clearance can run it again and compare. It belongs to the party whose files the command " +
-      "could read, with that party's stake recorded on it as a fact about the source; what the files " +
-      "show is still evidence. Keep an analysis when a judgment rests on it: the commands you ran " +
+      "could read, with that party's stake recorded on it as a fact about the source where one was " +
+      "given for the set (the result says whether); what the files show is still evidence. An interest " +
+      "the party has in one claim, where none is recorded or the recorded one does not say it, is " +
+      "recorded for that claim with record_source_interest, where you are offered it. Keep an analysis when a judgment rests on it: the commands you ran " +
       "while looking are in the run's log either way, and sources are what assessments rest on. The " +
       "result gives the address to cite the source by, wherever a tool takes a source's url and in " +
       `your reasoning. ${PRIVATE_PERSONS_REMINDER}`,
@@ -241,7 +246,8 @@ export function getKeepFileToolDefinition(): Tool {
       "other: the text as it is in the file, under the set's name, the path, and the file's hash from " +
       "when the set was added. The file is hashed again first, and one that no longer matches is not " +
       "kept. A file that is not text is kept as its name, size and hash. The source belongs to the " +
-      "party whose set it is, with that party's stake recorded on it as a fact about the source. The " +
+      "party whose set it is, with that party's stake recorded on it as a fact about the source where " +
+      "one was given for the set (the result says whether). The " +
       "same file or passage kept twice is one source, and it is the set's own material: everyone who " +
       "reads the set reads it, whichever run kept it. One source holds at most " +
       `${fmt(KEPT_FILE_MAX_CHARS)} characters, so keep a passage of a larger file. The result gives ` +
@@ -480,6 +486,11 @@ async function open(input: Record<string, unknown>): Promise<string> {
   });
 }
 
+/** What a run is told where no stake was given for a set it kept a source from. */
+const NO_STAKE_GIVEN =
+  "Where the party has an interest in the claim you are weighing, it is recorded for that claim with " +
+  "record_source_interest, where you are offered it.";
+
 const CITE =
   "wherever a tool takes a source's url, and in your reasoning where a judgment rests on it. It reads back like any source's.";
 
@@ -491,7 +502,10 @@ async function keepAnalysisTool(input: Record<string, unknown>): Promise<string>
     note:
       (kept.already_kept ? "This analysis was already kept; this is the source made then. " : "Kept as a source. ") +
       `Cite it by its address, ${kept.address}, ${CITE} Its text is the command, the files given with it, the ` +
-      `sets it could read and its output together. The stake of each party whose files it could read is recorded on it.`,
+      `sets it could read and its output together. ` +
+      (kept.stake_recorded
+        ? `The stake given for each party whose files it could read is recorded on it.`
+        : `No stake is recorded on it: none was given for the sets it could read. ${NO_STAKE_GIVEN}`),
   });
 }
 
@@ -512,8 +526,10 @@ async function keepFileTool(input: Record<string, unknown>, sets: readonly RunFi
     ...kept,
     note:
       (kept.already_kept ? "This was already kept; this is the source made then. " : "Kept as a source. ") +
-      `Cite it by its address, ${kept.address}, ${CITE} It belongs to the party whose set it is, with that ` +
-      `party's stake recorded on it.`,
+      `Cite it by its address, ${kept.address}, ${CITE} It belongs to the party whose set it is` +
+      (kept.stake_recorded
+        ? `, with the stake given for that party recorded on it.`
+        : `. No stake is recorded on it: none was given for the set. ${NO_STAKE_GIVEN}`),
   });
 }
 

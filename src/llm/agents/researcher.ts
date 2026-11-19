@@ -72,7 +72,7 @@ import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.
 import { executeReadPage, getReadPageToolDefinition, READ_PAGE_TOOL_NAME } from "../tools/read-page-tool.js";
 import { createFigureTools } from "../tools/figure-tools.js";
 import type { ToolExecution } from "../tool-output.js";
-import { NO_CONNECTION_TOOLS, createConnectionTools } from "../tools/connection-tools.js";
+import { createConnectionTools } from "../tools/connection-tools.js";
 import { NO_FILE_SET_TOOLS, createFileSetTools, withRunScratch } from "../tools/file-set-tools.js";
 import {
   elicitConfigured,
@@ -591,11 +591,12 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
 
   const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
   const pangramTools = createPangramTools({ config });
-  // The reading tools of the systems this deployment is connected to, on a
-  // run that may record on the graph: one a Steward launched, or one taking
-  // up a request. A reading is for a source, and research for a mandate, the
-  // Curator or the Audit Agent records none (tools/connection-tools.ts).
-  const connectionTools = graphWrites ? await createConnectionTools({ config }) : NO_CONNECTION_TOOLS;
+  // The reading tools of the systems this deployment is connected to, where
+  // an administrator offered them to Researchers. A run that may record on
+  // the graph (one a Steward launched, or one taking up a request) may keep
+  // a reading as a source; research for a mandate, the Curator or the Audit
+  // Agent reads and reports, and keeps none (tools/connection-tools.ts).
+  const connectionTools = await createConnectionTools({ config, role: "researcher", keeps: graphWrites });
   // The file sets and the sandbox they are explored in, on the same runs
   // and for the same reason: an analysis is for a source.
   const fileSetTools = graphWrites ? await createFileSetTools({ config }) : NO_FILE_SET_TOOLS;

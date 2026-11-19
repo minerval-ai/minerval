@@ -71,8 +71,9 @@ call and keeps none open between them.
 | `url`, `transport` | The MCP server's address (http or https) and how it is spoken to: `streamable_http`, or `sse` for a server that only speaks that. The deployment does not start a server as a local process. |
 | `credential_env`, `credential_header` | The **name** of the environment variable that holds the credential, and the header it is sent in. In `Authorization` it is sent as a bearer token; in any other header, as it is. Or, in place of the variable, the credential itself given on the connection's page and kept sealed (below). |
 | `party_id` | The party whose system it is: the organization itself, or an outside party that granted access. |
-| `stake` | What that party stands to gain or lose from what the system shows, in a sentence or two. |
+| `stake` | Optional. What that party stands to gain or lose from what the system shows, in a sentence or two, where that is worth saying. Given, it is recorded on every reading kept; left out, none is (below, "Its party"). |
 | `label` | The connection's one label: a run is offered the connection when the label it works at reads this one. It is named when the connection is added, among the labels the administrator reads, and the connection keeps it. The same system read at another label is a second connection. |
+| `offered_to` | The agent roles a run is offered the connection in, ticked one by one ("What agents get", below). |
 | `calls_per_minute` | A rate across all runs, or none. |
 | `timeout_seconds` | How long a call may go unanswered (120 unless set; 5 to 900). |
 | `enabled` | False switches it off. A connection is never deleted, since calls and kept readings refer to it. |
@@ -222,31 +223,61 @@ and when.
 
 ## What agents get
 
-**Which agents.** The Claim Steward, the Question Steward, and the
-Researcher when a Steward launched it or it takes up a request. These are
-the roles whose work is to weigh evidence about the world and that record
-sources, so a reading has somewhere to go on the record.
+**Which agents.** Every agent that works at a label may be offered the
+connections that label reads. An agent directing the graph, or answering
+a person, at a label should be able to read what that label's systems
+hold: a Grantmaker planning a mandate over a wiki it cannot see is
+guessing, and so is an Assistant telling its person what to fund. Which
+roles a connection is offered to is its administrator's choice, role by
+role (`offered_to`, `CONNECTION_ROLES` in `src/connections.ts`), and the
+choice is logged like any other change to the connection.
 
-A mandate's Lookouts are offered the same connections, to look and not to
-keep: the connections' tools and `open_reading`, without `keep_reading`.
-A lookout's work is to notice that something changed where it was posted
-to watch, and nothing tells the graph that data behind a connection
-changed unless a run looks. The tools are the ones an administrator
-picked, under the same limits, stated in the same words. A lookout records
-nothing on the graph and keeps no reading as a source. What it raises to
-its officers, as it raises anything, says which tool it called and with
-what arguments, so that the Steward who takes it up can make the call
-itself and keep what its judgment rests on. Each call a lookout makes is
-recorded like any call (`connection_calls`), with its result, at the
-lookout's label.
+| role | may keep a reading | on a new connection |
+|---|---|---|
+| Claim and Question Stewards | yes | offered |
+| Researchers | when a Steward launched them or they take up a request | offered |
+| Lookouts | no | offered |
+| Grantmakers: the granting conversation, the planning pass, the review passes | no | offered |
+| Program officers | no | offered |
+| Curator, Consistency Checker, Contribution Reviewer, Dispute Arbitrator | no | offered |
+| The Assistant | no | offered, only for a person who may open raw sources at the connection's label |
+| Correspondents | no | not offered until ticked: an update cites what it rests on, and a Correspondent keeps no reading its readers could open |
+| Audit | no | not offered until ticked: it judges the record as it stands, and one of its passes tells the readers of its log that it was handed no operator data |
+| Redactor | no | not offered until ticked: it decides what leaves for readers who do not read the page's label, from the page and the sources it rests on |
+| Matcher, Extractor, Tagger | no | not offered until ticked: each runs on every source or node, and every run would carry the connection's tool definitions |
 
-The Extractor and the Matcher read only the text they are handed. The
-Curator, the Consistency Checker, the Contribution Reviewer, the Dispute
-Arbitrator and Audit judge what the graph already records, where a kept
-reading is a source like any other. A mandate's Grantmaker, its officers
-and Correspondents, and the research they launch, write nothing to the
-graph, and research for the Curator or Audit reads and reports, so none of
-them is given a live read of an organization's system.
+The mathematics solver is never offered one: its tools are fixed when its
+run starts, and a test holds them. A connection that existed before roles
+could be chosen keeps the three it was offered to then (Stewards,
+Researchers, Lookouts); a migration does not widen what an administrator
+chose to let agents read, and the others are ticked on its page.
+
+**Keeping, and reading only.** A role that records sources may keep a
+reading as one (`keep_reading`): the Stewards, and a Researcher whose work
+records (one a Steward launched, or one taking up a request). Every other
+role reads and keeps nothing: the connections' tools and `open_reading`,
+without `keep_reading`. What it reads informs its own work, and where a
+judgment on the graph should rest on it, it says which tool it called and
+with what arguments, so that the agent who records that judgment makes
+the call itself and keeps the reading. A mandate's Lookouts work this way:
+a lookout's work is to notice that something changed where it was posted
+to watch, and what it raises to its officers says what it called. Each
+call any role makes is recorded like any call (`connection_calls`), with
+its result, at the label of the run that made it.
+
+**The Assistant.** What the Assistant reads goes on to its person as it
+is, so it is held as the person is: it is offered a connection only at a
+label whose raw sources the person may open ([accounts.md](accounts.md),
+"Opening raw sources"; `src/raw-sources.ts`). A person who reads at a
+label and may not open its sources has an Assistant that is not offered
+that label's connections. Every other agent's run reads what its label
+reads, sources included, as before.
+
+**Where a run is told.** A run's connections are stated in a system block
+of their own, at the end (`withConnectionsBlock`), so that a session that
+pauses and resumes is told what it has now. The Stewards, the Researcher,
+the Lookout and the Grantmaker's planning pass have them in their task
+message as before, and a Steward whose session resumes is told again.
 
 **When.** A run is offered a connection when the label it works at reads
 the connection's label: the same definition that makes up a person's
@@ -366,12 +397,26 @@ cite like any other:
   at the call's label, and a run adds rows at its own label. A run at
   another label that reads the reading may open it, and is told to make the
   call itself if a judgment of its own is to rest on what it shows.
-- **Its party** is the connection's, and the party's stake is recorded on
-  it (`source_interests`, recorded by `connection`): a fact about the
-  source, never a finding against it. What the system shows is evidence of
-  the strength it has, and the Steward weighs it knowing the stake. An
-  agent may still record a sharper interest for one claim with
-  `record_source_interest`.
+- **Its party** is the connection's, and where the connection was given a
+  stake, it is recorded on the source (`source_interests`, recorded by
+  `connection`): a fact about the source, never a finding against it. What
+  the system shows is evidence of the strength it has, and the Steward
+  weighs it knowing the stake. An agent may still record a sharper
+  interest for one claim with `record_source_interest`, and the result of
+  `keep_reading` says whether a stake was recorded (`stake_recorded`).
+
+  **Why the stake is optional.** The constitution records "a source's
+  interest in a claim where it has one" (§9), and an interest recorded
+  for a source as a whole holds for what it says about its party's own
+  affairs. For an outside party's system that is often worth saying, and
+  an administrator knows it where an agent could not guess: a vendor's
+  dashboard of its own uptime, a partner's logs that the partner curates.
+  For an organization's own systems it is mostly the party again in other
+  words, and a field everyone fills with that is noise. So it is asked
+  for and not required. Left out, none is recorded: the source still
+  belongs to the party, its text says whose system it was read from, and
+  an interest that bears on one claim is recorded by the Steward for that
+  claim.
 - **Its address** is `reading:<prefix>/<reading id>`, which `keep_reading`
   returns. It is cited by that address wherever a tool takes a source's
   url (`record_claim_instance`, `record_estimate`, `record_question_instance`,
@@ -405,8 +450,8 @@ What the agent quoted from it is what reading at the label covers.
 **When the node's page is released to readers who do not read its label.** A
 kept reading is a source the page rests on: it is among the sources the
 Redactor may open, among the sources the page
-says exist, the supplier's name and the words of its stake are a part of
-the page, and the party whose system it was read from is among those whose
+says exist, the supplier's name and the words of its stake, where one was
+recorded, are a part of the page, and the party whose system it was read from is among those whose
 consent is asked ([releasing-a-page.md](releasing-a-page.md),
 "The gate"). That holds whether or not an instance was recorded from the
 reading: the call's row says which node its run was working on, and keeping

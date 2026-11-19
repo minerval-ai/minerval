@@ -42,6 +42,7 @@ import { toolUseLoop } from "../client.js";
 import { loadConfig } from "../../config.js";
 import { getUsageContext, withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { executeSkillTool, getActiveSkillToolDefinitions, isSkillTool } from "../tools/skill-tools.js";
@@ -167,7 +168,12 @@ async function runConsistencyCheckerImpl(input: {
 }, sess: AgentSession): Promise<ConsistencyCheckerResult> {
   const config = loadConfig();
   const model = input.model ?? config.consistencyModel;
-  const system = getConsistencyCheckerSystemPromptBlocks();
+  // The systems this deployment is connected to, where an administrator
+  // offered them to this role. Two judgments that disagree may turn on what an organization's systems hold.
+  // Read, never kept: a judgment that should rest on a reading is recorded
+  // by an agent that keeps it (tools/connection-tools.ts).
+  const connectionTools = await createConnectionTools({ config, role: "consistency_checker", keeps: false });
+  const system = withConnectionsBlock(getConsistencyCheckerSystemPromptBlocks(), connectionTools);
   const reportTools = createReportTools({ model });
   // ...and the finding channel (#394): a pattern across many claims is a
   // finding, and a sweep is where one is seen (#742).
@@ -186,6 +192,7 @@ async function runConsistencyCheckerImpl(input: {
   const kinds = [...CONSISTENCY_FLAG_KINDS];
   const { listingTextChars, listingSummaryChars, rationaleChars, noteChars } = CONSISTENCY_BOUNDS;
   const tools: Tool[] = [
+    ...connectionTools.definitions,
     ...reportTools.definitions,
     ...findingTools.definitions,
     ...skillLoader.definitions,
@@ -403,6 +410,8 @@ async function runConsistencyCheckerImpl(input: {
       }
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const connection = await connectionTools.execute(name, toolInput);
+      if (connection !== null) return connection;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
       const loaded = await skillLoader.execute(name, toolInput);

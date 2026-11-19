@@ -295,7 +295,7 @@ async function runLookoutImpl(input: {
   // The connections at this lookout's label, to look and not to keep: a
   // lookout records nothing on the graph, and what it raises says what it
   // called so that a Steward can make the call itself.
-  const connectionTools = await createConnectionTools({ config, keeps: false });
+  const connectionTools = await createConnectionTools({ config, role: "lookout", keeps: false });
 
   // Queued inputs in full, up to EVENTS_FULL_CHARS; the rest one line each.
   const shownInFull: string[] = [];

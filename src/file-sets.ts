@@ -9,8 +9,8 @@
  *
  * The rules, each with where it is kept:
  *
- *  - A set has a name, the party whose material it is with that party's
- *    stake, and one label. It is added from a signed-in session, at a label
+ *  - A set has a name, the party whose material it is, that party's stake
+ *    where one is worth giving, and one label. It is added from a signed-in session, at a label
  *    the person adding it may read, and each such act is logged
  *    (services/file-set-service.ts, routes/file-sets.ts). Sets exist only
  *    in a members-only deployment; the public graph has none and runs none
@@ -54,7 +54,7 @@ export type FileSetOrigin = (typeof FILE_SET_ORIGINS)[number];
 
 /** A set's name is shown to people and to agents, so it is kept to a name. */
 export const FILE_SET_NAME_MAX_CHARS = 120;
-/** The stake is recorded on every source kept from the set, at the length a source's interest takes. */
+/** A stake, where given, is recorded on every source kept from the set, at the length a source's interest takes. */
 export const FILE_SET_STAKE_MAX_CHARS = 1000;
 /** What whoever adds a set says it holds, in a sentence or two. */
 export const FILE_SET_DESCRIPTION_MAX_CHARS = 500;
@@ -149,8 +149,9 @@ export const FILE_SET_NOTICE =
   "new files are a new set. Each file is hashed when it is added and the set has one hash over all " +
   "of them, so what an agent's analysis read can be checked later. Agents whose work is at a label " +
   "that reads the set's label can read every file in it, by running commands in a sandbox that has " +
-  "no network. The set belongs to the party you name, and the stake you give for that party is " +
-  "recorded on every source an agent keeps from it, as a fact about the source. A directory " +
+  "no network. The set belongs to the party you name. A stake you give for that party is recorded " +
+  "on every source an agent keeps from it, as a fact about the source; give none where there is " +
+  "nothing to say beyond whose files they are. A directory " +
   "registered where it lies is not copied: keep it as it is, because a file that no longer matches " +
   "its hash cannot be kept as a source.";
 
