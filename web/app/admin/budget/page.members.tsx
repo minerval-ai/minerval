@@ -881,8 +881,9 @@ function Destination({ destination, billedTo }: { destination: OutgoingUsageRepo
   return (
     <Banner tone="warn">
       <span>
-        Nowhere is set for reports to go, so they are prepared and wait. Whoever runs the deployment sets <code className="w-mono">USAGE_REPORT_URL</code> with{" "}
-        <code className="w-mono">USAGE_REPORT_API_KEY</code>, or <code className="w-mono">USAGE_REPORT_DIR</code>.
+        Nowhere is set for reports to go, so they are prepared and wait. An administrator connects the deployment to minerval.ai on the
+        public graph&rsquo;s Overview, and they are sent over its connection; or whoever runs the deployment sets{" "}
+        <code className="w-mono">USAGE_REPORT_DIR</code> to write them as files for an admin to upload.
       </span>
     </Banner>
   );

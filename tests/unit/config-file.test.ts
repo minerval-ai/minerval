@@ -126,7 +126,6 @@ describe("the table of settings", () => {
         "OPENAI_API_KEY",
         "OPENROUTER_API_KEY",
         "PANGRAM_API_KEY",
-        "PUBLIC_GRAPH_API_KEY",
         "MINERVAL_HOSTING_TOKEN",
         "OIDC_SIGNING_KEY",
         "PUBLISH_SIGNING_KEY",
@@ -137,7 +136,6 @@ describe("the table of settings", () => {
         "SQL_CALLER_DB_PASSWORD",
         "STRIPE_SECRET_KEY",
         "STRIPE_WEBHOOK_SECRET",
-        "USAGE_REPORT_API_KEY",
       ].sort()
     );
     for (const key of secretConfigFileKeys()) expect(key.field, key.key).toBeUndefined();

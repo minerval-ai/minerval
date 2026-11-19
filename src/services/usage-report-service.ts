@@ -325,12 +325,11 @@ export async function prepareUsageReports(
  * Where this deployment's reports go: a directory, where one is set; else
  * Minerval's server, at USAGE_REPORT_URL or, where the deployment is
  * connected, at its connection's address. Online, a report is signed with
- * the connection key where the deployment is connected and holds
- * report_usage, and carries the account key otherwise
- * (docs/organizations.md, "Billing").
+ * the connection key, and is sent only where the deployment is connected and
+ * holds report_usage (docs/organizations.md, "Billing").
  */
 export function usageReportDestination(
-  config: Pick<Config, "usageReportUrl" | "usageReportApiKey" | "usageReportDir"> = loadConfig(),
+  config: Pick<Config, "usageReportUrl" | "usageReportDir"> = loadConfig(),
   connection: Pick<Connection, "apiUrl" | "grants"> | null = null
 ):
   | { kind: "online"; url: string; ready: boolean; signed: boolean }
@@ -340,7 +339,7 @@ export function usageReportDestination(
   const url = config.usageReportUrl || (connection ? `${connection.apiUrl.replace(/\/+$/, "")}/usage-reports` : "");
   if (url) {
     const signed = connection !== null && connection.grants.includes("report_usage");
-    return { kind: "online", url, ready: signed || config.usageReportApiKey.length > 0, signed };
+    return { kind: "online", url, ready: signed, signed };
   }
   return { kind: "none" };
 }
@@ -388,8 +387,8 @@ export async function sendUsageReports(
         connection
           ? "This deployment is connected to minerval.ai and does not hold report_usage. An admin of the " +
             "organization grants it there; until then reports are prepared and kept, and sent oldest first after."
-          : "USAGE_REPORT_URL is set, and this deployment is neither connected to minerval.ai nor has " +
-            "USAGE_REPORT_API_KEY. Connect it, with report_usage.",
+          : "USAGE_REPORT_URL is set, and this deployment is not connected to minerval.ai, so reports are prepared and kept. " +
+            "An administrator connects it on the public graph's Overview, and an admin of the organization gives it report_usage.",
     };
   }
 
@@ -412,9 +411,8 @@ export async function sendUsageReports(
           method: "POST",
           headers: {
             "content-type": "application/json",
-            ...(destination.signed && connection
-              ? { authorization: signedAuthorization(connection, destination.url, "POST", report.body) }
-              : { "x-api-key": config.usageReportApiKey }),
+            // Ready only where it is connected and holds report_usage: always signed.
+            authorization: signedAuthorization(connection!, destination.url, "POST", report.body),
           },
           body: report.body,
           signal: AbortSignal.timeout(SEND_TIMEOUT_MS),

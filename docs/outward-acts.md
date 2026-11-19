@@ -12,8 +12,8 @@ Four things hold for every part.
 
 - **A private graph acts on the public graph as an ordinary account and
   only as one.** Every act here is a call to a route any account could
-  call, with the key of the organization's own account
-  (`PUBLIC_GRAPH_API_URL`, `PUBLIC_GRAPH_API_KEY`). Where the public graph
+  call, as the organization, over the deployment's connection to
+  minerval.ai, signed with its own key ([organizations.md](organizations.md)). Where the public graph
   lacked such a route, one was added for every account ("What the public
   graph gained", below). Nothing on the public graph knows what a private
   graph is.

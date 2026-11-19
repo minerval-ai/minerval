@@ -119,6 +119,9 @@ export const ORGANIZATION_ROUTES: Readonly<Record<string, OrganizationRouteRule>
   "GET /grants": { member: "member", deployment: "any" },
   "GET /reports/mine/:id": { member: "member", deployment: "any" },
   "GET /contributions/:id": { member: "member", deployment: "any" },
+  "GET /grant-conversations": { member: "member", deployment: "any" },
+  // Its organization's publisher record, which Overview reads to say whether its signing key is registered.
+  "GET /publishers/:account_id": { member: "member", deployment: "any" },
   "GET /grant-conversations/:id": { member: "member", deployment: "any" },
 };
 

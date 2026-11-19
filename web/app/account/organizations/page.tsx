@@ -58,8 +58,8 @@ export default async function OrganizationsPage() {
             <div key={c.id} className="acct-job">
               <p className="acct-prose">
                 <b>{c.account.display_name}</b> asks to become the organization <b>{c.name}</b>. It keeps its record:{" "}
-                {plural(c.keeps.published_pages, "published page")}, {plural(c.keeps.publishers, "publisher registration")} and{" "}
-                {plural(c.keeps.live_api_keys, "live API key")}. The shared login stops reaching it, and you become its admin. Asked{" "}
+                {plural(c.keeps.published_pages, "published page")} and {plural(c.keeps.publishers, "publisher registration")}. The shared login
+                stops reaching it, its {plural(c.keeps.live_api_keys, "live API key")} stop working, and you become its admin. Asked{" "}
                 {dateish(c.asked_at)}.
               </p>
               <ActionForm action={acceptConversionAction} submit={`Accept and become admin of ${c.name}`}>

@@ -191,14 +191,15 @@ const configSchema = z.object({
   // nothing. Read only where READS=members; the public graph reports to
   // no one.
   publicGraphPrice: z.enum(["metered", "flat"]).default("metered"),
-  // Where a metered deployment's usage reports go. One of the two:
-  //   usageReportUrl: the address of the receiving route on Minerval's server
-  //     (for instance https://api.minerval.ai/usage-reports), with
-  //     usageReportApiKey, an API key of the organization's account there;
+  // Where a metered deployment's usage reports go. Over its connection to
+  // minerval.ai, signed with its own key and the report_usage grant, by
+  // default; or:
+  //   usageReportUrl: another address of the receiving route, the operator's
+  //     override of the connection's (signed the same way);
   //   usageReportDir: a directory the reports are written to as files, for
-  //     a deployment whose network is restricted, to be handed over.
-  // With neither, reports are prepared and kept, readable by the
-  // administrators, and sent once one is set.
+  //     a deployment the network does not join, to be uploaded by an admin.
+  // Until it is connected, reports are prepared and kept, readable by the
+  // administrators, and sent once it is.
   usageReportUrl: z
     .string()
     .trim()
@@ -219,7 +220,6 @@ const configSchema = z.object({
       }
     )
     .default(""),
-  usageReportApiKey: z.string().trim().default(""),
   usageReportDir: z.string().trim().default(""),
   // The first UTC day a metered deployment reports, as YYYY-MM-DD. Empty by
   // default: the first day reported is the first day anything was metered.
@@ -1509,8 +1509,6 @@ const configSchema = z.object({
   // the network does not reach it. Either makes this deployment an applier.
   mirrorFeedUrl: z.string().default(""),
   mirrorFeedDir: z.string().default(""),
-  // The key the applier presents when it fetches a batch (x-api-key).
-  mirrorFeedApiKey: z.string().default(""),
   // The feed's public key or keys, comma-separated, each as GET
   // /mirror/feed/key gives it. A batch is applied only if one of these
   // verifies its signature; the key a batch carries is never trusted.
@@ -1556,7 +1554,14 @@ const configSchema = z.object({
   // design starts, because these acts say where the organization's
   // attention is.
   publicActsBy: z.enum(["direct", "fund", "administer"]).default("direct"),
-  publicGraphApiKey: z.string().default(""),
+  // The bearer keys a deployment reached the public graph with before it had
+  // a connection of its own (docs/organizations.md, phase 9), where any is
+  // still set. Nothing reads them: the preflight says to connect and remove
+  // them.
+  retiredKeysSet: z
+    .string()
+    .default("")
+    .transform((s) => s.split(",").filter((k) => k.length > 0)),
   // The token Minerval's provisioning gives a deployment Minerval runs. Sent
   // when it connects to minerval.ai, which accepts "Minerval's machines" as
   // where it runs only with it; set, the Connect drawer shows that answer
@@ -1697,7 +1702,6 @@ export function loadConfig(): Config {
     modelPrices: process.env.MODEL_PRICES,
     publicGraphPrice: process.env.PUBLIC_GRAPH_PRICE || undefined,
     usageReportUrl: process.env.USAGE_REPORT_URL,
-    usageReportApiKey: process.env.USAGE_REPORT_API_KEY,
     usageReportDir: process.env.USAGE_REPORT_DIR,
     usageReportFrom: process.env.USAGE_REPORT_FROM,
     usageReportIntervalSeconds: process.env.USAGE_REPORT_INTERVAL_SECONDS || undefined,
@@ -1949,7 +1953,6 @@ export function loadConfig(): Config {
     mirrorBatchMaxBytes: process.env.MIRROR_BATCH_MAX_BYTES,
     mirrorFeedUrl: process.env.MIRROR_FEED_URL,
     mirrorFeedDir: process.env.MIRROR_FEED_DIR,
-    mirrorFeedApiKey: process.env.MIRROR_FEED_API_KEY,
     mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
     mirrorFeedNextPublicKeys: process.env.MIRROR_FEED_NEXT_PUBLIC_KEYS,
     mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
@@ -1958,7 +1961,7 @@ export function loadConfig(): Config {
     publicGraphApiUrl: process.env.PUBLIC_GRAPH_API_URL,
     publicActsBy: process.env.PUBLIC_ACTS_BY || undefined,
     privateRunFetches: process.env.PRIVATE_RUN_FETCHES || undefined,
-    publicGraphApiKey: process.env.PUBLIC_GRAPH_API_KEY,
+    retiredKeysSet: ["PUBLIC_GRAPH_API_KEY", "MIRROR_FEED_API_KEY", "USAGE_REPORT_API_KEY"].filter((k) => (process.env[k] ?? "").trim() !== "").join(","),
     minervalHostingToken: process.env.MINERVAL_HOSTING_TOKEN,
     oidcSigningKey: process.env.OIDC_SIGNING_KEY,
     publishedPageMaxBytes: process.env.PUBLISHED_PAGE_MAX_BYTES,

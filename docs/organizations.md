@@ -1039,11 +1039,21 @@ Each phase is one pull request or a few, and leaves things working.
    on the words an organization puts on the record (`contributions.named_person`:
    contributions, stated views, proposals); funding, taking up a request and
    the rest stay the organization's alone.
-9. **Bearer keys go.** `MIRROR_FEED_API_KEY`, `PUBLIC_GRAPH_API_KEY` and
-   `USAGE_REPORT_API_KEY` are removed from `config.ts`, `config-file.ts`,
-   `env.example`, the preflight and the docs. Old keys on converted
-   organization accounts are revoked, after each organization's page has
-   shown, from phase 1 on, which of them are still used.
+9. **Bearer keys go** (built). `MIRROR_FEED_API_KEY`, `PUBLIC_GRAPH_API_KEY`
+   and `USAGE_REPORT_API_KEY` are removed from `config.ts`, `config-file.ts`,
+   the compose file, `env.example`, the preflight and the docs: a deployment
+   reaches minerval.ai only over its connection, signed, or by hand. The
+   preflight's public-graph check fails while one is still set on a
+   deployment that is not connected, and says to remove it where it is
+   (`retiredKeysSet`). `PUBLIC_GRAPH_API_URL`, `USAGE_REPORT_URL` and
+   `MIRROR_FEED_URL` stay as overrides of the connection's address. A
+   connected deployment's reads that the account key used to cover are
+   opened to it (`GET /grant-conversations`, `GET /publishers/:account_id`).
+   Old keys on converted organization accounts are revoked by migration
+   0199, each on its organization's log as the operator's, with the reason;
+   and a conversion accepted from now on stops the account's keys as it
+   stops its sign-in tokens. Keys a member made to act as the organization
+   are the member's and stay.
 
 Each phase also does what CLAUDE.md asks of a new route: its MCP side in
 `src/mcp/route-tools.ts`, its label in `src/server/request-labels.ts`, a

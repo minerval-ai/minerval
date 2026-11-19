@@ -19,7 +19,7 @@
  *     account presents on the public graph to register this deployment's
  *     key (administer, session).
  *   POST /outbound/registration/send: the same statement, sent by this
- *     deployment through the organization's account (PUBLIC_GRAPH_API_KEY),
+ *     deployment over its connection to minerval.ai,
  *     so that nobody has to carry it there by hand (administer, session).
  *
  * Where the line is. Everything a package carries has already passed the
@@ -219,7 +219,7 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
       summary:
         "Register this deployment's signing key to the organization's account on the public graph, through that account (administrators, from a signed-in session)",
       description:
-        "Reads which account PUBLIC_GRAPH_API_KEY belongs to, signs the registration statement for it with the deployment's key, and sends it to the " +
+        "Reads the organization's account over the deployment's connection, signs the registration statement for it with the deployment's key, and sends it to the " +
         "public graph's POST /publishers. `declared_interest` is what the organization says of its own interest in what it publishes, shown with every " +
         "page. The registration, the key and the hosting words are a public record there; registering again retires the earlier registration. " +
         "Recorded on the log of acts on the public graph (GET /outside/log).",

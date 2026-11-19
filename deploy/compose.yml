@@ -146,13 +146,11 @@ services:
       - FILE_SET_UPLOAD_MAX_BYTES
       - SANDBOX_HOUR_COST_MICRO_USD
       - MIRROR_FEED_URL
-      - MIRROR_FEED_API_KEY
       - MIRROR_FEED_PUBLIC_KEYS
       - MIRROR_APPLY_INTERVAL_SECONDS
       - DEPLOYMENT_HOSTING
       - PUBLISH_SIGNING_KEY
       - PUBLIC_GRAPH_API_URL
-      - PUBLIC_GRAPH_API_KEY
       # The key a credential given on a connection's page is sealed with.
       - CREDENTIAL_ENCRYPTION_KEY
       - CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS
@@ -161,7 +159,6 @@ services:
       - LABEL_POSTURE
       - PUBLIC_GRAPH_PRICE
       - USAGE_REPORT_URL
-      - USAGE_REPORT_API_KEY
       - USAGE_REPORT_FROM
     volumes:
       - file_sets:/var/lib/minerval/file-sets

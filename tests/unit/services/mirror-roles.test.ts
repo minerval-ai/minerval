@@ -45,7 +45,6 @@ describe("a deployment with nothing set for the mirror", () => {
       mirrorSigningKey: "",
       mirrorFeedUrl: "",
       mirrorFeedDir: "",
-      mirrorFeedApiKey: "",
       mirrorFeedPublicKeys: [],
     });
     expect(mirrorRoles(config)).toEqual({ publisher: false, applier: false });

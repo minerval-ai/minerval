@@ -237,10 +237,10 @@ and the writes it signed on the organization's Deployments tab.
 | `PUBLISH_SIGNING_KEY` | `npx tsx scripts/published-page.ts keygen` makes one; keep a copy |
 
 `PUBLIC_GRAPH_API_KEY`, `MIRROR_FEED_API_KEY` and `USAGE_REPORT_API_KEY`, the
-account keys an earlier version needed, still work for a deployment that is
-not connected, and are not used by one that is. They go in a later version.
-`PUBLIC_GRAPH_API_URL` and `USAGE_REPORT_URL`, where set, override the
-connection's address.
+account keys an earlier version needed, are read by nothing now: a deployment
+reaches minerval.ai only over its connection, or by hand. The preflight
+says to remove any still set. `PUBLIC_GRAPH_API_URL` and `USAGE_REPORT_URL`,
+where set, override the connection's address.
 
 Then an administrator presses "Register key" on the public graph's Overview
 (`/admin/outside`): the deployment signs the registration for the

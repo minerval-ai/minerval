@@ -400,7 +400,7 @@ describe("what a member may do as the organization", () => {
 });
 
 describe("converting a shared account", () => {
-  it("keeps the account's id and keys, and the shared login no longer reaches it", async () => {
+  it("keeps the account's id and record, stops its keys, and the shared login no longer reaches it", async () => {
     const shared = await signIn("acme-research");
     const dana = await signIn("dana");
     const key = await createApiKey({ userId: shared.id, name: "deploy" });
@@ -426,18 +426,20 @@ describe("converting a shared account", () => {
     );
     expect(row).toEqual({ kind: "organization", external_id: `org:${shared.id}`, email: null });
 
-    // The old key still works, and is listed for the admins to revoke.
-    const withKey = await app.inject({ method: "GET", url: "/users/me", headers: { "x-api-key": key.plaintext } });
-    expect(withKey.json().user.id).toBe(shared.id);
-    const old = await as(dana, { url: `/organizations/${shared.id}/old-keys` });
-    expect(old.json().keys.map((k: { id: string }) => k.id)).toEqual([key.key.id]);
-    expect((await as(dana, { method: "DELETE", url: `/organizations/${shared.id}/old-keys/${key.key.id}` })).statusCode).toBe(200);
+    // Its keys stop with the conversion (docs/organizations.md, phase 9): nothing is left for the admins to revoke.
     expect((await app.inject({ method: "GET", url: "/users/me", headers: { "x-api-key": key.plaintext } })).statusCode).toBe(401);
+    const old = await as(dana, { url: `/organizations/${shared.id}/old-keys` });
+    expect(old.json().keys).toEqual([]);
 
     // Signing in with the shared login again makes a new, empty person account.
     const again = await signIn("acme-research", shared.externalId);
     expect(again.id).not.toBe(shared.id);
-    expect(await logKinds(shared.id)).toEqual(["converted", "old_key_revoked"]);
+    expect(await logKinds(shared.id)).toEqual(["converted"]);
+    const [converted] = await rawQuery<{ detail: { api_keys_revoked: string[] } }>(
+      `SELECT detail FROM organization_log WHERE organization_id = $1 AND kind = 'converted'`,
+      [shared.id]
+    );
+    expect(converted!.detail.api_keys_revoked).toEqual([key.key.keyPrefix]);
   });
 
   it("refuses a first admin who is not another person's own account", async () => {

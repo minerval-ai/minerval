@@ -3,9 +3,9 @@
  * (docs/outward-acts.md).
  *
  * A deployment acts on the public graph as an ordinary account and only as
- * one. Everything here is a call to a route any account could call, with
- * the key of the organization's own account (PUBLIC_GRAPH_API_URL,
- * PUBLIC_GRAPH_API_KEY; outbound-service.ts has the client):
+ * one. Everything here is a call to a route any account could call, made
+ * as the organization over this deployment's connection, signed with its
+ * own key (outbound-service.ts has the client):
  *
  *   - opening a public mandate with the public Grantmaker, funding it,
  *     backing an existing one, funding a public node's assessment, and
@@ -449,7 +449,7 @@ export async function publicAccount(): Promise<Record<string, unknown>> {
     if (me.status !== 200) {
       return {
         connected: false,
-        in_words: `The public graph did not accept this deployment (${me.status}). Where it is connected, an admin of the organization on minerval.ai can see whether its grants were withdrawn; where it uses an account key, an operator checks PUBLIC_GRAPH_API_KEY.`,
+        in_words: `The public graph did not accept this deployment (${me.status}). An admin of the organization on minerval.ai can see on its Deployments tab whether this deployment's grants were withdrawn or it was retired.`,
         who_may_act: who,
         signing_key_fingerprint: key,
         ...(await registrationOf(null, null, key)),
@@ -787,7 +787,7 @@ export async function registerPublisherOutside(input: { declaredInterest?: strin
   }
   const account = me.status === 200 ? String(me.json.user?.external_id ?? "") : "";
   if (!account) {
-    throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not accept this deployment (${me.status}). Where it is connected, an admin of the organization on minerval.ai can see whether its grants were withdrawn; where it uses an account key, an operator checks PUBLIC_GRAPH_API_KEY.`, 409);
+    throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not accept this deployment (${me.status}). An admin of the organization on minerval.ai can see on its Deployments tab whether this deployment's grants were withdrawn or it was retired.`, 409);
   }
   let statement;
   try {

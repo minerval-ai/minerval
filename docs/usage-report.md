@@ -46,7 +46,6 @@ One of two ways, set by the deployment:
 | Setting | |
 | --- | --- |
 | `USAGE_REPORT_URL` | The address of the receiving route on Minerval's server. Not needed by a deployment connected to minerval.ai, whose reports go to its connection's address, signed with its own key, where it holds `report_usage` ([organizations.md](organizations.md), "Billing") |
-| `USAGE_REPORT_API_KEY` | For a deployment that is not connected: an API key of the organization's account with Minerval. A secret, and not used by a connected deployment |
 | `USAGE_REPORT_DIR` | A directory. Each report is written there as `usage-report-<day>-r<revision>.json`, to be handed over, for a deployment whose network is restricted |
 | `USAGE_REPORT_FROM` | The first UTC day reported, `YYYY-MM-DD`. Empty by default |
 | `USAGE_REPORT_INTERVAL_SECONDS` | How often the worker runs. Default 3600 |

@@ -210,14 +210,15 @@ cap_text_analysis_owls = 0.1
 
 # The public graph as this deployment reaches it: its API, which permission's
 # holders may act there in the organization's name, and how the deployment
-# pays toward it (metered or flat). The account key is PUBLIC_GRAPH_API_KEY.
+# pays toward it (metered or flat). It reaches it over its connection, made on
+# the Overview.
 # [public_graph]
 # api_url = "https://api.minerval.ai"
 # acts_by = "direct"
 # price = "metered"
 
-# Where a metered deployment's usage reports go: an address (with
-# USAGE_REPORT_API_KEY) or a directory, never both.
+# Where a metered deployment's usage reports go, where not over its
+# connection: another address, or a directory, never both.
 # [usage_report]
 # url = "https://api.minerval.ai/usage-reports"
 # dir = "/var/lib/minerval/usage-reports"

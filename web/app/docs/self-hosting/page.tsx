@@ -181,10 +181,6 @@ docker compose logs -f api`}</Code>
               <td>The publishing graph's API address. Setting it makes the deployment a mirror. For Minerval's public graph, <code>https://api.claimgraph.io</code></td>
             </tr>
             <tr>
-              <td><code>MIRROR_FEED_API_KEY</code></td>
-              <td>Only for a deployment not connected to minerval.ai: an API key of your organisation&apos;s account there. A connected deployment signs each fetch with its own key and needs the <code>read_feed</code> grant</td>
-            </tr>
-            <tr>
               <td><code>MIRROR_FEED_PUBLIC_KEYS</code></td>
               <td>The feed's public key or keys, comma-separated. A batch that does not verify is not applied. For Minerval's public graph, the <code>public_key</code> that <code>https://api.claimgraph.io/mirror/feed/key</code> answers</td>
             </tr>
@@ -205,7 +201,7 @@ docker compose logs -f api`}</Code>
         </li>
         <li>
           <strong>Connect to minerval.ai</strong>
-          <p>An administrator presses <b>Connect to minerval.ai</b> on the public graph&rsquo;s Overview and asks for the <code>publish</code> grant; an admin of your organisation on minerval.ai approves the code it shows. Released packages are then sent as the gate&apos;s settings say, signed with the deployment&apos;s own key. A deployment that is not connected can still use <code>PUBLIC_GRAPH_API_URL</code> and <code>PUBLIC_GRAPH_API_KEY</code>, or carry a package to the public graph as a file.</p>
+          <p>An administrator presses <b>Connect to minerval.ai</b> on the public graph&rsquo;s Overview; an admin of your organisation on minerval.ai approves it there and gives it <code>publish</code>. Released packages are then sent as the gate&apos;s settings say, signed with the deployment&apos;s own key. A deployment the network does not join connects by hand, and a member of the organisation submits each package on minerval.ai as a file.</p>
         </li>
         <li>
           <strong>Register the key on the public graph</strong>

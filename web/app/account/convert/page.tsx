@@ -50,7 +50,11 @@ export default async function ConvertPage() {
                 ["First admin", `${open.first_admin.display_name}, who must accept from their own session`],
                 [
                   "It keeps",
-                  `${plural(open.keeps.published_pages, "published page")}, ${plural(open.keeps.publishers, "publisher registration")}, ${plural(open.keeps.live_api_keys, "live API key")}, and its owls and record`,
+                  `${plural(open.keeps.published_pages, "published page")}, ${plural(open.keeps.publishers, "publisher registration")}, and its owls and record`,
+                ],
+                [
+                  "It stops",
+                  `${plural(open.keeps.live_api_keys, "live API key")}: a deployment connects to the organization with a key of its own, and a member acts as it signed in as themselves`,
                 ],
               ]}
             />

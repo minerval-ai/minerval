@@ -248,7 +248,6 @@ The settings below stay the operator's overrides: where `MIRROR_FEED_URL` or `MI
 | `MIRROR_BATCH_MAX_BYTES` | Most bytes of rows in one batch. Default 8,000,000 |
 | `MIRROR_FEED_URL` | The publisher's API address. Makes the deployment an applier |
 | `MIRROR_FEED_DIR` | A directory of batch files, in place of an address |
-| `MIRROR_FEED_API_KEY` | The key presented when fetching a batch, by a deployment not connected to minerval.ai. A connected one signs each fetch with its own key and needs the `read_feed` grant ([organizations.md](organizations.md), "Signed requests") |
 | `MIRROR_FEED_PUBLIC_KEYS` | The feed's public key or keys, comma-separated |
 | `MIRROR_APPLY_INTERVAL_SECONDS` | How often the feed is checked. Default 300 |
 

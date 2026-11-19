@@ -144,9 +144,10 @@ nothing of it is outside.
 
 ### Sending
 
-The deployment is a client of the public graph's ordinary API, with the key
-of the organization's own account there (`PUBLIC_GRAPH_API_URL`,
-`PUBLIC_GRAPH_API_KEY`). It holds no other standing.
+The deployment is a client of the public graph's ordinary API, as the
+organization, over its connection to minerval.ai, signed with its own key
+and holding `publish` ([organizations.md](organizations.md)). It holds no
+other standing.
 
 - **The gate's setting sends.** The gate to outside is the same gate as
   any other ([the-gate.md](the-gate.md)), and whether what it releases is

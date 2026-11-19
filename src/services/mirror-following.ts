@@ -465,7 +465,6 @@ export async function mirrorSetup(opts: { notes?: boolean } = {}): Promise<Mirro
     feed = { head: null, latest_snapshot: null, error: null };
     try {
       const res = await publicGraphFetch(`${address.replace(/\/+$/, "")}/mirror/feed?limit=1`, {
-        fallbackKey: bySettings === "url" ? config.mirrorFeedApiKey : undefined,
         signal: AbortSignal.timeout(20_000),
       });
       if (!res.ok) {
