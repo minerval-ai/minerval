@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "../../../auth";
 import type { FormState } from "../../../components/admin/ActionForm";
 import { AccountApiError, createAssessmentOrder } from "../../../lib/account-api";
+import { DEPLOYMENT_GRANTS } from "../../../lib/organization-permissions";
 import { offerMandateOutside } from "../../../lib/inside-api";
 import {
   adoptPublicRequest,
@@ -192,7 +193,7 @@ export async function offerMandateOutsideAction(_previous: FormState, form: Form
 
 // ---- the connection to minerval.ai ----
 
-const GRANTS: readonly DeploymentGrant[] = ["read_feed", "report_usage", "publish", "act"];
+const GRANTS: readonly DeploymentGrant[] = DEPLOYMENT_GRANTS;
 
 export async function connectAction(_prev: FormState, form: FormData): Promise<FormState> {
   const who = await actingUser();

@@ -37,12 +37,13 @@ import {
 import { registerPublisherAction } from "../../releases/actions";
 import { backPublicMandateAction, checkConnectionAction, connectAction, disconnectAction, openPublicMandateAction } from "./actions";
 import { HeadSub, Note, loadAccount, tryRead } from "./parts";
+import { DEPLOYMENT_GRANTS, PERMISSION_WORDS } from "@/lib/organization-permissions";
 
 export const metadata: Metadata = { title: "Public graph · Minerval" };
 export const dynamic = "force-dynamic";
 
 // What this deployment does on the public graph besides releasing pages
-// (docs/outward-acts.md): the organisation's account there, its public owls
+// (docs/outward-acts.md): the organization's account there, its public owls
 // and public mandates, and every act made in its name, with who made it and
 // exactly what was sent. Every member may read this page. The forms are shown
 // to those who hold the permission for acting on the public graph (direct),
@@ -136,7 +137,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
           <HeadSub account={account} problem={accountProblem}>
             Acts there as an ordinary account{" "}
             <Tip>
-              Every act is a call any account on the public graph could make, under the organisation&apos;s own account. Each is made by a
+              Every act is a call any account on the public graph could make, under the organization&apos;s own account. Each is made by a
               person who holds the permission for it, and is listed below with who made it and exactly what was sent.
             </Tip>
           </HeadSub>
@@ -159,7 +160,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
       {account && <AccountStats account={account} mayAdminister={mayAdminister} keyHref={drawerHref("key")} />}
 
       {mayAdminister && drawer === "connect" && (
-        <Drawer title={connection?.state === "waiting" ? "Waiting for your organisation" : "Connect to minerval.ai"} close={close}>
+        <Drawer title={connection?.state === "waiting" ? "Waiting for your organization" : "Connect to minerval.ai"} close={close}>
           <ConnectDrawer connection={connection} />
         </Drawer>
       )}
@@ -182,7 +183,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
           {talksProblem && <Note tone="bad">{talksProblem}</Note>}
           {mandates.length === 0 && drafts.length === 0 ? (
             <div className="w-tbox">
-              <Empty>The organisation funds no mandate on the public graph.</Empty>
+              <Empty>The organization funds no mandate on the public graph.</Empty>
             </div>
           ) : (
             <Table label="Public mandates">
@@ -248,7 +249,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
         title="Activity"
         aside={
           <>
-            every act in the organisation&apos;s name · pages sent are in the <Link href="/outbound">Outbox</Link>
+            every act in the organization&apos;s name · pages sent are in the <Link href="/outbound">Outbox</Link>
           </>
         }
         id="log"
@@ -316,7 +317,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
         <Drawer title={registration ? "Re-register the signing key" : "Register the signing key"} close={close}>
           <p className="w-small" style={{ margin: 0 }}>
             The public graph takes a package only from the account this deployment&apos;s signing key is registered to. Registering names the
-            organisation&apos;s account there as the publisher of what this deployment signs, and says where the deployment runs. Registering
+            organization&apos;s account there as the publisher of what this deployment signs, and says where the deployment runs. Registering
             again retires the earlier registration, which stays on the public record.
           </p>
           {registration?.is_the_current_key === false && (
@@ -331,7 +332,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
                 Declared interest <span className="w-faint">optional</span>
               </label>
               <textarea id="pm-interest" className="w-input" name="declared_interest" rows={3} maxLength={1000} />
-              <span className="w-help">Shown whole beside every page the organisation publishes: what it stands to gain or lose from how those nodes are judged.</span>
+              <span className="w-help">Shown whole beside every page the organization publishes: what it stands to gain or lose from how those nodes are judged.</span>
             </div>
             <span className="w-help">Recorded here with your name and the permissions you hold.</span>
           </WorkForm>
@@ -353,7 +354,7 @@ function AccountStats({ account, mayAdminister, keyHref }: { account: PublicAcco
   );
   const about = [
     account.registration_in_words ? british(account.registration_in_words) : null,
-    r ? `Key ${r.key_fingerprint.slice(0, 16)}, to ${r.account.name ?? r.account.id ?? "the organisation's account"}, ${shortWhen(r.registered_at)}.` : null,
+    r ? `Key ${r.key_fingerprint.slice(0, 16)}, to ${r.account.name ?? r.account.id ?? "the organization's account"}, ${shortWhen(r.registered_at)}.` : null,
     r?.registered_from_here ? `Registered from here${r.registered_from_here.by ? ` by ${r.registered_from_here.by}` : ""}.` : null,
     r?.declared_interest ? `Declared interest: “${r.declared_interest}”` : null,
     r ? `Read from ${r.read_from}.` : null,
@@ -492,12 +493,7 @@ function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const GRANT_WORDS: Record<DeploymentGrant, string> = {
-  read_feed: "Pull the whole mirror feed. It shows only that this deployment exists and when it pulls.",
-  report_usage: "Send one day's total of owls spent, privately to Minerval, for the metered price.",
-  publish: "Register the signing key, and send pages and mandates released at the gate to outside.",
-  act: "Take up requests, open and fund mandates, and spend the organisation's public owls.",
-};
+const GRANT_WORDS = PERMISSION_WORDS;
 
 /** This deployment's connection to minerval.ai (docs/organizations.md, "Connecting"). */
 function ConnectionCard({
@@ -521,7 +517,7 @@ function ConnectionCard({
       >
         <div className="w-row" style={{ flexWrap: "wrap", gap: 6 }}>
           <Pill tone="ok">Connected</Pill>
-          {(["read_feed", "report_usage", "publish", "act"] as DeploymentGrant[]).map((g) => (
+          {DEPLOYMENT_GRANTS.map((g) => (
             <span key={g} title={GRANT_WORDS[g]}>
               <Pill tone={connection.grants.includes(g) ? "ok" : "neu"}>
                 <span className="w-mono">{g}</span> {connection.grants.includes(g) ? "held" : "not held"}
@@ -531,7 +527,7 @@ function ConnectionCard({
         </div>
         <p className="w-muted" style={{ margin: "8px 0 0", fontSize: 12.5 }}>
           Every request to minerval.ai is signed with this deployment&apos;s own key (<span className="w-mono">{connection.key_id?.slice(0, 8)}</span>
-          ), at {connection.api_url}. Grants are set by an admin of {connection.organization?.name ?? "the organisation"} on minerval.ai.
+          ), at {connection.api_url}. Grants are set by an admin of {connection.organization?.name ?? "the organization"} on minerval.ai.
         </p>
         {connection.problem && <Note tone="warn">{british(connection.problem)}</Note>}
       </Section>
@@ -540,7 +536,7 @@ function ConnectionCard({
   return (
     <Section
       title="minerval.ai"
-      aside={state === "waiting" ? "Waiting for an admin of your organisation" : "Not connected"}
+      aside={state === "waiting" ? "Waiting for an admin of your organization" : "Not connected"}
       actions={
         mayAdminister ? (
           <ButtonLink href={connectHref} primary small>
@@ -551,12 +547,12 @@ function ConnectionCard({
     >
       <p className="w-muted" style={{ margin: 0 }}>
         {state === "waiting"
-          ? `Code ${connection?.code ?? ""}: an admin of your organisation approves it on minerval.ai.`
+          ? `Code ${connection?.code ?? ""}: an admin of your organization approves it on minerval.ai.`
           : state === "denied"
-            ? "An admin of the organisation denied the last request. Connect again to ask anew."
+            ? "An admin of the organization denied the last request. Connect again to ask anew."
             : state === "expired"
               ? "The last code expired before anyone approved it. Connect again for a new one."
-              : "Until it is connected, this deployment reaches minerval.ai with the account key in its settings, where it has one. Connecting replaces that with this deployment's own key and the grants an organisation admin chooses."}
+              : "Until it is connected, this deployment reaches minerval.ai with the account key in its settings, where it has one. Connecting replaces that with this deployment's own key and the grants an organization admin chooses."}
       </p>
     </Section>
   );
@@ -567,7 +563,7 @@ function ConnectDrawer({ connection }: { connection: ConnectionView | null }) {
     return (
       <>
         <p className="w-muted" style={{ marginTop: 0 }}>
-          Give this link to an admin of your organisation on minerval.ai. They sign in as themselves, check the code and key id below, and
+          Give this link to an admin of your organization on minerval.ai. They sign in as themselves, check the code and key id below, and
           choose what this deployment may do.
         </p>
         <div className="w-mono" style={{ fontSize: 30, letterSpacing: "0.08em", textAlign: "center", padding: "16px 0", border: "1px dashed var(--w-rule2)", borderRadius: 10 }}>
@@ -594,8 +590,8 @@ function ConnectDrawer({ connection }: { connection: ConnectionView | null }) {
   return (
     <>
       <p className="w-muted" style={{ marginTop: 0 }}>
-        This deployment makes a key of its own and asks your organisation to approve it. You get a short code and a link for an admin of the
-        organisation. The key is kept in this deployment&apos;s database, the owner&apos;s alone, and never leaves the machine.
+        This deployment makes a key of its own and asks your organization to approve it. You get a short code and a link for an admin of the
+        organization. The key is kept in this deployment&apos;s database, the owner&apos;s alone, and never leaves the machine.
       </p>
       <WorkForm action={connectAction} submit="Get a code" primary>
         {replacing && <input type="hidden" name="replace" value="1" />}
@@ -606,7 +602,7 @@ function ConnectDrawer({ connection }: { connection: ConnectionView | null }) {
         <div className="w-field">
           <span className="w-label">Ask for</span>
           <div className="w-options">
-            {(["read_feed", "report_usage", "publish", "act"] as DeploymentGrant[]).map((g) => (
+            {DEPLOYMENT_GRANTS.map((g) => (
               <label key={g} className="w-option">
                 <input type="checkbox" name="grant" value={g} defaultChecked />
                 <div>

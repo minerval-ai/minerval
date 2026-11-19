@@ -201,8 +201,8 @@ nothing else.
   deployment's `act` grant becomes `spend`, `speak`, `propose` and
   `take_up`.
 - **One map of routes.** Which permission each route needs, for a member
-  and for a deployment, is one file keyed by route, as
-  `src/server/deployment-grants.ts` is today. A route not in it refuses
+  and for a deployment, is one file keyed by route,
+  `src/server/organization-routes.ts`. A route not in it refuses
   both ("Acting as the organization", below), and a test fails on a
   route a person can call that writes and is neither in the map nor
   excluded with its reason.
@@ -412,18 +412,20 @@ An organization admin grants each deployment permissions from the
 organization's list ("What an organization grants", above): `read_feed`,
 `report_usage`, `publish`, `spend`, `speak`, `propose` and `take_up`.
 Phase 2 built four: `read_feed`, `report_usage`, `publish`, and `act`,
-which phase 3 splits into the last four.
+which phase 3 split into the last four. A deployment built before the
+split still asks for `act` when it connects, and is given the four.
 
 Any live grant also lets the deployment read its own organization's
 state: `GET /organizations/me` (below), `GET /users/me`, `GET /grants`,
 `GET /reports/mine/:id`, `GET /contributions/:id`,
 `GET /grant-conversations/:id`.
 
-The map lives in one file, `src/server/deployment-grants.ts`, keyed by
+The map lives in one file, `src/server/organization-routes.ts`, keyed by
 route like `src/server/request-labels.ts`. **A route not in it refuses a
 deployment's signature** (`403 NOT_A_DEPLOYMENT_ROUTE`), so a route added
 later is closed to deployments until someone decides otherwise. A test
-fails on a route that is in the map and does not exist.
+fails on a route that is in the map and does not exist, and on a route
+that writes and is neither in it nor listed as a person's with its reason.
 
 A route in the map that the deployment lacks the grant for answers
 `403 GRANT_NOT_HELD`, naming the grant and saying that an admin of the
@@ -884,7 +886,7 @@ Each phase is one pull request or a few, and leaves things working.
    minerval.ai, and converting a shared account. No deployment changes
    yet.
 2. **Connected deployments.** The public graph's side is built: the five
-   tables, the signed method in the auth plugin, `deployment-grants.ts` and
+   tables, the signed method in the auth plugin, `deployment-grants.ts` (now `organization-routes.ts`) and
    its test, `POST /deployments/connect` and its poll, the approve page at
    `/connect`, `GET /organizations/me`, and the organization's Deployments
    tab, with opening a public mandate as the organization on Public acts
@@ -899,7 +901,7 @@ Each phase is one pull request or a few, and leaves things working.
    following, start, pause and check now, refusals with their owner, and
    the batches applied with their notes for administrators. In full: `deployments`, `deployment_grants`,
    `deployment_requests`, `deployment_request_nonces`, the signed-request
-   method in the auth plugin, `deployment-grants.ts` and its test, the
+   method in the auth plugin, `deployment-grants.ts` (now `organization-routes.ts`) and its test, the
    connect flow on both sides, the connection on Overview with its Health
    rows, sidebar signal and Inbox items, the signing client, and the
    mirror applier, usage reports, outbound and outward acts moved onto
@@ -907,10 +909,12 @@ Each phase is one pull request or a few, and leaves things working.
    start, pause and check now, as built. Bearer keys still work beside it: a deployment that has a
    connection uses it, and one that does not falls back to the keys in
    `.env`.
-3. **Acting as the organization.** The permissions list and
+3. **Acting as the organization.** Built so far: the permissions list and
    `organization_grants`, with `deployment_grants` moved into it and a
-   deployment's `act` split; granting members permissions and allowances;
-   one route map for members and deployments, with its test; the switch,
+   deployment's `act` split; granting and withdrawing for members and
+   deployments; one route map for members and deployments
+   (`src/server/organization-routes.ts`), with its test; members acting
+   under their grants. Still to come: allowances; the switch,
    the header and the submit lines, and turned-off acts with their reason
    across the public site; the Assistant acting for the organization,
    charged under `spend`; credentials made for an organization; the

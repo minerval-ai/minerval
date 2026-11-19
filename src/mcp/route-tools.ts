@@ -247,6 +247,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /organizations": { name: "list_organizations" },
   "GET /organizations/:id": { name: "get_organization" },
   "GET /organizations/:id/members": { name: "list_organization_members" },
+  "GET /organizations/:id/grants": { name: "list_organization_grants" },
   "GET /organizations/:id/invitations": { name: "list_organization_invitations" },
   "GET /organizations/:id/log": { name: "get_organization_log" },
   "GET /organizations/:id/old-keys": { name: "list_organization_old_keys" },
@@ -540,7 +541,7 @@ const SESSION_ONLY =
   "credential included) can never mint keys or start a purchase.";
 const ORGANIZATION_SESSION =
   "Decides who speaks for an organization (its name, its members and admins, who is invited, " +
-  "an account becoming one, its old keys), so it is a person's act in their own signed-in session, " +
+  "an account becoming one, its old keys, what each member and deployment may do as it), so it is a person's act in their own signed-in session, " +
   "as registering a publisher is (docs/organizations.md).";
 const ORGANIZATION_INVITATION_LINK =
   "An invitation link is a secret given to one person, opened in their browser while they are signed in. " +
@@ -720,6 +721,8 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PATCH /organizations/:id": ORGANIZATION_SESSION,
   "PUT /organizations/:id/members/:account_id": ORGANIZATION_SESSION,
   "DELETE /organizations/:id/members/:account_id": ORGANIZATION_SESSION,
+  "POST /organizations/:id/grants": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/grants/:grant_id": ORGANIZATION_SESSION,
   "POST /organizations/:id/invitations": ORGANIZATION_SESSION,
   "DELETE /organizations/:id/invitations/:invitation_id": ORGANIZATION_SESSION,
   "GET /organization-invitations/:token": ORGANIZATION_INVITATION_LINK,

@@ -584,7 +584,6 @@ describe("the columns", () => {
       // key was refused): the same whoever asks. Its last_error is the provider's own message for a failure of
       // that kind, and is shown on no surface (deployment-fault-service.ts).
       "deployment_faults",
-      "deployment_grants",
       "deployment_request_nonces",
       "deployment_requests",
       "deployments",
@@ -606,7 +605,9 @@ describe("the columns", () => {
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
-      // Who acts for an organization, the invitations that add them, and its log: who an account is.
+      // Who acts for an organization, what each member and deployment may do as it, the invitations
+      // that add them, and its log: who an account is.
+      "organization_grants",
       "organization_invitations",
       "organization_log",
       "organization_members",

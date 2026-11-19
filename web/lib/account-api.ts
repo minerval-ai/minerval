@@ -69,9 +69,9 @@ export async function accountFetch<T>(
     actingUser?: string;
     noViewer?: true;
     /**
-     * An organization the signed-in admin acts for (docs/organizations.md,
-     * "Acting from minerval.ai"). The API checks that they are its admin and
-     * that the route is one an organization's admin may call for it.
+     * An organization the signed-in person acts as (docs/organizations.md,
+     * "Acting as the organization"). The API checks that they are a live
+     * member and hold the permission the route needs.
      */
     actingOrganization?: string;
   } = {}

@@ -6,12 +6,12 @@
  * code; an admin of an organization approves it, with the grants they
  * choose, from their own session. From then on the deployment signs every
  * request with that key, and each signed request is the organization's,
- * limited to what its grants open (server/deployment-grants.ts).
+ * limited to what its grants open (server/organization-routes.ts).
  */
 import { randomInt } from "node:crypto";
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
-import { DEPLOYMENT_GRANTS, type DeploymentGrant } from "../db/schema.js";
+import { ACT_SPLIT, DEPLOYMENT_GRANTS, type DeploymentGrant } from "../db/schema.js";
 import { HOSTING_WORDS } from "../published-page/verify.js";
 import { keyIdOf, parsePublicKey } from "./mirror-batch.js";
 import { NONCE_MEMORY_SECONDS } from "./request-signature.js";
@@ -41,6 +41,17 @@ export class DeploymentError extends Error {
 
 export function isGrant(value: unknown): value is DeploymentGrant {
   return typeof value === "string" && (DEPLOYMENT_GRANTS as readonly string[]).includes(value);
+}
+
+/**
+ * Grants as a deployment or an admin names them, with phase 2's `act` read as
+ * the four it was split into (docs/organizations.md, "What an organization
+ * grants"): a deployment built before the split still asks for it. Anything
+ * else that is not a grant is left in, so the caller refuses it.
+ */
+export function readGrants(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.flatMap((g) => (g === "act" ? [...ACT_SPLIT] : [g])))];
 }
 
 function makeCode(): string {
@@ -80,7 +91,7 @@ export async function askToConnect(input: ConnectAsk): Promise<{ code: string; e
   if (typeof input.hosting !== "string" || !(input.hosting in HOSTING_WORDS)) {
     throw new DeploymentError("BAD_HOSTING", `hosting is one of ${Object.keys(HOSTING_WORDS).join(", ")}.`, 422);
   }
-  const grants = Array.isArray(input.grants) ? [...new Set(input.grants)] : [];
+  const grants = readGrants(input.grants);
   if (grants.length === 0 || !grants.every(isGrant)) {
     throw new DeploymentError("BAD_GRANTS", `Ask for one or more of ${DEPLOYMENT_GRANTS.join(", ")}.`, 422);
   }
@@ -198,7 +209,7 @@ export async function readConnectRequest(code: string, readerId: string): Promis
     hosting: row.hosting,
     hosting_words: HOSTING_WORDS[row.hosting as keyof typeof HOSTING_WORDS] ?? row.hosting,
     key_id: row.key_id,
-    asked_grants: row.asked_grants.filter(isGrant),
+    asked_grants: readGrants(row.asked_grants).filter(isGrant),
     expires_at: new Date(row.expires_at).toISOString(),
     state: expired(row) ? "expired" : row.state,
     your_organizations: orgs,
@@ -235,8 +246,8 @@ export async function approveConnect(input: {
   return asOwner(() =>
     withTransaction(async (tx) => {
       const row = await openRow(tx, input.code);
-      const asked = new Set(row.asked_grants);
-      const grants = Array.isArray(input.grants) ? [...new Set(input.grants)] : [];
+      const asked = new Set(readGrants(row.asked_grants));
+      const grants = readGrants(input.grants);
       if (!grants.every(isGrant)) throw new DeploymentError("BAD_GRANTS", `Grants are among ${DEPLOYMENT_GRANTS.join(", ")}.`, 422);
       if (!grants.every((g) => asked.has(g))) {
         throw new DeploymentError("GRANT_NOT_ASKED", "Grant only what the deployment asked for. It can ask again for more.", 422);
@@ -252,7 +263,10 @@ export async function approveConnect(input: {
         [input.organizationId, name, row.hosting, row.public_key, row.key_id, row.report_identifier, input.by]
       );
       for (const g of grants) {
-        await tx.query(`INSERT INTO deployment_grants (deployment_id, "grant", granted_by) VALUES ($1, $2, $3)`, [dep!.id, g, input.by]);
+        await tx.query(
+          `INSERT INTO organization_grants (organization_id, deployment_id, permission, granted_by) VALUES ($1, $2, $3, $4)`,
+          [input.organizationId, dep!.id, g, input.by]
+        );
       }
       await tx.query(
         `UPDATE deployment_connect_requests SET state = 'approved', decided_by = $2, decided_at = now(), deployment_id = $3 WHERE id = $1`,
@@ -301,10 +315,10 @@ export interface LiveDeployment {
 const LIVE_SELECT = `
   SELECT d.id, d.name, d.organization_id, c.display_name AS organization_name, c.external_id AS organization_external_id,
          d.public_key, d.key_id, d.hosting, d.approved_at,
-         COALESCE(array_agg(g."grant" ORDER BY g."grant") FILTER (WHERE g.id IS NOT NULL), '{}') AS grants
+         COALESCE(array_agg(g.permission ORDER BY g.permission) FILTER (WHERE g.id IS NOT NULL), '{}') AS grants
     FROM deployments d
     JOIN contributors c ON c.id = d.organization_id AND c.kind = 'organization' AND NOT c.is_suspended
-    LEFT JOIN deployment_grants g ON g.deployment_id = d.id AND g.withdrawn_at IS NULL
+    LEFT JOIN organization_grants g ON g.deployment_id = d.id AND g.withdrawn_at IS NULL
    WHERE d.retired_at IS NULL`;
 
 async function liveDeployment(id: string): Promise<LiveDeployment | null> {
@@ -358,7 +372,7 @@ export async function retireSelf(deploymentId: string): Promise<void> {
         [deploymentId]
       );
       if (!dep) return;
-      await tx.query(`UPDATE deployment_grants SET withdrawn_at = now() WHERE deployment_id = $1 AND withdrawn_at IS NULL`, [deploymentId]);
+      await tx.query(`UPDATE organization_grants SET withdrawn_at = now() WHERE deployment_id = $1 AND withdrawn_at IS NULL`, [deploymentId]);
       await tx.query(
         `INSERT INTO organization_log (organization_id, actor_id, credential, kind, detail)
          VALUES ($1, NULL, 'session', 'deployment_disconnected', $2::jsonb)`,
@@ -397,7 +411,7 @@ export async function listDeployments(organizationId: string): Promise<Array<Rec
     retired_at: Date | null; grants: string[]; last_write: Date | null;
   }>(
     `SELECT d.id, d.name, d.hosting, d.key_id, d.approved_at, a.display_name AS approved_by, d.retired_at,
-            COALESCE((SELECT array_agg(g."grant" ORDER BY g."grant") FROM deployment_grants g WHERE g.deployment_id = d.id AND g.withdrawn_at IS NULL), '{}') AS grants,
+            COALESCE((SELECT array_agg(g.permission ORDER BY g.permission) FROM organization_grants g WHERE g.deployment_id = d.id AND g.withdrawn_at IS NULL), '{}') AS grants,
             (SELECT max(r.at) FROM deployment_requests r WHERE r.deployment_id = d.id) AS last_write
        FROM deployments d LEFT JOIN contributors a ON a.id = d.approved_by
       WHERE d.organization_id = $1

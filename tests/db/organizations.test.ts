@@ -288,19 +288,22 @@ describe("acting for an organization from minerval.ai", () => {
     expect(entry).toMatchObject({ actor_id: dana.id, detail: { route: "/mandates/:id/contribute", status: act.statusCode } });
   });
 
-  it("is refused to a member, on a route that is not a spending act, and without a session", async () => {
+  it("is refused to someone who is not a member, on a person's own route, and without a session", async () => {
     const dana = await signIn("dana");
-    const priya = await signIn("priya");
+    const stranger = await signIn("stranger");
     const org = await makeOrganization(dana);
-    expect((await join(priya, await invite(dana, org, "member"))).statusCode).toBe(200);
 
-    const member = await as(priya, { url: "/users/me", organization: org });
-    expect(member.statusCode).toBe(403);
-    expect(member.json().code).toBe("ADMIN_REQUIRED");
+    const outsider = await as(stranger, { url: "/users/me", organization: org });
+    expect(outsider.statusCode).toBe(403);
+    expect(outsider.json().code).toBe("NOT_A_MEMBER");
 
     const mint = await as(dana, { method: "POST", url: "/api-keys", payload: { name: "org key" }, organization: org });
     expect(mint.statusCode).toBe(403);
     expect(mint.json().code).toBe("NOT_AN_ORGANIZATION_ACT");
+
+    const publish = await as(dana, { method: "POST", url: "/published-pages", payload: {}, organization: org });
+    expect(publish.statusCode).toBe(403);
+    expect(publish.json().code).toBe("NOT_AN_ORGANIZATION_ACT");
 
     const key = await createApiKey({ userId: dana.id, name: "dana's key" });
     const keyed = await app.inject({
@@ -310,6 +313,77 @@ describe("acting for an organization from minerval.ai", () => {
     });
     expect(keyed.statusCode).toBe(403);
     expect(keyed.json().code).toBe("ORGANIZATION_SESSION_REQUIRED");
+  });
+});
+
+describe("what a member may do as the organization", () => {
+  async function withMember() {
+    const dana = await signIn("dana");
+    const priya = await signIn("priya");
+    const org = await makeOrganization(dana);
+    expect((await join(priya, await invite(dana, org, "member"))).statusCode).toBe(200);
+    return { dana, priya, org };
+  }
+
+  it("reads as the organization, and acts only under the permissions granted, each separately", async () => {
+    const { dana, priya, org } = await withMember();
+    const me = await as(priya, { url: "/users/me", organization: org });
+    expect(me.statusCode, me.body).toBe(200);
+    expect(me.json().user).toMatchObject({ id: org, kind: "organization" });
+
+    const before = await as(priya, { method: "POST", url: `/mandates/${randomUUID()}/contribute`, payload: { owls: 1 }, organization: org });
+    expect(before.statusCode).toBe(403);
+    expect(before.json()).toMatchObject({ code: "PERMISSION_NOT_HELD", permission: "spend" });
+    expect(before.json().error).toMatch(/needs spend.*Members tab/);
+
+    const grant = await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "speak", account_id: priya.id } });
+    expect(grant.statusCode, grant.body).toBe(201);
+    const stillNot = await as(priya, { method: "POST", url: `/mandates/${randomUUID()}/contribute`, payload: { owls: 1 }, organization: org });
+    expect(stillNot.json()).toMatchObject({ code: "PERMISSION_NOT_HELD", permission: "spend" });
+
+    const spend = await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "spend", account_id: priya.id } });
+    expect(spend.statusCode, spend.body).toBe(201);
+    const after = await as(priya, { method: "POST", url: `/mandates/${randomUUID()}/contribute`, payload: { owls: 1 }, organization: org });
+    expect(after.statusCode).not.toBe(403);
+
+    const members = await as(priya, { url: `/organizations/${org}/members` });
+    const row = members.json().members.find((m: { account_id: string }) => m.account_id === priya.id);
+    expect(row.permissions).toEqual(["speak", "spend"]);
+    const mine = await as(priya, { url: `/organizations/${org}` });
+    expect(mine.json().organization.permissions).toEqual(["speak", "spend"]);
+  });
+
+  it("is granted and withdrawn by admins only, and withdrawing takes effect at once", async () => {
+    const { dana, priya, org } = await withMember();
+    const byMember = await as(priya, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "spend", account_id: priya.id } });
+    expect(byMember.statusCode).toBe(403);
+    expect(byMember.json().code).toBe("ADMIN_REQUIRED");
+
+    const given = await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "spend", account_id: priya.id } });
+    const grantId = given.json().grants.find((g: { account_id: string }) => g.account_id === priya.id).id as string;
+    const gone = await as(dana, { method: "DELETE", url: `/organizations/${org}/grants/${grantId}` });
+    expect(gone.statusCode, gone.body).toBe(200);
+    const refused = await as(priya, { method: "POST", url: `/mandates/${randomUUID()}/contribute`, payload: { owls: 1 }, organization: org });
+    expect(refused.json().code).toBe("PERMISSION_NOT_HELD");
+    expect(await logKinds(org)).toEqual(expect.arrayContaining(["granted", "withdrew"]));
+  });
+
+  it("gives a member only a member's permissions, and an admin nothing, since they hold all", async () => {
+    const { dana, priya, org } = await withMember();
+    const publish = await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "publish", account_id: priya.id } });
+    expect(publish.statusCode).toBe(422);
+    expect(publish.json().code).toBe("BAD_PERMISSION");
+    const toAdmin = await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "spend", account_id: dana.id } });
+    expect(toAdmin.json().code).toBe("ADMIN_HOLDS_ALL");
+  });
+
+  it("are withdrawn when the member leaves, so one added again starts with none", async () => {
+    const { dana, priya, org } = await withMember();
+    await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "speak", account_id: priya.id } });
+    expect((await as(priya, { method: "DELETE", url: `/organizations/${org}/members/${priya.id}` })).statusCode).toBe(200);
+    expect((await join(priya, await invite(dana, org, "member"))).statusCode).toBe(200);
+    const mine = await as(priya, { url: `/organizations/${org}` });
+    expect(mine.json().organization.permissions).toEqual([]);
   });
 });
 

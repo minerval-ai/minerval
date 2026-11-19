@@ -162,7 +162,8 @@ export const fetchPublicAccount = (who: string) => get<PublicAccount>("/outside/
 
 // ---- this deployment's connection to minerval.ai (docs/organizations.md, "Connecting") ----
 
-export type DeploymentGrant = "read_feed" | "report_usage" | "publish" | "act";
+export type { DeploymentGrant } from "./organization-permissions";
+import type { DeploymentGrant } from "./organization-permissions";
 
 export interface ConnectionView {
   connected: boolean;
