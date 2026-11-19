@@ -22,6 +22,8 @@ export interface ActingOrganization {
   name: string;
   role: "admin" | "member";
   permissions: MemberPermission[];
+  /** What is left of their allowance on spend, where an admin set one (micro-USD). */
+  allowanceLeftMicroUsd?: number;
 }
 
 const ActingContext = createContext<ActingOrganization | null>(null);
@@ -137,5 +139,13 @@ export function ActingLine({ permission, ownWhy }: { permission: MemberPermissio
       </p>
     );
   }
-  return <p className="acting-line">Sent as {acting.name}.</p>;
+  const left =
+    permission === "spend" && acting.allowanceLeftMicroUsd !== undefined
+      ? ` Your allowance on its owls has ${(acting.allowanceLeftMicroUsd / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 })} owls left.`
+      : "";
+  return (
+    <p className="acting-line">
+      Sent as {acting.name}.{left}
+    </p>
+  );
 }

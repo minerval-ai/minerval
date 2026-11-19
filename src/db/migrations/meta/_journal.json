@@ -1352,6 +1352,13 @@
       "when": 1795110464139,
       "tag": "0192_credentials_acting_for",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1795111970837,
+      "tag": "0193_spend_allowances",
+      "breakpoints": true
     }
   ]
 }

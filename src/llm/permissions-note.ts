@@ -60,6 +60,7 @@ export function organizationNote(
         organizationName: string;
         role: "admin" | "member";
         permissions: readonly string[];
+        allowanceLeftMicroUsd?: number;
         withheld: ReadonlyArray<{ tool: string; permission: string | null; reason: string }>;
       }
     | undefined
@@ -84,6 +85,10 @@ export function organizationNote(
     `Your user started this conversation acting as the organization ${name}, so in it you work for ${name}. ` +
     `What you do on the public graph is ${name}'s: the public record shows ${name}, and its log shows your user. ` +
     `Your own work here is charged to ${name}'s owls, not your user's. ${holds}` +
+    (actingFor.allowanceLeftMicroUsd !== undefined
+      ? ` An admin of ${name} set your user an allowance on what they spend of its owls: $${(actingFor.allowanceLeftMicroUsd / 1_000_000).toFixed(2)} is left of it, ` +
+        `and it bounds everything you spend here, your own work included, as the balance does. It does not renew; an admin raises it.`
+      : "") +
     (lines.length > 0
       ? ` The tools that need what your user does not hold as ${name} are not offered to you here:\n${lines.join("\n")}\n` +
         `An admin of ${name} grants a permission, on its Members tab. You cannot, and your user cannot grant one to themselves.`

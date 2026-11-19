@@ -120,6 +120,18 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   llm/permissions-note.ts). Each of its calls is checked again against the
   user's standing then, in the auth plugin for a call dispatched to a route
   and in the MCP server for a hand-written tool.
+- **Allowances.** An admin may set an allowance on a grant of spend (`PUT
+  /organizations/:id/grants/:grant_id/allowance`): the organization's owls
+  that member or deployment may spend in all, with no period, raised only by
+  an admin. Every debit of an account runs under its balance lock
+  (`withOwlBalanceLock`), and there a debit made as the organization counts
+  against the spender's allowance (`services/organization-spending.ts`): one
+  that would pass it is rolled back and refused, `402 ALLOWANCE_EXCEEDED`
+  with the figures; a metered charge takes no more than is left. What is
+  left is on the member's view of the organization, in their Assistant's
+  brief, and on the deployment's `GET /organizations/me`. What a debit held
+  is what counts; owls returned to the organization later go to its
+  balance. An admin spends from the whole balance.
 - **No free owls.** The free tier's signup and monthly grants are a
   person's; an organization and the platform account get none.
 - **A shared login becomes one in place** (`POST /account-conversion`,

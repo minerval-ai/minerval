@@ -69,6 +69,11 @@ export interface OrganizationView {
    * an admin, the ones they were granted for a member.
    */
   permissions?: MemberPermission[];
+  /**
+   * What is left of the reader's allowance on spend, in micro-USD, where an
+   * admin set one; absent where they spend from the whole balance.
+   */
+  allowance_left_micro_usd?: number;
 }
 
 export interface MemberView {
@@ -91,6 +96,10 @@ export interface GrantView {
   deployment_id: string | null;
   granted_at: string;
   granted_by: string | null;
+  /** For spend: the owls (micro-USD) this grantee may spend, or null for the whole balance. */
+  allowance_micro_usd: number | null;
+  /** What they have spent against it. */
+  allowance_spent_micro_usd: number;
 }
 
 export interface InvitationView {
@@ -119,14 +128,26 @@ interface OrgRow {
   created_at: Date;
 }
 
-function view(row: OrgRow, role?: OrganizationRole, granted: readonly MemberPermission[] = []): OrganizationView {
+function view(row: OrgRow, role?: OrganizationRole, granted: readonly MemberPermission[] = [], allowanceLeft?: number): OrganizationView {
   return {
     id: row.id,
     name: row.display_name,
     external_id: row.external_id,
     created_at: new Date(row.created_at).toISOString(),
     ...(role ? { role, permissions: role === "admin" ? [...MEMBER_PERMISSIONS] : [...granted] } : {}),
+    ...(role === "member" && allowanceLeft !== undefined ? { allowance_left_micro_usd: allowanceLeft } : {}),
   };
+}
+
+/** What is left of a person's allowances on spend, by organization, where one is set. */
+async function allowancesOf(accountId: string): Promise<Map<string, number>> {
+  const rows = await rawQuery<{ organization_id: string; left: string }>(
+    `SELECT organization_id, GREATEST(0, allowance_micro_usd - allowance_spent_micro_usd)::bigint AS left
+       FROM organization_grants
+      WHERE account_id = $1 AND permission = 'spend' AND withdrawn_at IS NULL AND allowance_micro_usd IS NOT NULL`,
+    [accountId]
+  );
+  return new Map(rows.map((r) => [r.organization_id, Number(r.left)]));
 }
 
 /** A person's live member grants, by organization. */
@@ -251,8 +272,8 @@ export async function listMyOrganizations(accountId: string): Promise<Organizati
       ORDER BY c.display_name`,
     [accountId]
   );
-  const granted = await grantedTo(accountId);
-  return rows.map((r) => view(r, r.role, granted.get(r.id)));
+  const [granted, allowances] = await Promise.all([grantedTo(accountId), allowancesOf(accountId)]);
+  return rows.map((r) => view(r, r.role, granted.get(r.id), allowances.get(r.id)));
 }
 
 /** One organization, for one of its members. Anyone else is told it does not exist. */
@@ -266,7 +287,7 @@ export async function getOrganization(organizationId: string, accountId: string)
     [organizationId, accountId]
   );
   if (!row) throw NOT_FOUND();
-  return view(row, row.role, (await grantedTo(accountId, organizationId)).get(organizationId));
+  return view(row, row.role, (await grantedTo(accountId, organizationId)).get(organizationId), (await allowancesOf(accountId)).get(organizationId));
 }
 
 /** The reader's role, or a refusal that says the organization does not exist. */
@@ -598,15 +619,23 @@ interface GrantRow {
   deployment_id: string | null;
   granted_at: Date;
   granted_by: string | null;
+  allowance_micro_usd: string | null;
+  allowance_spent_micro_usd: string;
 }
 
 function grantView(r: GrantRow): GrantView {
-  return { ...r, granted_at: new Date(r.granted_at).toISOString() };
+  return {
+    ...r,
+    granted_at: new Date(r.granted_at).toISOString(),
+    allowance_micro_usd: r.allowance_micro_usd === null ? null : Number(r.allowance_micro_usd),
+    allowance_spent_micro_usd: Number(r.allowance_spent_micro_usd),
+  };
 }
 
 async function liveGrants(organizationId: string): Promise<GrantView[]> {
   const rows = await rawQuery<GrantRow>(
-    `SELECT g.id, g.permission, g.account_id, g.deployment_id, g.granted_at, b.display_name AS granted_by
+    `SELECT g.id, g.permission, g.account_id, g.deployment_id, g.granted_at, b.display_name AS granted_by,
+            g.allowance_micro_usd, g.allowance_spent_micro_usd
        FROM organization_grants g LEFT JOIN contributors b ON b.id = g.granted_by
       WHERE g.organization_id = $1 AND g.withdrawn_at IS NULL
       ORDER BY g.granted_at`,
@@ -728,6 +757,50 @@ export async function withdrawGrant(input: { organizationId: string; grantId: st
 }
 
 /**
+ * Set what a grant of spend allows (admins): a sum of the organization's owls
+ * the member or deployment may spend in all, counting what they have spent
+ * already, or null to spend from the whole balance. It has no period, and
+ * an admin raises it as they choose (docs/organizations.md, "Decisions").
+ */
+export async function setAllowance(input: {
+  organizationId: string;
+  grantId: string;
+  allowanceOwls: number | null;
+  by: string;
+}): Promise<GrantView[]> {
+  const owls = input.allowanceOwls;
+  if (owls !== null && !(Number.isFinite(owls) && owls >= 0)) {
+    throw new OrganizationError("BAD_ALLOWANCE", "An allowance is a number of owls, 0 or more, or none.", 422);
+  }
+  await inTransaction(async (tx) => {
+    const org = await lockOrganization(tx, input.organizationId);
+    const byRole = await roleOf(tx, org.id, input.by);
+    if (!byRole) throw NOT_FOUND();
+    if (byRole !== "admin") throw ADMINS_ONLY();
+    if (!isUuid(input.grantId)) throw new OrganizationError("GRANT_NOT_FOUND", "No live grant of this organization has that id.", 404);
+    const micro = owls === null ? null : Math.round(owls * 1_000_000);
+    const [row] = await tx.query<{ permission: string; account_id: string | null; deployment_id: string | null; spent: string }>(
+      `UPDATE organization_grants SET allowance_micro_usd = $3
+        WHERE id = $1 AND organization_id = $2 AND withdrawn_at IS NULL AND permission = 'spend'
+        RETURNING permission, account_id, deployment_id, allowance_spent_micro_usd AS spent`,
+      [input.grantId, org.id, micro]
+    );
+    if (!row) throw new OrganizationError("GRANT_NOT_FOUND", "No live grant of spend of this organization has that id.", 404);
+    await log(tx, {
+      organizationId: org.id,
+      actorId: input.by,
+      kind: "allowance_set",
+      detail: {
+        allowance_owls: owls,
+        spent_owls: Number(row.spent) / 1_000_000,
+        ...(row.account_id ? { account_id: row.account_id } : { deployment_id: row.deployment_id }),
+      },
+    });
+  });
+  return liveGrants(input.organizationId);
+}
+
+/**
  * A person's standing in an organization right now, for acting as it: their
  * role and live permissions, or null where they are not a live member of a
  * live organization.
@@ -755,11 +828,12 @@ export async function memberStanding(
 export async function actingStandingOf(
   organizationId: string,
   accountId: string
-): Promise<{ organizationName: string; role: OrganizationRole; permissions: MemberPermission[] } | null> {
+): Promise<{ organizationName: string; role: OrganizationRole; permissions: MemberPermission[]; allowanceLeftMicroUsd?: number } | null> {
   const standing = await memberStanding(organizationId, accountId);
   if (!standing) return null;
   const [org] = await rawQuery<{ display_name: string }>(`SELECT display_name FROM contributors WHERE id = $1`, [organizationId]);
-  return { organizationName: org?.display_name ?? "the organization", ...standing };
+  const left = standing.role === "member" ? (await allowancesOf(accountId)).get(organizationId) : undefined;
+  return { organizationName: org?.display_name ?? "the organization", ...standing, ...(left !== undefined ? { allowanceLeftMicroUsd: left } : {}) };
 }
 
 // ---- credentials made for the organization --------------------------------

@@ -19,6 +19,7 @@ import {
   grantPermission,
   organizationCheckout,
   revokeOrganizationCredential,
+  setGrantAllowance,
   withdrawGrant,
   removeMember,
   renameOrganization,
@@ -243,6 +244,22 @@ export async function revokeCredentialAction(_prev: FormState, form: FormData): 
   }
   revalidatePath(page(id));
   return { notice: "Revoked." };
+}
+
+export async function setAllowanceAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const id = field(form, "organization_id");
+  const raw = field(form, "allowance_owls");
+  const owls = raw === "" ? null : Number(raw);
+  if (owls !== null && !(Number.isFinite(owls) && owls >= 0)) return { error: "An allowance is a number of owls, or blank for none." };
+  try {
+    await setGrantAllowance(who, id, field(form, "grant_id"), owls);
+  } catch (err) {
+    return said(err, "The allowance could not be set.");
+  }
+  revalidatePath(page(id));
+  return { notice: owls === null ? "No allowance: the whole balance." : `Allowance set to ${owls} owls in all.` };
 }
 
 export async function withdrawGrantAction(_prev: FormState, form: FormData): Promise<FormState> {

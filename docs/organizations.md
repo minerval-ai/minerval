@@ -926,8 +926,14 @@ Each phase is one pull request or a few, and leaves things working.
    use as it and told which it was not, with every call checked against
    their standing as it is then; API keys and MCP clients made to act as
    an organization, listed and revoked on its Members tab and revoked when
-   their maker leaves; and the log saying how each act was made. Still to
-   come: allowances, and prizes for organizations: the prize rules
+   their maker leaves; the log saying how each act was made; and
+   allowances on spend (`organization_grants.allowance_micro_usd`), counted
+   under the organization's balance lock for every debit a member or
+   deployment makes as it (`services/organization-spending.ts`), a spend
+   that would pass one refused with `ALLOWANCE_EXCEEDED` and its figures, a
+   metered charge capped at what is left, and what is left told to the
+   member, their Assistant and the deployment. Still to come: prizes for
+   organizations, while prizes are off in production: the prize rules
    ([prizes.md](prizes.md), "What a winner must do") name natural persons
    today, so this needs a new version of the published rules, with an
    entity's tax form (a W-9, or a W-8BEN-E outside the United States) and

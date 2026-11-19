@@ -726,6 +726,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /organizations/:id/members/:account_id": ORGANIZATION_SESSION,
   "POST /organizations/:id/grants": ORGANIZATION_SESSION,
   "DELETE /organizations/:id/grants/:grant_id": ORGANIZATION_SESSION,
+  "PUT /organizations/:id/grants/:grant_id/allowance": ORGANIZATION_SESSION,
   "DELETE /organizations/:id/credentials/:kind/:credential_id": ORGANIZATION_SESSION,
   "POST /organizations/:id/invitations": ORGANIZATION_SESSION,
   "DELETE /organizations/:id/invitations/:invitation_id": ORGANIZATION_SESSION,

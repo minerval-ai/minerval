@@ -17,6 +17,7 @@ import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js"
 import { owlLedger } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { owlsToMicroUsd, type PricedOp } from "./owl.js";
+import { allowanceLeft, countAgainstAllowance } from "./organization-spending.js";
 
 export const OWL_REASONS = {
   purchase: "purchase",
@@ -89,7 +90,11 @@ export async function withOwlBalanceLock<T>(
       `SELECT pg_advisory_xact_lock(hashtextextended('owl-balance:' || $1, 0))`,
       [userId]
     );
-    return fn(tx);
+    const result = await fn(tx);
+    // A debit made as an organization by a member or deployment with an
+    // allowance counts against it, or is rolled back (organization-spending.ts).
+    await countAgainstAllowance(tx, userId);
+    return result;
   });
 }
 
@@ -211,7 +216,9 @@ export async function chargeMetered(input: {
       [input.userId]
     );
     const balance = Math.max(0, Number(row?.balance ?? 0));
-    const charged = Math.min(want, balance);
+    // Spent as an organization, the allowance bounds it as the balance does.
+    const left = await allowanceLeft(tx, input.userId);
+    const charged = Math.min(want, balance, left ?? Number.POSITIVE_INFINITY);
     if (charged > 0) {
       await tx.query(
         `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, op)

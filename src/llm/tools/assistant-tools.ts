@@ -30,8 +30,7 @@ import {
   withheldRouteTools,
 } from "../../mcp/route-tools.js";
 import { NATIVE_TOOL_PERMISSIONS } from "../../server/organization-routes.js";
-import { memberStanding } from "../../services/organization-service.js";
-import { rawQuery } from "../../db/client.js";
+import { actingStandingOf } from "../../services/organization-service.js";
 import type { MemberPermission } from "../../db/schema.js";
 import { REQUEST_LABELS } from "../../server/request-labels.js";
 import { decideRequestLabel } from "../../server/plugins/request-label.js";
@@ -347,6 +346,7 @@ export interface AccountTools {
     organizationName: string;
     role: "admin" | "member";
     permissions: MemberPermission[];
+    allowanceLeftMicroUsd?: number;
     withheld: Array<{ tool: string; permission: MemberPermission | null; reason: string }>;
   };
   /**
@@ -409,13 +409,12 @@ export async function assistantAuthFor(
   label?: string
 ): Promise<RequestAuth | null> {
   if (!user.actingFor) return assistantAuth(user, label);
-  const standing = await memberStanding(user.actingFor.id, user.id);
+  const standing = await actingStandingOf(user.actingFor.id, user.id);
   if (!standing || (standing.role !== "admin" && standing.permissions.length === 0)) return null;
-  const [org] = await rawQuery<{ display_name: string }>(`SELECT display_name FROM contributors WHERE id = $1`, [user.actingFor.id]);
   return {
     ...assistantAuth({ id: user.actingFor.id, externalId: user.actingFor.externalId }, label),
     actingMember: { accountId: user.id, externalId: user.externalId },
-    actingStanding: { organizationName: org?.display_name ?? "the organization", ...standing },
+    actingStanding: standing,
   };
 }
 
