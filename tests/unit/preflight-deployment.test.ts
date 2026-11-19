@@ -3,11 +3,12 @@
  * (src/preflight-deployment.ts): each over facts made up here. What they
  * read from a real database is in tests/db/preflight.test.ts.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import { loadConfig, type Config } from "../../src/config.js";
 import {
   DEPLOYMENT_CHECKS,
+  hostIsLocal,
   isEd25519PrivateKey,
   noDeploymentFacts,
   type DeploymentCheckFacts,
@@ -15,6 +16,9 @@ import {
   type DeploymentTables,
 } from "../../src/preflight-deployment.js";
 import { MODELS } from "../../src/llm/models.js";
+
+vi.mock("server-only", () => ({}));
+vi.mock("../../web/node_modules/server-only/index.js", () => ({}));
 
 // Public Minerval's own settings with no key of any kind, then what a test sets.
 const BARE = { stripeSecretKey: "", stripeWebhookSecret: "", publishSigningKey: "", publicGraphApiUrl: "", publicGraphApiKey: "", sandboxUrl: "", sandboxToken: "", fileSetStoreDir: "", fileSetDirectoryRoot: "", usageReportUrl: "", usageReportDir: "", usageReportApiKey: "", databaseTls: undefined, databaseCaFile: undefined, deploymentHosting: "", modelPrices: [], owls: "sold", reads: "open", env: "development" };
@@ -52,7 +56,7 @@ describe("the checks as a list", () => {
   it("names each once, and blocks agent work on two, each for a reason written beside it", () => {
     expect(DEPLOYMENT_CHECKS.map((c) => c.name)).toEqual([
       "database_tls", "database_owner", "owls", "model_prices", "usage_report", "standing_mandates", "own_organization",
-      "publishing", "public_graph", "public_acts", "private_run_fetches", "connections", "file_sets", "sandbox", "sandbox_confinement",
+      "publishing", "public_graph", "public_acts", "private_run_fetches", "mcp_address", "connections", "file_sets", "sandbox", "sandbox_confinement",
     ]);
     expect(DEPLOYMENT_CHECKS.filter((c) => c.blocking).map((c) => c.name)).toEqual(["sandbox_confinement"]);
   });
@@ -215,6 +219,42 @@ describe("a General mandate at each label", () => {
     // A label with one that holds nothing is nothing to do.
     labels[1] = { label: "sensitive", material: false, held: false, general: true };
     expect(run("standing_mandates", facts({ config: members(), tables: { labels } })).status).toBe("pass");
+  });
+});
+
+describe("the address MCP clients connect to", () => {
+  const at = (publicApiBaseUrl: string) => run("mcp_address", facts({ config: members({ publicApiBaseUrl }) }));
+
+  it("does not apply to a deployment anyone may read", () => {
+    expect(run("mcp_address", facts({ config: config({ publicApiBaseUrl: "http://localhost:3000" }) })).status).toBe("not_applicable");
+  });
+
+  it("fails on an address only this machine or network reaches, and says what to set", () => {
+    for (const base of ["http://localhost:3000", "http://127.0.0.1:3000", "http://api:3000", "https://10.0.0.4", "https://minerval.internal"]) {
+      const outcome = at(base);
+      expect(outcome.status, base).toBe("fail");
+      expect(outcome.message, base).toContain("hosting.api_base_url (PUBLIC_API_BASE_URL)");
+    }
+  });
+
+  it("fails on public Minerval's API, copied from the example config, and on plain HTTP", () => {
+    expect(at("https://api.claimgraph.io").message).toContain("public Minerval's API");
+    expect(at("https://api.claimgraph.io").status).toBe("fail");
+    expect(at("http://api.example.org").status).toBe("fail");
+    expect(at("not an address").status).toBe("fail");
+  });
+
+  it("passes on a public HTTPS address and names the MCP endpoint", () => {
+    const outcome = at("https://api.example.org/");
+    expect(outcome.status).toBe("pass");
+    expect(outcome.message).toContain("https://api.example.org/mcp");
+  });
+
+  it("uses the same rule for a local host as the web app's connect page", async () => {
+    const web = await import("../../web/lib/mcp-address.js");
+    const hosts = ["localhost", "a.localhost", "127.0.0.1", "10.1.2.3", "172.16.0.1", "172.32.0.1", "192.168.1.1", "169.254.1.1",
+      "[::1]", "fd00::1", "api", "minerval.local", "box.internal", "api.example.org", "8.8.8.8", "fc.example.org"];
+    for (const host of hosts) expect(web.hostIsLocal(host), host).toBe(hostIsLocal(host));
   });
 });
 

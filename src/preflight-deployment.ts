@@ -354,6 +354,73 @@ function checkStandingMandates(facts: DeploymentCheckFacts): DeploymentOutcome {
 }
 
 // ---------------------------------------------------------------------------
+// Where agents connect over MCP
+// ---------------------------------------------------------------------------
+
+/** Public Minerval's own API, which a copied example config names. */
+const PUBLIC_MINERVAL_API = "https://api.claimgraph.io";
+
+/**
+ * Whether a host can only be reached from this machine or its own network:
+ * a loopback or private address, or a name with no dot (a container's name,
+ * such as "api"). The web app's connect page uses the same rule
+ * (web/lib/mcp-address.ts, hostIsLocal); a test holds the two together.
+ */
+export function hostIsLocal(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
+  if (host.includes(":")) return host === "::1" || /^(fc|fd|fe80:)/.test(host);
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+  }
+  return !host.includes(".");
+}
+
+const MCP_FIX =
+  " Set hosting.api_base_url (PUBLIC_API_BASE_URL) to the HTTPS address the API is reached at from the internet, " +
+  "behind a reverse proxy, and restart the API; members then connect at that address followed by /mcp. " +
+  "The web app's own address does not serve: it refuses anyone not signed in, and a client registering itself is not.";
+
+/**
+ * Hosted MCP clients (Claude.ai, Cowork) connect from their provider's
+ * servers, and learn where to register and sign in from the discovery
+ * documents, which name api_base_url as the issuer (routes/oauth.ts). An
+ * address only this network reaches makes every such client fail at
+ * registration, with nothing on the deployment's side to say why.
+ *
+ * Not blocking: agents' work does not wait on it, and clients on the
+ * deployment's own network still connect.
+ */
+function checkMcpAddress({ config }: DeploymentCheckFacts): DeploymentOutcome {
+  if (!members(config)) return notApplicable(NOT_MEMBERS.replace("this setting is", "this check is"));
+  const base = config.publicApiBaseUrl.trim().replace(/\/$/, "");
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    return fail(`hosting.api_base_url is "${base}", which is not an address, so no MCP client can sign in.${MCP_FIX}`);
+  }
+  if (url.origin === PUBLIC_MINERVAL_API) {
+    return fail(
+      `hosting.api_base_url is ${url.origin}, public Minerval's API (copied from the example config?), so MCP clients are sent there to sign in, not here.${MCP_FIX}`
+    );
+  }
+  if (hostIsLocal(url.hostname)) {
+    return fail(
+      `hosting.api_base_url is ${url.origin}, which only this machine or network can reach, so Claude.ai and other hosted MCP clients cannot register or sign in.${MCP_FIX}`
+    );
+  }
+  if (url.protocol !== "https:") {
+    return fail(`hosting.api_base_url is ${url.origin}, which is not HTTPS, and hosted MCP clients connect only over HTTPS.${MCP_FIX}`);
+  }
+  return pass(
+    `MCP clients connect at ${base}/mcp. Hosted ones, such as Claude.ai, reach it from the internet, so it must answer there; this check calls no address.`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Connections, file sets and the sandbox
 // ---------------------------------------------------------------------------
 
@@ -559,6 +626,7 @@ export const DEPLOYMENT_CHECKS: ReadonlyArray<{
   { name: "public_graph", blocking: false, run: checkPublicGraph },
   { name: "public_acts", blocking: false, run: checkPublicActs },
   { name: "private_run_fetches", blocking: false, run: checkPrivateRunFetches },
+  { name: "mcp_address", blocking: false, run: checkMcpAddress },
   { name: "connections", blocking: false, run: checkConnections },
   { name: "file_sets", blocking: false, run: checkFileSets },
   { name: "sandbox", blocking: false, run: checkSandboxService },

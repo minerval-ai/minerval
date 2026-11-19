@@ -4,6 +4,7 @@ import { apiConfigured } from "@/lib/api";
 import { loadClaim, loadDeploymentFront, loadFeatures, type DataSource } from "@/lib/data";
 import type { DeploymentFront } from "@/lib/deployment-front";
 import { membersOnly } from "@/lib/members";
+import { mcpAddress } from "@/lib/mcp-address";
 import { TERRITORIES, territoryHref } from "@/lib/territories";
 import type { ClaimDetail } from "@/lib/types";
 import { topicHref } from "@/components/Topics";
@@ -49,11 +50,12 @@ export default async function Home() {
   const members = membersOnly();
   const front = members ? await loadDeploymentFront() : null;
   const flagship = front ? (process.env.FLAGSHIP_CLAIM_ID ?? front.flagship?.id) : FLAGSHIP;
-  const [{ detail, source }, features] = await Promise.all([
+  const [{ detail, source }, features, address] = await Promise.all([
     flagship
       ? loadClaim(flagship)
       : Promise.resolve({ detail: null as ClaimDetail | null, source: "live" as DataSource }),
     loadFeatures(),
+    members ? mcpAddress() : Promise.resolve(null),
   ]);
 
   return (
@@ -103,6 +105,7 @@ export default async function Home() {
         detail={detail}
         source={source}
         features={features}
+        {...(address ? { apiBase: address.apiBase } : {})}
         emptyMapNote={
           members
             ? "The map opens on the most important node you can read here once one has been assessed."

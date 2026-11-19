@@ -86,6 +86,10 @@ services:
       - READS=members
       - API_KEYS=${WEB_API_KEY:?Set WEB_API_KEY in .env}
       - PUBLIC_WEB_BASE_URL=${SITE_URL:?Set SITE_URL in .env}
+      # Where the API (and MCP, at /mcp) is reached from outside, named as
+      # the OAuth issuer to MCP clients. Unset, it is http://localhost:3000,
+      # which hosted clients such as Claude.ai cannot reach.
+      - PUBLIC_API_BASE_URL=${API_URL:-http://localhost:3000}
       - FILE_SET_STORE_DIR=/var/lib/minerval/file-sets
       - FILE_SET_DIRECTORY_ROOT=/registered
       - SANDBOX_URL=http://sandbox:8080

@@ -164,6 +164,10 @@ const PREFLIGHT_WORDS: Record<string, { title: string; todo?: string }> = {
   public_graph: { title: "The public graph" },
   public_acts: { title: "Who may act on the public graph" },
   private_run_fetches: { title: "The addresses a private run may fetch" },
+  mcp_address: {
+    title: "The address agents connect to",
+    todo: "Put right where the deployment runs: expose the API over HTTPS at a public address, set hosting.api_base_url to it, and restart the API. Connect an agent (/docs/connect) shows members the address.",
+  },
   connections: { title: "Connections' credentials" },
   file_sets: { title: "Where sets of files are kept" },
   sandbox: { title: "The sandbox" },
