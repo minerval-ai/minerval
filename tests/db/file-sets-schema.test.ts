@@ -85,14 +85,15 @@ describe("a file set", () => {
     expect(Number(row!.total_bytes)).toBe(0);
   });
 
-  it("needs a party that exists, a label that is defined, a stake, and where its files are", async () => {
+  it("needs a party that exists, a label that is defined, and where its files are; the stake is optional", async () => {
     const values = (over: Record<string, unknown>) => {
       const row = { name: `Needs ${randomUUID()}`, slug: `s-${randomUUID().slice(0, 8)}`, party_id: party, stake: "s", ...over };
       return [row.name, row.slug, row.party_id, row.stake];
     };
     expect(await failure(INSERT, values({ party_id: null }))).toBe(NOT_NULL_VIOLATION);
     expect(await failure(INSERT, values({ party_id: randomUUID() }))).toBe(FOREIGN_KEY_VIOLATION);
-    expect(await failure(INSERT, values({ stake: null }))).toBe(NOT_NULL_VIOLATION);
+    // None given, none recorded on what is kept (docs/file-sets.md).
+    expect(await failure(INSERT, values({ stake: null }))).toBeNull();
     expect(
       await failure(`INSERT INTO file_sets (name, slug, storage_key, party_id, stake) VALUES ($1, $2, $2, $3, 's')`, [
         `Needs ${randomUUID()}`,
