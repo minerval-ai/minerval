@@ -139,6 +139,24 @@ export interface SetupChecklist {
     /** Connections at labels the administrator does not read: counted, and not among the figures above. */
     not_shown: number;
   };
+  /** Each gate, how far it has come toward the Redactor deciding alone; absent from a build before gates started with a person. */
+  gates?: {
+    aim: string;
+    each: Array<{
+      gate_id: string;
+      from: string;
+      to: string;
+      to_outside: boolean;
+      a_person_decides: string[];
+      the_redactor_decides: string[];
+      open: string[];
+      narrower_settings: number;
+      waiting_on_a_person: number;
+      referred_by_the_redactor: number;
+      oldest_waiting_hours: number | null;
+      agreement: { window_days: number; decided: number; as_proposed: number; kinds_ready: string[] };
+    }>;
+  };
   material: {
     sources: number;
     sources_with_no_party: number;

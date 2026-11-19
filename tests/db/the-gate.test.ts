@@ -26,7 +26,9 @@ import { runAtLabel, withAgent } from "../../src/llm/usage-context.js";
 import { executeAuditTool } from "../../src/llm/tools/audit-tools.js";
 import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
-import { STARTING_MODE } from "../../src/services/gate-kinds.js";
+import { STARTING_MODE, STARTING_MODE_OUTSIDE } from "../../src/services/gate-kinds.js";
+import { ensureBoundaryPolicy } from "../../src/services/redaction-policy.js";
+import { startGatesWithTheRedactor } from "./gate-starting.js";
 import { fundBelow, gateItemFor, offerToGate } from "../../src/services/gate-service.js";
 import { endGateSetting, gatesFor, modesFor, setGate, setGateMode, type GateAuthority } from "../../src/services/gate-settings-service.js";
 import { answerMessages, openInbox, postMessage } from "../../src/services/inbox-service.js";
@@ -107,7 +109,11 @@ async function assessedAtFinance(text: string, jobId: string | null, reasoning: 
 const latestItem = async (releaseId: string) =>
   (await everyRow<{ id: string }>(`SELECT id FROM release_pages WHERE release_id = $1 AND stage <> 'overtaken' ORDER BY opened_at DESC LIMIT 1`, [releaseId]))[0]!.id;
 
+// This file follows items through the Redactor's own decision, as at gates whose authorities handed it every kind.
+let restoreStartingPositions: () => void = () => undefined;
+
 beforeAll(async () => {
+  restoreStartingPositions = startGatesWithTheRedactor();
   await wall();
   await system(async () => {
     const [existing] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
@@ -126,6 +132,7 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
+  restoreStartingPositions();
   await system(async () => {
     // A gate toward `public` keeps its destination side at `public`, which the review labels' cleanup leaves.
     const toPublic = await rawQuery<{ id: string; boundary_id: string }>(
@@ -149,9 +156,33 @@ afterAll(async () => {
 }, 180_000);
 
 describe("where a gate starts", () => {
-  it("is the Redactor's decision for every kind, and open for the bare fact that a request was taken up and for a statement of the payer's own money", () => {
-    expect(STARTING_MODE).toEqual({ page: "redactor", answer: "redactor", taken_up: "open", funding: "redactor", mandate: "redactor", message: "redactor", petition: "redactor", statement: "open", report: "person", proposal: "redactor" });
-  });
+  /** The real starting positions, for the length of `fn`. */
+  const asShipped = async (fn: () => Promise<void>) => {
+    restoreStartingPositions();
+    try {
+      await fn();
+    } finally {
+      restoreStartingPositions = startGatesWithTheRedactor();
+    }
+  };
+  const fresh = (boundaryId: string, kind: "page" | "taken_up" | "statement", from = FINANCE) =>
+    modesFor({ boundaryId, kind, fromLabel: from, nodeId: null, subjectRef: null, replyRef: null, grantIds: [] }, [id.org!]);
+
+  it("is a person's decision after the Redactor for every kind that carries text, and open for the bare fact that a request was taken up and for a statement of the payer's own money", () =>
+    asShipped(async () => {
+      expect(STARTING_MODE).toEqual({ page: "person", answer: "person", taken_up: "open", funding: "person", mandate: "person", message: "person", petition: "person", statement: "open", report: "person", proposal: "person" });
+      const inside = (await ensureBoundaryPolicy({ from: FINANCE, to: COMPANY })).boundary_id;
+      expect((await fresh(inside, "page")).get(id.org!)).toMatchObject({ mode: "person", settingId: null });
+      expect((await fresh(inside, "taken_up")).get(id.org!)).toMatchObject({ mode: "open", settingId: null });
+    }));
+
+  it("is a person's decision at the gate to outside for that a request was taken up, which is the organization's own public statement there", () =>
+    asShipped(async () => {
+      expect(STARTING_MODE_OUTSIDE).toEqual({ ...STARTING_MODE, taken_up: "person" });
+      const outside = (await ensureBoundaryPolicy({ from: COMPANY, to: null })).boundary_id;
+      expect((await fresh(outside, "taken_up", COMPANY)).get(id.org!)).toMatchObject({ mode: "person", settingId: null });
+      expect((await fresh(outside, "page", COMPANY)).get(id.org!)).toMatchObject({ mode: "person", settingId: null });
+    }));
 
   it("offers nothing where the destination already reads the label", async () => {
     expect(await offerToGate({ kind: "mandate", fromLabel: COMPANY, toLabel: FINANCE, subject: { grantId: id.mandate! } })).toBeNull();
@@ -200,6 +231,35 @@ describe("a node's page, finance to company", () => {
     expect(await payersOfGateWork(item)).toEqual([id.mandate]);
     await finishAndPass(item, { answer: "supports" });
     expect((await atCompany(() => receivedPage(item)))!.state).toBe("released_whole");
+  });
+
+  it("what the Redactor refers to a person waits for one, with its recommendation, even where the gate is set to the Redactor's decision", async () => {
+    const node = await assessedAtFinance("The settlement is final", id.mandateJob!, `Counsel thinks the claimant is a public figure.\n\nThe settlement closes the matter.`);
+    const asked = await askRelease({ nodeId: node, pageLabel: FINANCE, toLabel: COMPANY, form: "once", scope: "node", actor: director });
+    const item = await latestItem(asked.release_id);
+    expect((await redactor(item, "get_page_to_redact")).gate).toMatch(/^The Redactor decides/);
+    const missing = await redactor(item, "refer_to_person", { part: 2, recommends: "let_through" });
+    expect(missing).toMatchObject({ success: false, code: "NOTE_NEEDED" });
+    const badly = await redactor(item, "refer_to_person", { part: 2, recommends: "remove it", note: "x" });
+    expect(badly).toMatchObject({ success: false, code: "BAD_RECOMMENDATION" });
+    const referred = await redactor(item, "refer_to_person", { part: 2, recommends: "let_through", note: "Whether the claimant is a public figure is a close call." });
+    expect(referred).toMatchObject({ success: true, recorded: true });
+    await finishAndPass(item, { answer: "supports" });
+    // Everything else went under the gate's setting; the part referred waits.
+    const page = (await atCompany(() => receivedPage(item)))!;
+    expect(page.state).toBe("released_in_part");
+    expect(JSON.stringify(page)).not.toContain("public figure");
+    // The backlog counts it as referred, and the queue leads with it, with the recommendation and why.
+    const backlog = (await gateBacklog({ clearance: [FINANCE, COMPANY, "public"], administer: true, consentParties: [id.org!] }, { boundaryId: id.gate! })) as { gates: any[] };
+    expect(backlog.gates[0].waiting.some((l: any) => l.waiting_on === "referred" && l.parts === 1)).toBe(true);
+    const queue = ((await gateQueue(orgHolder)) as { items: any[] }).items.filter((i) => i.item_id === item);
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ part: 2, referred_by_the_redactor: { recommends: "let_through" }, the_redactor_proposes: "let through" });
+    expect(queue[0].why_referred[0]).toMatch(/close call/);
+    // A person approves it as the Redactor would have, and it goes.
+    expect((await decideAtGate({ actor: orgHolder, items: [{ item_id: item, decision: "approve" }] })).decided).toBe(1);
+    expect((await atCompany(() => receivedPage(item)))!.state).toBe("released_whole");
+    expect(await personActs(item)).toEqual([{ act: "consented", by: "person" }]);
   });
 
   it("open, for everything under one node: it goes as written, no Redactor runs and nothing is paid", async () => {

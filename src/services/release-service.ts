@@ -1433,7 +1433,20 @@ export async function whatTheDestinationHolds(pageId: string, text?: string): Pr
   const page = await pageAtOwnLabel(pageId);
   const [release] = await rawQuery<ReleaseRow>(`SELECT ${RELEASE_COLUMNS} FROM releases WHERE id = $1`, [page.release_id]);
   if (!release) throw new ReleaseError("PAGE_NOT_FOUND", "This item's release could not be read.");
-  const destination = destinationOf(release);
+  return destinationHoldings({ destination: destinationOf(release), pageLabel: page.page_label, toOutside: release.to_outside, text });
+}
+
+/**
+ * What the readers on the other side of a boundary already read, as the
+ * Redactor's look_at_destination gives it, from the boundary alone: the
+ * same for an item under a release and for a trial of the Redactor
+ * (redactor-trial-service.ts). Read with the run's own clearance.
+ */
+export async function destinationHoldings(input: { destination: string; pageLabel: string; toOutside: boolean; text?: string }): Promise<Record<string, unknown>> {
+  const destination = input.destination;
+  const page = { page_label: input.pageLabel };
+  const release = { to_outside: input.toOutside };
+  const text = input.text;
   const [reach] = await rawQuery<{ reads: string[]; this_run_reads_all: boolean }>(
     `SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads,
             minerval_labels_readable_from(ARRAY[$1::text]) <@ minerval_labels_readable_from(ARRAY[$2::text]) AS this_run_reads_all`,
@@ -1702,7 +1715,7 @@ export async function finishRedaction(input: {
         header,
         root,
         // What the Redactor said of a part it held (release-gate-service.ts, redactorActs) is kept with what it was least sure of.
-        JSON.stringify([...(input.leastSure ?? []), ...(Array.isArray(page.least_sure) ? (page.least_sure as Array<{ held?: boolean }>).filter((l) => l?.held) : [])]),
+        JSON.stringify([...(input.leastSure ?? []), ...(Array.isArray(page.least_sure) ? (page.least_sure as Array<{ held?: boolean; referred?: boolean }>).filter((l) => l?.held || l?.referred) : [])]),
         input.model ?? null,
         input.runId ?? null,
       ]

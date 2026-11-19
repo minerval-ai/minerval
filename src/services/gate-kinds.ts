@@ -48,33 +48,54 @@ export type GateMode = keyof typeof GATE_MODES;
 export const isGateMode = (m: unknown): m is GateMode => typeof m === "string" && m in GATE_MODES;
 
 /**
- * Where every gate starts for a kind, until its authorities set otherwise.
- * The Redactor decides, for everything that carries text written at the
- * label: a gate that waited on a person for each item would not move, and
- * one that let text through unread would not be a gate. The bare fact that
- * a request was taken up carries no text from the label it was taken up at,
- * and the asker who is not told may pay for the same work twice, so it
- * starts open.
+ * Where every gate starts for a kind, until its authorities set otherwise
+ * (docs/the-gate.md, "Where a gate starts"). A person decides after the
+ * Redactor, for everything that carries text written at the label. The
+ * Redactor deciding alone is where a gate is meant to end up: a gate that
+ * waits on a person for each item moves at the speed of that person. But a
+ * deployment has no reason yet to trust its Redactor under a policy nobody
+ * has watched it apply, so each gate starts with the people who consent
+ * approving what the Redactor proposes, and its authorities hand a kind to
+ * the Redactor once its proposals are ones they approve as they stand (the
+ * gate's page counts how often that was so). Nothing written at a label
+ * leaves it unread by a person until someone has chosen that it should.
+ *
+ * Two kinds carry no text from the label and start open. The bare fact that
+ * a request was taken up tells the asker not to pay for the same work twice.
+ * A statement is figures in fixed words about the payer's own money, which
+ * the payer's own account already shows as it moves.
  */
 export const STARTING_MODE: Record<GateKind, GateMode> = {
-  page: "redactor",
-  answer: "redactor",
+  page: "person",
+  answer: "person",
   taken_up: "open",
-  funding: "redactor",
-  mandate: "redactor",
-  message: "redactor",
+  funding: "person",
+  mandate: "person",
+  message: "person",
   // A petition carries the run's own words about work at its label.
-  petition: "redactor",
-  // A statement is figures in fixed words about the payer's own money, which the payer's own account
-  // already shows as it moves. It starts open: holding it would hide nothing the payer cannot see.
+  petition: "person",
   statement: "open",
   // An agent's report was not asked for by its readers, and its words were written about the agent's own work
-  // with no thought of leaving the label. It is the one kind that starts with a person. A gate's authorities
-  // leave it to the Redactor where they are content to.
+  // with no thought of leaving the label.
   report: "person",
   // A proposal's words were written for the outside by a person who directs the graph.
-  proposal: "redactor",
+  proposal: "person",
 };
+
+/**
+ * Where the gate to outside starts: as every gate does, and with a person
+ * also for the statement that a request was taken up, which outside is
+ * the organization's own public statement on the public graph, in its name.
+ */
+export const STARTING_MODE_OUTSIDE: Record<GateKind, GateMode> = { ...STARTING_MODE, taken_up: "person" };
+
+/** Where a gate starts for a kind, until its authorities set otherwise. */
+export const startingMode = (kind: GateKind, toOutside: boolean): GateMode =>
+  (toOutside ? STARTING_MODE_OUTSIDE : STARTING_MODE)[kind];
+
+/** Every kind's starting position at a gate. */
+export const startingPositions = (toOutside: boolean): Record<GateKind, GateMode> =>
+  toOutside ? STARTING_MODE_OUTSIDE : STARTING_MODE;
 
 /** What a setting can be narrowed to. A narrower scope is taken before a wider one. */
 export const GATE_SCOPES = {
@@ -104,6 +125,21 @@ export const HOLD_REASONS = {
 export type HoldReason = keyof typeof HOLD_REASONS;
 
 /**
+ * What the Redactor says it would do with something it refers to a person
+ * (refer_to_person). A referral is the one act the Redactor has that a
+ * person does not: it is how the Redactor says "I would decide this, but a
+ * person should", whatever the gate is set to. The item or part then waits
+ * for the people who consent for the parties it rests on, with the
+ * recommendation beside it, and the gate's setting lets nothing of it
+ * through until one of them has acted.
+ */
+export const REFER_RECOMMENDATIONS = {
+  let_through: "let it through as the Redactor left it",
+  hold: "hold it",
+} as const;
+export type ReferRecommendation = keyof typeof REFER_RECOMMENDATIONS;
+
+/**
  * The acts at a gate. The Redactor and a person the gate's authorities put
  * there have the same ones, and neither has one that writes a word.
  */
@@ -125,6 +161,7 @@ export const HOLDERS = {
   redactor: "held by the Redactor",
   person: "held by a person",
   waiting_on_person: "waiting for a person's decision",
+  referred: "referred to a person by the Redactor, with its recommendation",
   delayed: "delayed until a set time",
 } as const;
 export type Holder = keyof typeof HOLDERS;

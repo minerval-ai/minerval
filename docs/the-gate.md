@@ -61,8 +61,9 @@ Two kinds of actor have them, and each has all of them:
 
 - **The Redactor**, a run at the item's label working under the boundary's
   policy (`src/llm/prompts/redactor.ts`). Its tools are `redact`,
-  `restore`, `hold_part`, `delay_part`, `lift_hold` and `finish_redaction`.
-  What it does not hold or delay it lets through.
+  `restore`, `hold_part`, `delay_part`, `lift_hold`, `refer_to_person` and
+  `finish_redaction`. What it does not hold, delay or refer it lets
+  through.
 - **A person** the gate's authorities put there: someone who holds
   `consent` for a party the item rests on. They act through
   `decide_at_gate` (`POST /gate/decisions`), with `consent`,
@@ -86,6 +87,32 @@ again, and the fingerprint before it stays on the record. It can be done
 until the item itself has been released, because what is always shown counts
 the removals. After that a part not yet released can be held.
 
+### Asking a person
+
+The Redactor has one act a person does not: `refer_to_person`, which asks
+the people who consent for an item's parties to decide a part, or the
+whole item, and says what the Redactor would do (`let_through` or `hold`,
+`REFER_RECOMMENDATIONS`) with a note of why. A referral holds whatever the
+gate is set to: under the Redactor's decision, the gate's setting lets
+nothing referred through, and it waits for a person like any item under a
+person's decision. It removes nothing and keeps nothing back of itself; it
+is recorded as an act (`referred`, with the recommendation in `reason`)
+and the note joins what the Redactor was least sure of, at the page's
+label. A person's act on what was referred answers it: approving lets it
+through as the Redactor left it, and holding it holds it. The queue puts
+what was referred first, with `referred_by_the_redactor` and, to a reader
+of the page's label, `why_referred`; the backlog counts it under
+`referred`. The other side is not told of it: they see a part waiting, as
+any part a person has not decided waits.
+
+The Redactor refers where the boundary's policy says to (its guidelines
+for asking a person, `refer_when`, below in "The policy" of
+[releasing-a-page.md](releasing-a-page.md)), and wherever else a decision
+is a close call that someone who knows the organization should make. It
+does its own work first, so that a person who agrees only approves. This
+is how a gate can be left to the Redactor and still bring its people the
+cases they want to see.
+
 Audit checks each round of the Redactor's work before the item goes on
 (`redaction_fidelity`): whether anything the policy protects passed,
 whether anything was removed or held that the policy does not name, and,
@@ -105,15 +132,32 @@ A gate treats an item in one of three ways (`GATE_MODES`):
   rests on. They approve it as proposed, in one act for a whole item, or
   change it with the same acts.
 
-**Where a gate starts.** The Redactor decides, for every kind, with one
-exception: the bare fact that a request was taken up starts open. A gate
-that waited on a person for each item would not move, and the point of a
-deployment is that what a label learns reaches the labels below it and the
-public. A gate that let text through unread would not be a gate. The fact
-that a request was taken up carries no text from the label that took it up,
-and an asker who is not told may pay for the same work twice. A statement
-of what was spent also starts open: it is figures in fixed words about the
-payer's own money, which the payer's own account already shows as it moves.
+**Where a gate starts.** A person decides after the Redactor, for every
+kind that carries text written at the label (`STARTING_MODE` in
+`src/services/gate-kinds.ts`). The Redactor deciding alone is where a gate
+is meant to end up: a gate that waits on a person for each item moves at
+that person's pace, and the point of a deployment is that what a label
+learns reaches the labels below it and the public. But a deployment has no
+reason yet to trust a Redactor it has not watched apply its policy, so each
+gate starts with the people who consent approving what the Redactor
+proposes, and its authorities hand a kind to the Redactor once its
+proposals are ones they approve as they stand ("Toward the Redactor's
+decision", below). Nothing written at a label leaves it unread by a person
+until someone has chosen that it should.
+
+Two kinds start open, because they carry no text from the label. The bare
+fact that a request was taken up tells the asker not to pay for the same
+work twice. A statement of what was spent is figures in fixed words about
+the payer's own money, which the payer's own account already shows as it
+moves. At the gate to outside the first is the organization's own public
+statement on the public graph, in its name, so there it starts with a
+person too (`STARTING_MODE_OUTSIDE`).
+
+A gate that existed before gates started with a person keeps working as it
+did: for each kind whose starting position changed, the old one was
+written down as a setting for the whole boundary (migration
+`0185_gates_start_with_a_person`), shown on its Rules tab as carried over,
+which its authorities can end.
 
 **Refunds are not the gate's.** Money that was not spent returns to its
 payer by the ordinary settlement, as soon as it is released, and the payer
@@ -191,12 +235,55 @@ back is taken in when the mirror batch that carries it is applied
 (`afterMirrorApplied`); the scheduler is the backstop for both. A person who holds `fund` can also
 pay by hand (`fund_release_work`, `POST /releases/:release_id/pages/:page_id/commission`).
 
+## Toward the Redactor's decision
+
+The record already says whether a gate's people can trust its Redactor:
+each item a person decided was either let through as the Redactor
+proposed, or changed. `gateAgreement` (`src/services/gate-trust-service.ts`)
+counts the two by kind over the last 90 days. An item counts as changed
+where a person removed a passage, held, delayed or lifted anything, or
+let through what the Redactor referred with a recommendation to hold. A
+kind with at least 20 items decided and at least 90% let through as
+proposed is marked `suggests_the_redactor`. The figures choose when a
+suggestion is shown; they decide nothing.
+
+They are given with each gate on `GET /gates` (`agreement`), at the head
+of a boundary's Rules tab beside a button that hands a kind to the
+Redactor (a setting for the whole boundary, which can be ended), in the
+setup checklist's `gates` area, and on the Health page, which also raises
+a gate where 10 or more items wait on a person or the oldest has waited 48
+hours (needing someone now past a week), pointing at the policy. Those
+thresholds are for people's attention and limit nothing.
+
+### Trying the Redactor
+
+`POST /gates/:gate_id/trials` (`try_the_redactor` on MCP, the boundary's
+Try the Redactor tab in the web app) runs the Redactor on a sample under
+the boundary's policy, or a draft of its next version (`categories`,
+`refer_when`), and answers with what it did: each part as it would be
+released, each removal with its category and note, each hold, delay and
+referral with what the Redactor would do, and what it was least sure of.
+The run is the Redactor's own prompt and tools, at the label the
+boundary's pages are written at, so it reads that label's policy and
+destination as a real run does; its tools act on a page held in memory
+(`src/services/redactor-trial-service.ts`). Nothing is released, recorded
+at the gate or saved as a policy, and a draft is checked as a save would
+check it. It is open to an administrator or a holder of `consent` who
+reads the label the pages are written at, on the run log at that label,
+and paid from the person's balance within the budget they name, which the
+Redactor is shown; what it does not spend is returned. A sample is at most
+20,000 characters, a halting bound for a request a person waits on. The
+tab can save the draft it tried as the next version.
+
 ## The backlog
 
 `GET /gate/backlog` says, for each gate toward a label the caller reads,
 how many items have not gone through, of what kinds, for how long, and what
 each waits on: the budget, the Redactor's run, Audit's check, the
-Redactor's hold, a person's hold or decision (by party), a delay. It is
+Redactor's hold, a person's hold or decision (by party), a referral by the
+Redactor to a person, a delay. Each gate also says how many items wait on
+a person (`items_waiting_on_a_person`) and how many of those the Redactor
+referred (`items_referred`). It is
 counts and fixed words. No item, node, request or mandate is named, and
 nothing of any item's text is in it. The label things come from is named to
 those who read it and to administrators. To anyone else it is the face
@@ -310,6 +397,10 @@ act of the gate's setting on the item, shown like any delay, and a person
 at the gate may lift it.
 
 ## What is not built
+
+- **A trial takes pasted text only.** Trying the Redactor again on an item
+  that already crossed, to compare with what a person decided, is not
+  built.
 
 - **Whose material a message, a mandate or a funding item rests on is not
   traced.** Their parts are taken to be the organization's own. An

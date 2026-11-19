@@ -198,6 +198,34 @@ export interface SetupChecklist {
      */
     not_shown: number;
   };
+  /**
+   * The gates, and how far each has come toward the Redactor deciding
+   * alone, which is where a gate is meant to end up: each gate starts with
+   * a person deciding after the Redactor so that its people can see the
+   * Redactor's work before they leave it to it (docs/the-gate.md, "Where a
+   * gate starts"). Empty until something has crossed a boundary.
+   */
+  gates: {
+    /** The aim, in words, for the page to say. */
+    aim: string;
+    each: Array<{
+      gate_id: string;
+      from: string;
+      to: string;
+      to_outside: boolean;
+      /** The kinds the gate as a whole leaves to a person, to the Redactor, and open, for every party that has not said. */
+      a_person_decides: string[];
+      the_redactor_decides: string[];
+      open: string[];
+      /** Settings narrower than the whole boundary, or for one party's material, which this summary does not show. */
+      narrower_settings: number;
+      /** Items waiting on a person now, those the Redactor referred among them, and how long the oldest has waited. */
+      waiting_on_a_person: number;
+      referred_by_the_redactor: number;
+      oldest_waiting_hours: number | null;
+      agreement: { window_days: number; decided: number; as_proposed: number; kinds_ready: string[] };
+    }>;
+  };
   material: {
     /** Sources recorded: documents, addresses and kept readings. */
     sources: number;
@@ -411,8 +439,61 @@ export async function setupChecklist(): Promise<SetupChecklist> {
         .map((c) => ({ id: c.id, name: c.name })),
       not_shown: await connectionsNotShown(connections.length),
     },
+    gates: await gatesOverview(),
     material: await materialCounts(parties),
   };
+}
+
+const GATES_AIM =
+  "Every gate starts with a person approving what the Redactor proposes, so that the people who consent can see its work under " +
+  "the policy before they rely on it. The aim is the Redactor deciding alone: a gate that waits on a person moves at that person's " +
+  "pace. Hand a kind to the Redactor once its proposals are ones you approve as they stand, and write what you still want to see " +
+  "into the policy's guidelines for when the Redactor asks a person; it refers those, with its recommendation, whatever the gate is set to.";
+
+/** Each gate, how it is set, what waits on a person there, and how often its people approved the Redactor's proposals as they stood. */
+async function gatesOverview(): Promise<SetupChecklist["gates"]> {
+  const { gatesFor } = await import("./gate-settings-service.js");
+  const { gateBacklog } = await import("./release-gate-service.js");
+  const { gateAgreement, modesAtGate } = await import("./gate-trust-service.js");
+  // Read as an administrator, whom the checklist is for: every gate, each named by its labels.
+  const gates = await gatesFor({ id: "", holding: [], administer: true, consentParties: [], clearance: [] });
+  const backlog = (await gateBacklog({ clearance: [], administer: true, consentParties: [] })) as {
+    gates: Array<{
+      gate_id: string;
+      items_waiting_on_a_person: number;
+      items_referred: number;
+      waiting: Array<{ waiting_on: string; items: number; oldest_waiting_hours: number }>;
+    }>;
+  };
+  const each: SetupChecklist["gates"]["each"] = [];
+  for (const g of gates as Array<{ gate_id: string; from: string; to: string; to_outside: boolean }>) {
+    const { modes, narrower_settings } = await modesAtGate(g.gate_id);
+    const kinds = (mode: string) => Object.entries(modes).filter(([, m]) => m === mode).map(([k]) => k);
+    const waiting = backlog.gates.find((b) => b.gate_id === g.gate_id);
+    const lines = waiting?.waiting ?? [];
+    const onPerson = lines.filter((l) => l.waiting_on === "waiting_on_person" || l.waiting_on === "referred");
+    const agreement = await gateAgreement(g.gate_id);
+    each.push({
+      gate_id: g.gate_id,
+      from: g.from,
+      to: g.to_outside ? "outside" : g.to,
+      to_outside: g.to_outside,
+      a_person_decides: kinds("person"),
+      the_redactor_decides: kinds("redactor"),
+      open: kinds("open"),
+      narrower_settings,
+      waiting_on_a_person: waiting?.items_waiting_on_a_person ?? 0,
+      referred_by_the_redactor: waiting?.items_referred ?? 0,
+      oldest_waiting_hours: onPerson.length > 0 ? Math.max(...onPerson.map((l) => l.oldest_waiting_hours)) : null,
+      agreement: {
+        window_days: agreement.window_days,
+        decided: agreement.decided,
+        as_proposed: agreement.as_proposed,
+        kinds_ready: agreement.by_kind.filter((k) => k.suggests_the_redactor && modes[k.kind] === "person").map((k) => k.kind),
+      },
+    });
+  }
+  return { aim: GATES_AIM, each };
 }
 
 const RELEASED_OUTSIDE_COUNT_REASON =

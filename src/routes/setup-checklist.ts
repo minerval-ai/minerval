@@ -43,7 +43,11 @@ export async function setupChecklistRoutes(app: FastifyInstance): Promise<void> 
         "connections at labels the caller reads and names those that need a look, and says how " +
         "many more there are at labels the caller does not read. `public_graph.signing_key` counts the releases outside that are open, " +
         "at every label, and says when the key the deployment signs with now was last registered on the public graph from here " +
-        "(null where its log has no such registration). `material` counts the sources " +
+        "(null where its log has no such registration). `gates` lists each boundary's gate with the kinds its gate as a whole " +
+        "leaves to a person, to the Redactor and open; how many items wait on a person there now, how many of them the " +
+        "Redactor referred, and the oldest wait; and how often in a recent window its people let the Redactor's proposals " +
+        "through as they stood, with the kinds whose record suggests handing them to the Redactor. `gates.aim` says why " +
+        "gates start with a person and where they are meant to end up. `material` counts the sources " +
         "recorded in the whole deployment, by the party each belongs to, the submitted sources " +
         "waiting for review, and the nodes the graph holds. Nothing here is marked done because a " +
         "person said so, and no row's label is returned.",

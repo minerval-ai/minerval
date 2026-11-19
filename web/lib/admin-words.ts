@@ -537,6 +537,54 @@ function publicGraphItem(c: SetupChecklist): ChecklistItem | null {
   return { ...base, state: "done", facts };
 }
 
+/** A gate as the setup names it: "finance → outside". */
+const gateName = (g: { from: string; to: string }) => `${g.from} → ${g.to}`;
+
+/**
+ * The gates: each starts with a person approving what the Redactor
+ * proposes, and the aim is the Redactor deciding alone. A gate where a
+ * person still decides is not a fault, so it is "to do" and never
+ * "attention" here; what waits too long on a person is raised on the
+ * Health page.
+ */
+function gatesItem(c: SetupChecklist): ChecklistItem | null {
+  const g = c.gates;
+  if (!g) return null;
+  const base = { key: "gates", title: "Gates: toward the Redactor deciding", href: "/gates", link: "Boundaries" };
+  if (g.each.length === 0) {
+    return {
+      ...base,
+      state: "optional",
+      facts: [g.aim, "Nothing has crossed a boundary yet. Each gate starts with a person approving what the Redactor proposes."],
+    };
+  }
+  const withPerson = g.each.filter((e) => e.a_person_decides.length > 0);
+  const ready = g.each.filter((e) => e.agreement.kinds_ready.length > 0);
+  const facts = [
+    g.aim,
+    ...g.each.map((e) => {
+      const parts = [
+        e.a_person_decides.length > 0 ? `a person decides ${listed(e.a_person_decides.map((k) => k.replace(/_/g, " ")))}` : "the Redactor decides everything that carries text",
+        e.agreement.decided > 0
+          ? `${e.agreement.as_proposed} of ${e.agreement.decided} decided by a person in ${e.agreement.window_days} days were let through as proposed`
+          : null,
+        e.waiting_on_a_person > 0 ? `${e.waiting_on_a_person} waiting on a person` : null,
+      ].filter(Boolean);
+      return `${gateName(e)}: ${parts.join("; ")}.`;
+    }),
+  ];
+  if (withPerson.length === 0) return { ...base, state: "done", facts };
+  return {
+    ...base,
+    state: "to_do",
+    facts,
+    next:
+      ready.length > 0
+        ? `People let the Redactor's proposals through as they stood nearly every time at ${listed(ready.map(gateName))}: an administrator can hand those kinds to the Redactor on the gate's Rules tab, and add what they still want to see to the policy's guidelines for asking a person.`
+        : "The people who consent review what waits at each gate. As they do, an administrator refines each boundary's policy, its categories and its guidelines for asking a person, until the Redactor's proposals are ones they approve as they stand, and then hands those kinds to the Redactor.",
+  };
+}
+
 function usageItem(c: SetupChecklist): ChecklistItem {
   const u = c.usage_report;
   const base = { key: "usage_report", title: "The usage report", href: "/admin/budget", link: "Budget" };
@@ -675,7 +723,7 @@ export function checklistItems(c: SetupChecklist): ChecklistItem[] {
     mandatesItem(c),
     owlsItem(c),
     usageItem(c),
-    ...[publicGraphItem(c)].filter((i): i is ChecklistItem => i !== null),
+    ...[publicGraphItem(c), gatesItem(c)].filter((i): i is ChecklistItem => i !== null),
     connectionsItem(c),
     materialItem(c),
   ];

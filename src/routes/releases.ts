@@ -59,7 +59,7 @@ import { listParties } from "../services/party-service.js";
 import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES } from "../services/gate-kinds.js";
 import { fundBelow, offerToGate } from "../services/gate-service.js";
 import { FLOW_WORDS, GateError, endGateSetting, gatesFor, keepCurrentWords, setGate, setGateMode } from "../services/gate-settings-service.js";
-import { policyVersionRecord, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
+import { keptReferWhen, policyVersionRecord, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
 import {
   HOLD_REASONS,
   askedReleases,
@@ -286,6 +286,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
         in_force: policy.in_force,
         starting_text: policy.starting_text,
         categories: policy.categories,
+        refer_when: policy.refer_when,
         text: policy.body,
       });
     },
@@ -782,7 +783,9 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- the policy ----
 
-  app.put<{ Body: { from_label: string; to_label?: string | null; outside?: boolean; categories: Array<{ name: string; covers: string; examples?: string }> } }>(
+  app.put<{
+    Body: { from_label: string; to_label?: string | null; outside?: boolean; categories: Array<{ name: string; covers: string; examples?: string }>; refer_when?: string[] };
+  }>(
     "/redaction-policies",
     {
       schema: {
@@ -791,7 +794,10 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
         description:
           "Give the whole list of categories for the boundary. How removal works and what is shown whenever a page " +
           "is released are the same at every boundary and are not part of what is saved. A category defined by whether " +
-          "a passage is favorable, or one that names something always shown, is refused with the reason.",
+          "a passage is favorable, or one that names something always shown, is refused with the reason. `refer_when` is the " +
+          "list of guidelines for when the Redactor asks a person rather than deciding alone, even where the gate is set " +
+          "to its decision (\"a passage that names a customer, where it is unclear whether the customer is public\"); left " +
+          "out, the version in force keeps its own. A guideline worded by how a passage reflects on someone is refused, as a category is.",
         body: {
           type: "object",
           required: ["from_label", "categories"],
@@ -807,6 +813,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
                 properties: { name: { type: "string" }, covers: { type: "string" }, examples: { type: "string" } },
               },
             },
+            refer_when: { type: "array", items: { type: "string" } },
           },
         },
       },
@@ -821,13 +828,86 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
         if (!labels.has(request.body.from_label) || (to !== null && !labels.has(to))) {
           return reply.code(404).send({ error: "One of those labels is not defined in this deployment.", code: "UNKNOWN_LABEL" });
         }
+        const boundary = { from: request.body.from_label, to };
+        // Left out, the guidelines for asking a person stay as the version in force has them.
+        const referWhen = request.body.refer_when ?? (await keptReferWhen(boundary));
         const saved = await savePolicyVersion({
-          boundary: { from: request.body.from_label, to },
+          boundary,
           categories: request.body.categories.map((c) => ({ name: c.name, covers: c.covers, examples: c.examples ?? "" })),
+          referWhen,
           savedBy: request.auth!.userId!,
         });
         if (!saved.ok) return reply.code(400).send({ error: saved.message, code: saved.code, problems: saved.problems });
         return reply.code(201).send({ policy_id: saved.policy.id, boundary_id: saved.policy.boundary_id, version: saved.policy.version, hash: saved.policy.hash, text: saved.policy.body });
+      },
+    }
+  );
+
+  // ---- trying the Redactor ----
+
+  app.post<{
+    Params: { gate_id: string };
+    Body: { text: string; budget_owls: number; categories?: Array<{ name: string; covers: string; examples?: string }>; refer_when?: string[] };
+  }>(
+    "/gates/:gate_id/trials",
+    {
+      schema: {
+        tags: ["gate"],
+        summary: "Try the Redactor on a sample under this boundary's policy, or a draft of its next version, and see what it does; nothing is released (a gate's authorities)",
+        description:
+          "Runs the Redactor, with its own prompt and tools, on `text` (split into parts at blank lines) at the label this " +
+          "boundary's pages are written at, and answers with what it did: each part as it would be released, each removal with " +
+          "its category and the Redactor's note, each hold and delay, each referral to a person with what the Redactor would " +
+          "do, and what it was least sure of. Nothing is released, recorded at the gate or saved. Give `categories` and/or " +
+          "`refer_when` to try a draft of the next version of the policy (checked as a save would check it); leave both out " +
+          "to try the version in force. It is paid from your balance: name `budget_owls`, which the Redactor is shown as its " +
+          "budget, and what the run does not spend is returned. Open to an administrator or someone who consents for a party " +
+          "who reads the label the boundary's pages are written at. Your sample and the run are on the run log at that label.",
+        params: { type: "object", required: ["gate_id"], properties: { gate_id: UUID } },
+        body: {
+          type: "object",
+          required: ["text", "budget_owls"],
+          properties: {
+            text: { type: "string", minLength: 1, description: "A sample like the things that cross this boundary." },
+            budget_owls: { type: "number", exclusiveMinimum: 0, description: "What the trial may spend; the unspent part is returned." },
+            categories: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["name", "covers"],
+                properties: { name: { type: "string" }, covers: { type: "string" }, examples: { type: "string" } },
+              },
+            },
+            refer_when: { type: "array", items: { type: "string" } },
+          },
+        },
+      },
+      preHandler: authority,
+      handler: async (request, reply) => {
+        const actor = await actorOf(request);
+        const { gateOf } = await import("../services/gate-settings-service.js");
+        const gate = await gateOf(request.params.gate_id);
+        if (!gate || !actor.clearance.includes(gate.from_label)) {
+          return reply.code(404).send({ error: "No gate has that id whose pages are written at a label you read.", code: "GATE_NOT_FOUND" });
+        }
+        const { TrialError, tryTheRedactor } = await import("../services/redactor-trial-service.js");
+        try {
+          const trial = await tryTheRedactor({
+            boundaryId: gate.boundary_id,
+            userId: request.auth!.userId!,
+            text: request.body.text,
+            budgetOwls: request.body.budget_owls,
+            ...(request.body.categories ? { categories: request.body.categories.map((c) => ({ name: c.name, covers: c.covers, examples: c.examples ?? "" })) } : {}),
+            ...(request.body.refer_when ? { referWhen: request.body.refer_when } : {}),
+          });
+          return reply.send(trial);
+        } catch (err) {
+          if (err instanceof TrialError) {
+            const status = err.code === "INSUFFICIENT_OWLS" ? 402 : err.code === "GATE_NOT_FOUND" ? 404 : 400;
+            return reply.code(status).send({ error: err.message, code: err.code, ...(err.problems ? { problems: err.problems } : {}) });
+          }
+          throw err;
+        }
       },
     }
   );

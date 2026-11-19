@@ -237,4 +237,56 @@ describe("parties nobody can consent for", () => {
     expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "redactor", party: { id: "p2" } }])])).toEqual([]);
     expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "person", party: { id: "p1" } }])])).toEqual([]);
   });
+
+  it("names any party where a kind still starts with a person, and none once every such kind is handed on", () => {
+    const starting = { page: "person", taken_up: "open" };
+    expect(partiesReleasedByNobody(withParties(), [gate([], starting)]).map((f) => f.party.id)).toEqual(["p2"]);
+    const handed = [{ mode: "redactor", party: null, kind: "page", scope: "boundary" }];
+    expect(partiesReleasedByNobody(withParties(), [gate(handed, starting)])).toEqual([]);
+    // A narrower setting does not hand the kind on for the whole boundary.
+    const narrower = [{ mode: "redactor", party: null, kind: "page", scope: "mandate" }];
+    expect(partiesReleasedByNobody(withParties(), [gate(narrower, starting)]).map((f) => f.party.id)).toEqual(["p2"]);
+  });
+});
+
+describe("gates on their way to the Redactor", () => {
+  type Each = NonNullable<SetupChecklist["gates"]>["each"][number];
+  const each = (over: Partial<Each> = {}): Each => ({
+    gate_id: "g1",
+    from: "finance",
+    to: "outside",
+    to_outside: true,
+    a_person_decides: ["page", "answer"],
+    the_redactor_decides: [],
+    open: ["statement"],
+    narrower_settings: 0,
+    waiting_on_a_person: 0,
+    referred_by_the_redactor: 0,
+    oldest_waiting_hours: null,
+    agreement: { window_days: 90, decided: 0, as_proposed: 0, kinds_ready: [] },
+    ...over,
+  });
+  const withGates = (...gates: Each[]): SetupChecklist => ({ ...healthy(), gates: { aim: "The aim.", each: gates } });
+
+  it("raises work held up waiting on a person, and points at refining the policy", () => {
+    expect(attentionItems(withGates(each({ waiting_on_a_person: 3, oldest_waiting_hours: 5 }))).filter((i) => i.key.startsWith("gate-"))).toEqual([]);
+    const many = attentionItems(withGates(each({ waiting_on_a_person: 14, referred_by_the_redactor: 2, oldest_waiting_hours: 30 }))).find((i) => i.key === "gate-g1-waiting");
+    expect(many).toMatchObject({ title: "14 items waiting on a person at finance → outside", action: "Refine policy", href: "/gates/g1?tab=policy", tone: "warn" });
+    expect(many!.detail).toContain("2 of them because the Redactor asked a person to decide");
+    const old = attentionItems(withGates(each({ waiting_on_a_person: 1, oldest_waiting_hours: 24 * 9 }))).find((i) => i.key === "gate-g1-waiting");
+    expect(old).toMatchObject({ tone: "bad", consequence: expect.stringContaining("Oldest 9 days") });
+  });
+
+  it("suggests handing a kind to the Redactor where people let its proposals through as they stood", () => {
+    const ready = attentionItems(withGates(each({ agreement: { window_days: 90, decided: 40, as_proposed: 39, kinds_ready: ["page"] } }))).find((i) => i.key === "gate-g1-ready");
+    expect(ready).toMatchObject({ title: "Page at finance → outside could go to the Redactor", consequence: "People let 39 of 40 through as proposed", href: "/gates/g1?tab=rules" });
+  });
+
+  it("is an area of the setup: to do while a person decides, with the aim stated", () => {
+    const tile = areaTiles(withGates(each({ waiting_on_a_person: 4 }))).find((t) => t.key === "gates")!;
+    expect(tile).toMatchObject({ name: "Gates", state: "to_do", href: "/gates", fact: "A person decides at 1 of 1 gate · 4 waiting on a person" });
+    expect(tile.detail).toContain("The aim.");
+    const done = areaTiles(withGates(each({ a_person_decides: [], the_redactor_decides: ["page"] }))).find((t) => t.key === "gates")!;
+    expect(done).toMatchObject({ state: "done", fact: "The Redactor decides at every gate" });
+  });
 });

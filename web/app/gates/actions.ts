@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "../../auth";
 import type { FormState } from "../../components/admin/ActionForm";
 import { AccountApiError } from "../../lib/account-api";
-import { savePolicy, type PolicyCategory } from "../../lib/inside-api";
+import { savePolicy, tryTheRedactor, type PolicyCategory, type RedactorTrial } from "../../lib/inside-api";
 import { endGateSettingAction, setGateAction, setGateModeAction } from "../releases/actions";
 
 // The forms on a boundary's page. The gate's own acts are the releases
@@ -69,6 +69,10 @@ export async function savePolicyVersionAction(_previous: PolicyFormState, form: 
       from_label: String(form.get("from_label") ?? ""),
       ...(to === "outside" ? { outside: true } : { to_label: to }),
       categories,
+      refer_when: String(form.get("refer_when") ?? "")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean),
     });
   } catch (err) {
     if (err instanceof AccountApiError) {
@@ -96,4 +100,50 @@ export async function savePolicyVersionAction(_previous: PolicyFormState, form: 
   refresh();
   revalidatePath("/redaction-policies", "layout");
   redirect(`/gates/${encodeURIComponent(gateId)}?tab=policy&saved=1`);
+}
+
+export interface TrialFormState extends PolicyFormState {
+  trial?: RedactorTrial;
+}
+
+/** The categories and guidelines a form carries, as the policy editor and the trial both send them. */
+function draftOf(form: FormData): { categories: PolicyCategory[]; refer_when: string[] } {
+  const names = form.getAll("category_name").map(String);
+  const covers = form.getAll("category_covers").map(String);
+  const examples = form.getAll("category_examples").map(String);
+  return {
+    categories: names
+      .map((name, i) => ({ name: name.trim(), covers: (covers[i] ?? "").trim(), examples: (examples[i] ?? "").trim() }))
+      .filter((c) => c.name || c.covers),
+    refer_when: String(form.get("refer_when") ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean),
+  };
+}
+
+/** Try the Redactor on a sample under the draft in the form. Nothing is released or saved. */
+export async function tryRedactorAction(_previous: TrialFormState, form: FormData): Promise<TrialFormState> {
+  const session = await auth();
+  const user = session?.externalId ?? null;
+  if (!user) return { error: "You are not signed in." };
+  const budget = Number(form.get("budget_owls") ?? "");
+  if (!(budget > 0)) return { error: "Name a budget for the trial, in owls. What it does not spend is returned." };
+  try {
+    const trial = await tryTheRedactor(user, String(form.get("gate_id") ?? ""), {
+      text: String(form.get("sample") ?? ""),
+      budget_owls: budget,
+      ...draftOf(form),
+    });
+    return { trial };
+  } catch (err) {
+    if (err instanceof AccountApiError) {
+      const problems = ((err.payload?.problems ?? []) as Array<{ category?: string; problem?: string }>)
+        .filter((p) => p.problem)
+        .map((p) => ({ category: p.category ?? "", problem: p.problem! }));
+      return { error: err.message, ...(problems.length > 0 ? { problems } : {}) };
+    }
+    console.error("[gates] a trial of the Redactor failed:", err);
+    return { error: "The trial did not run, and nothing was charged beyond what the run used. Try again in a moment." };
+  }
 }

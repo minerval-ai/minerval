@@ -75,6 +75,7 @@ describe("the Assistant's tools", () => {
       "end_page_flow",
       "hold_gate_item",
       "save_redaction_policy",
+      "try_the_redactor",
       "send_pages_outside",
       "take_up_public_request",
       "decline_public_request",

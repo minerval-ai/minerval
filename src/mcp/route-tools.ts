@@ -357,6 +357,12 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "POST /releases/:release_id/end": { name: "end_page_flow", note: GATE_ACT },
   "POST /releases/:release_id/pages/:page_id/hold": { name: "hold_gate_item", note: GATE_ACT },
   "PUT /redaction-policies": { name: "save_redaction_policy", note: GATE_ACT },
+  "POST /gates/:gate_id/trials": {
+    name: "try_the_redactor",
+    note:
+      "Private and metered: it runs the Redactor on a sample and returns what it did, releasing and saving nothing. " +
+      SPENDS_OWLS,
+  },
   "POST /releases/:release_id/pages/:page_id/commission": { name: "fund_release_work", note: ESCROWS_OWLS },
   // A released page leaves the deployment (docs/published-pages.md). Reading
   // where it stands, and sending, which takes a person: the Assistant

@@ -153,6 +153,7 @@ describe("run visibility", () => {
         "tool:open_reading",
         "tool:record_fidelity_outcome",
         "tool:redact",
+        "tool:refer_to_person",
         "tool:restore",
         "tool:run_command",
       ]);

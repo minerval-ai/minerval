@@ -27,9 +27,9 @@
  *
  * The Redactor works on it under the policy for what leaves the report's
  * label, Audit checks that work, and the gate's setting says whether a
- * person decides as well. A report is the one kind of thing whose gate
- * starts with a person deciding (gate-kinds.ts, STARTING_MODE), because
- * nobody outside asked for it. A person at the gate can let the facts go
+ * person decides as well. Like every kind that carries text, a report's
+ * gate starts with a person deciding (gate-kinds.ts, STARTING_MODE), and
+ * a report has the more reason to: nobody outside asked for it. A person at the gate can let the facts go
  * and hold the words. What the gate lets through is filed on the public
  * graph's ordinary report route under the organization's account, marked
  * private, which keeps it to the maintainers' own view (gate-outside.ts).

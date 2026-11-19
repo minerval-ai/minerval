@@ -365,6 +365,11 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "PUT /gates/:gate_id/settings": { rule: "none", why: RELEASE },
   "DELETE /gates/settings/:setting_id": { rule: "none", why: RELEASE },
   "PUT /redaction-policies": { rule: "none", why: RELEASE },
+  "POST /gates/:gate_id/trials": {
+    rule: "none",
+    why:
+      "Adds no row that carries a label on the request's own connection: the charge and its settlement are owls, and the Redactor's run is opened at the label the boundary's pages are written at by the service (runAtLabel in services/redactor-trial-service.ts), after the route has checked that the person reads it.",
+  },
 
   // ---- connections to an organization's systems: members-only deployments only ----
   "POST /connections": {

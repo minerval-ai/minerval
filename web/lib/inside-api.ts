@@ -255,6 +255,9 @@ export interface QueueItem {
   held?: Array<{ party: { id: string; name: string }; reason: string | null; since: string | null }>;
   /** The Redactor's hold, where it holds the item, and a delay that stands. */
   held_by_the_redactor?: { reason: string; since: string };
+  /** The Redactor asked a person to decide this, with what it would do. Why is in why_referred, for a reader of the page's label. */
+  referred_by_the_redactor?: { recommends: "let_through" | "hold"; in_words: string; since: string };
+  why_referred?: string[];
   delayed_until?: string;
   the_redactor_proposes: "let through" | "hold" | "delay";
   audit: string | null;
@@ -354,6 +357,14 @@ export interface Gate {
   keep_current_owls?: number;
   starting_positions: Record<string, string>;
   settings: GateSetting[];
+  /** How often its people let the Redactor's proposals through as they stood, by kind, over a recent window. */
+  agreement?: {
+    window_days: number;
+    decided: number;
+    as_proposed: number;
+    by_kind: Array<{ kind: string; kind_in_words: string; decided: number; as_proposed: number; suggests_the_redactor: boolean }>;
+    in_words: string;
+  };
   you_may_set: { the_gate_as_a_whole: boolean; for_parties: Array<{ id: string; name: string }> };
 }
 
@@ -458,6 +469,8 @@ export interface PolicyFull {
   in_force: boolean;
   starting_text: boolean;
   categories: PolicyCategory[];
+  /** When the Redactor asks a person rather than deciding alone. */
+  refer_when?: string[];
   text: string;
 }
 
@@ -479,9 +492,40 @@ export function fetchPolicy(externalId: string, id: string): Promise<PolicyFull>
 
 export function savePolicy(
   externalId: string,
-  body: { from_label: string; to_label?: string; outside?: boolean; categories: PolicyCategory[] }
+  body: { from_label: string; to_label?: string; outside?: boolean; categories: PolicyCategory[]; refer_when?: string[] }
 ): Promise<{ policy_id: string; version: number; hash: string }> {
   return accountFetch("/redaction-policies", { method: "PUT", actingUser: externalId, body });
+}
+
+/** What the Redactor did with a sample in a trial (POST /gates/:gate_id/trials). */
+export interface RedactorTrial {
+  trial_id: string;
+  policy: { based_on_version: number | null; draft: boolean; text: string };
+  outcome: {
+    parts: Array<{
+      part: number;
+      as_written: string;
+      as_it_would_be_released: string;
+      removals: Array<{ passage: string; category: string; note: string }>;
+      held?: { reason: string; note: string };
+      delayed_until?: string;
+      referred?: { recommends: string; in_words: string; note: string };
+    }>;
+    whole_item: { held?: { reason: string; note: string }; delayed_until?: string; referred?: { recommends: string; in_words: string; note: string } };
+    least_sure: Array<{ part?: number; passage?: string; why: string }>;
+    finished: boolean;
+  };
+  spent_owls: number;
+  budget_owls: number;
+  run_id: string | null;
+}
+
+export function tryTheRedactor(
+  externalId: string,
+  gateId: string,
+  body: { text: string; budget_owls: number; categories?: PolicyCategory[]; refer_when?: string[] }
+): Promise<RedactorTrial> {
+  return accountFetch(`/gates/${seg(gateId)}/trials`, { method: "POST", actingUser: externalId, body });
 }
 
 // --- sending outside (GET /outbound and the routes beside it) -------------------------

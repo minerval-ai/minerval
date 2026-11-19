@@ -103,8 +103,28 @@ const HOW_REMOVAL_WORKS: readonly string[] = [
   "Each removal is recorded with its category, the version of this policy, and the Redactor's note of why. The note stays at the label the page was written at.",
 ];
 
+/**
+ * What the policy says of asking a person, where it has guidelines for it.
+ * Said only where there are some, so that a policy saved before there were
+ * guidelines reads as it did.
+ */
+function referralSection(referWhen: readonly string[]): string[] {
+  if (referWhen.length === 0) return [];
+  return [
+    "## When the Redactor asks a person",
+    "",
+    "Where one of these holds, the Redactor does not decide alone, even where the gate is set to its decision. It " +
+      "refers the item, or the part, to the people who consent for the parties it rests on, says what it would " +
+      "do, and they decide. It may also refer anything else it finds a close call. A referral removes nothing and " +
+      "keeps nothing back of itself: what a person then does is recorded as any act at the gate is.",
+    "",
+    ...referWhen.map((line) => `- ${line}`),
+    "",
+  ];
+}
+
 /** The whole policy as a reader is given it. The same on both sides of the boundary. */
-export function renderPolicy(categories: readonly PolicyCategory[], version: number): string {
+export function renderPolicy(categories: readonly PolicyCategory[], version: number, referWhen: readonly string[] = []): string {
   return [
     `# Redaction policy, version ${version}`,
     "",
@@ -131,6 +151,7 @@ export function renderPolicy(categories: readonly PolicyCategory[], version: num
     "## Categories",
     "",
     ...categories.flatMap((c) => [`### ${c.name}`, "", c.covers, "", `Examples: ${c.examples}`, ""]),
+    ...referralSection(referWhen),
     "## Changing this policy",
     "",
     "The deployment's administrators save a new version to add, reword or drop categories. A version cannot " +
@@ -140,6 +161,10 @@ export function renderPolicy(categories: readonly PolicyCategory[], version: num
 }
 
 export const CATEGORY_NAME_MAX_CHARS = 80;
+/** A guideline for asking a person is one sentence or two: a halting bound on what a person types. */
+export const REFER_WHEN_MAX_CHARS = 400;
+/** What a problem with a guideline for asking a person is filed under. */
+export const REFER_WHEN_PROBLEM = "when to ask a person";
 
 /**
  * Wording that defines a category by how a passage reflects on someone
@@ -216,6 +241,38 @@ export function policyProblems(categories: readonly PolicyCategory[]): PolicyPro
   return problems;
 }
 
+/**
+ * What stops a list of guidelines for asking a person from being saved. A
+ * guideline sends something to a person; it removes nothing. It is still
+ * held to the same rule as a category, because sending a passage to a
+ * person for how it reflects on someone is the first step toward removing
+ * it for that.
+ */
+export function referWhenProblems(referWhen: readonly string[]): PolicyProblem[] {
+  const problems: PolicyProblem[] = [];
+  for (const raw of referWhen) {
+    const line = typeof raw === "string" ? raw.trim() : "";
+    if (!line || line.length > REFER_WHEN_MAX_CHARS || /[\n\r]/.test(line)) {
+      problems.push({
+        category: REFER_WHEN_PROBLEM,
+        problem: `A guideline is one line of at most ${REFER_WHEN_MAX_CHARS} characters, saying what kind of passage or item the Redactor sends to a person.`,
+      });
+      continue;
+    }
+    const byFavor = line.match(BY_FAVOR);
+    if (byFavor) {
+      problems.push({
+        category: REFER_WHEN_PROBLEM,
+        problem:
+          `"${line}" is worded by how a passage reflects on someone ("${byFavor[0]}"). A guideline names a kind of content ` +
+          `or a kind of doubt, as a category does: a person who is sent passages for being unfavorable is being asked ` +
+          `to weigh them by that.`,
+      });
+    }
+  }
+  return problems;
+}
+
 export const hashPolicy = (body: string): string => createHash("sha256").update(body, "utf8").digest("hex");
 
 /** A boundary: the label a page was written at, and where it is shown. `to` null is outside the deployment. */
@@ -237,6 +294,8 @@ export interface PolicyView {
   saved_at: string;
   /** True for the version every boundary starts from, which nobody saved. */
   starting_text: boolean;
+  /** When the Redactor asks a person rather than deciding alone. Empty where the policy says nothing of it. */
+  refer_when: string[];
 }
 
 interface PolicyRow {
@@ -244,6 +303,7 @@ interface PolicyRow {
   boundary_id: string;
   version: number;
   categories: PolicyCategory[];
+  refer_when: string[] | null;
   body: string;
   hash: string;
   saved_at: Date;
@@ -259,9 +319,10 @@ const policyView = (r: PolicyRow): PolicyView => ({
   hash: r.hash,
   saved_at: r.saved_at.toISOString(),
   starting_text: r.saved_by === null && r.version === 1,
+  refer_when: r.refer_when ?? [],
 });
 
-const COLUMNS = `id, boundary_id, version, categories, body, hash, saved_at, saved_by`;
+const COLUMNS = `id, boundary_id, version, categories, refer_when, body, hash, saved_at, saved_by`;
 
 const REASON_POLICY =
   "A boundary's policy is kept as one row on each side of the boundary, and the two sides may share no label.";
@@ -296,6 +357,8 @@ export async function policyById(id: string): Promise<PolicyView | null> {
 export async function savePolicyVersion(input: {
   boundary: Boundary;
   categories: readonly PolicyCategory[];
+  /** When the Redactor asks a person. Left out: none. */
+  referWhen?: readonly string[];
   savedBy: string | null;
 }): Promise<
   | { ok: true; policy: PolicyView }
@@ -306,7 +369,8 @@ export async function savePolicyVersion(input: {
     covers: String(c.covers ?? "").trim(),
     examples: String(c.examples ?? "").trim(),
   }));
-  const problems = policyProblems(categories);
+  const referWhen = (input.referWhen ?? []).map((line) => String(line ?? "").trim()).filter((line) => line.length > 0);
+  const problems = [...policyProblems(categories), ...referWhenProblems(referWhen)];
   if (problems.length > 0) {
     return {
       ok: false,
@@ -327,21 +391,21 @@ export async function savePolicyVersion(input: {
         [from, to, to === null]
       );
       const version = (last?.version ?? 0) + 1;
-      const body = renderPolicy(categories, version);
+      const body = renderPolicy(categories, version, referWhen);
       const hash = hashPolicy(body);
       const [page] = await tx.query<PolicyRow>(
         `INSERT INTO redaction_policies
-           (boundary_id, side, version, categories, body, hash, from_label, to_label, to_outside, saved_by, sensitivity_label)
-         VALUES (COALESCE($1::uuid, gen_random_uuid()), 'page', $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $6)
+           (boundary_id, side, version, categories, refer_when, body, hash, from_label, to_label, to_outside, saved_by, sensitivity_label)
+         VALUES (COALESCE($1::uuid, gen_random_uuid()), 'page', $2, $3::jsonb, $10::jsonb, $4, $5, $6, $7, $8, $9, $6)
          RETURNING ${COLUMNS}`,
-        [last?.boundary_id ?? null, version, JSON.stringify(categories), body, hash, from, to, to === null, input.savedBy]
+        [last?.boundary_id ?? null, version, JSON.stringify(categories), body, hash, from, to, to === null, input.savedBy, JSON.stringify(referWhen)]
       );
       // The destination's row names no label its readers may not read.
       await tx.query(
         `INSERT INTO redaction_policies
-           (boundary_id, side, version, categories, body, hash, from_label, to_label, to_outside, saved_by, sensitivity_label)
-         VALUES ($1, 'destination', $2, $3::jsonb, $4, $5, NULL, $6, $7, $8, $9)`,
-        [page!.boundary_id, version, JSON.stringify(categories), body, hash, to, to === null, input.savedBy, destinationLabel(input.boundary)]
+           (boundary_id, side, version, categories, refer_when, body, hash, from_label, to_label, to_outside, saved_by, sensitivity_label)
+         VALUES ($1, 'destination', $2, $3::jsonb, $10::jsonb, $4, $5, NULL, $6, $7, $8, $9)`,
+        [page!.boundary_id, version, JSON.stringify(categories), body, hash, to, to === null, input.savedBy, destinationLabel(input.boundary), JSON.stringify(referWhen)]
       );
       return page!;
     })
@@ -362,8 +426,8 @@ export async function savePolicyVersion(input: {
  */
 export async function ensureBoundaryPolicy(boundary: Boundary): Promise<PolicyView> {
   const existing = await withSystemClearance(REASON_POLICY, () => policyAtPageSide(boundary));
-  if (existing && existing.body !== renderPolicy(existing.categories, existing.version)) {
-    const resaved = await savePolicyVersion({ boundary, categories: existing.categories, savedBy: null });
+  if (existing && existing.body !== renderPolicy(existing.categories, existing.version, existing.refer_when)) {
+    const resaved = await savePolicyVersion({ boundary, categories: existing.categories, referWhen: existing.refer_when, savedBy: null });
     // Categories that a later check would refuse stay under the version they were saved in until someone saves anew.
     return resaved.ok ? resaved.policy : existing;
   }
@@ -371,6 +435,11 @@ export async function ensureBoundaryPolicy(boundary: Boundary): Promise<PolicyVi
   const saved = await savePolicyVersion({ boundary, categories: DEFAULT_CATEGORIES, savedBy: null });
   if (!saved.ok) throw new Error(`The starting policy text was refused: ${saved.message}`);
   return saved.policy;
+}
+
+/** The guidelines for asking a person in a boundary's version in force, which a save that leaves them out keeps. */
+export async function keptReferWhen(boundary: Boundary): Promise<string[]> {
+  return (await withSystemClearance(REASON_POLICY, () => policyAtPageSide(boundary)))?.refer_when ?? [];
 }
 
 /** Who saved a version, by display name: null for a version the system saved (the starting text, or the fixed sections reworded). */
