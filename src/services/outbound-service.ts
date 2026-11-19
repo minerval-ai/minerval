@@ -466,10 +466,17 @@ export async function hasRouteOut(): Promise<boolean> {
   return Boolean(await liveConnection()) || Boolean(publicGraphApiUrl && publicGraphApiKey);
 }
 
-export async function call(graph: PublicGraph, method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; json: Record<string, any> }> {
+export async function call(
+  graph: PublicGraph,
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<{ status: number; json: Record<string, any> }> {
   const res = await publicGraphFetch(`${graph.url}${path}`, {
     method,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(headers ? { headers } : {}),
     fallbackKey: graph.key,
   });
   const text = await res.text();

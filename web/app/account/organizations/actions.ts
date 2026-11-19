@@ -16,6 +16,9 @@ import {
   makeInvitation,
   approveConnectRequest,
   denyConnectRequest,
+  makeSignInClient,
+  setOrganizationNaming,
+  revokeSignInClient,
   addDomain,
   checkDomain,
   removeDomain,
@@ -395,6 +398,51 @@ export async function submitCarriedPackageAction(_prev: FormState, form: FormDat
   }
   revalidatePath(page(organizationId));
   return { notice: out.join(" ") };
+}
+
+export async function setNamingAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const on = field(form, "on") === "1";
+  try {
+    await setOrganizationNaming(who, organizationId, on);
+  } catch (err) {
+    return said(err, "The choice could not be saved.");
+  }
+  revalidatePath(page(organizationId));
+  return { notice: on ? "From now on, what a member puts on the record as the organization names them beside it." : "From now on, the public record names the organization alone." };
+}
+
+export async function makeSignInClientAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const redirects = field(form, "redirect_uris").split(/[\s,]+/).filter(Boolean);
+  try {
+    const c = await makeSignInClient(who, organizationId, field(form, "name"), redirects);
+    revalidatePath(page(organizationId));
+    return {
+      notice:
+        `Registered. Set these on the deployment, in its web app's settings, and keep the secret: it is shown this once. ` +
+        `AUTH_OIDC_ISSUER=${c.issuer}  AUTH_OIDC_ID=${c.client_id}  AUTH_OIDC_SECRET=${c.client_secret}`,
+    };
+  } catch (err) {
+    return said(err, "The client could not be registered.");
+  }
+}
+
+export async function revokeSignInClientAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    await revokeSignInClient(who, organizationId, field(form, "client_id"));
+  } catch (err) {
+    return said(err, "The client could not be revoked.");
+  }
+  revalidatePath(page(organizationId));
+  return { notice: "Revoked. No one signs in to that deployment through minerval.ai again." };
 }
 
 export async function addDomainAction(_prev: FormState, form: FormData): Promise<FormState> {

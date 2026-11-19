@@ -205,7 +205,9 @@ export interface ConnectWith {
 
 export const fetchConnection = async (who: string) => (await get<{ connection: ConnectionView | null }>("/outside/connection", who)).connection;
 export const fetchConnectionAndDefaults = (who: string) =>
-  get<{ connection: ConnectionView | null; connect_with?: ConnectWith }>("/outside/connection", who);
+  get<{ connection: ConnectionView | null; connect_with?: ConnectWith; naming?: { names_person: boolean } }>("/outside/connection", who);
+export const setOutsideNaming = (who: string, on: boolean) =>
+  accountFetch<{ naming: { names_person: boolean } }>("/outside/naming", { method: "PUT", body: { names_person: on }, actingUser: who });
 export const startConnection = (who: string, body: { name: string; hosting?: Hosting; api_url?: string; replace?: boolean }) =>
   post<{ connection: ConnectionView }>("/outside/connection", who, body);
 export const startConnectionByHand = (who: string, body: { name: string; hosting?: Hosting; replace?: boolean }) =>

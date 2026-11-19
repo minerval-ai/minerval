@@ -28,6 +28,7 @@ import { generateSigningKey, parseSigningKey } from "../../src/services/mirror-b
 import { signRequest } from "../../src/services/request-signature.js";
 import { signByHandRequest, signKeyReplacement } from "../../src/services/deployment-service.js";
 import { registrationStatement } from "../../src/published-page/verify.js";
+import { seedClaim } from "./helpers.js";
 
 let app: FastifyInstance;
 
@@ -417,6 +418,52 @@ describe("billing on the organization", () => {
       [acme]
     );
     expect(via).toEqual({ received_via: "uploaded", uploaded_by: dana.id });
+  });
+});
+
+describe("naming the person who acted", () => {
+  it("names a member on what they put on the record as the organization, only once an admin chose it", async () => {
+    const dana = await signIn("dana");
+    const priya = await signIn("Priya Raman");
+    const org = await makeOrganization(dana);
+    const invite = await as(dana, { method: "POST", url: `/organizations/${org}/invitations`, payload: { role: "member" } });
+    await as(priya, { method: "POST", url: `/organization-invitations/${invite.json().token}/accept` });
+    await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "speak", account_id: priya.id } });
+    const contribute = async () =>
+      as(priya, {
+        method: "POST",
+        url: "/contributions",
+        organization: org,
+        payload: { claim_id: await seedClaim("naming"), contribution_type: "challenge", content: "A challenge, made for the organization." },
+      });
+
+    const quiet = await contribute();
+    expect(quiet.statusCode, quiet.body).toBe(201);
+    const read = async (id: string) => (await app.inject({ method: "GET", url: `/contributions/${id}` })).json().contribution;
+    expect((await read(quiet.json().contribution.id)).named_person).toBeNull();
+
+    expect((await as(priya, { method: "PUT", url: `/organizations/${org}/naming`, payload: { names_people: true } })).json().code).toBe("ADMIN_REQUIRED");
+    expect((await as(dana, { method: "PUT", url: `/organizations/${org}/naming`, payload: { names_people: true } })).json()).toEqual({ names_people: true });
+    const named = await contribute();
+    const c = await read(named.json().contribution.id);
+    expect(c).toMatchObject({ contributor_id: org, named_person: "Priya Raman" });
+  });
+
+  it("names the person a deployment sends, in any script", async () => {
+    const dana = await signIn("dana");
+    const org = await makeOrganization(dana);
+    const { key } = await connected(dana, org, ["speak"]);
+    const body = { claim_id: await seedClaim("naming-deployment"), contribution_type: "challenge", content: "A challenge from the deployment." };
+    const authorization = signRequest(key.privateKey, key.publicKey, { host: HOST, method: "POST", path: "/contributions", body: JSON.stringify(body) });
+    const res = await app.inject({
+      method: "POST",
+      url: "/contributions",
+      headers: { host: HOST, authorization, "content-type": "application/json", "x-acting-person-name": encodeURIComponent("Zoë Ångström") },
+      payload: JSON.stringify(body),
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const c = (await app.inject({ method: "GET", url: `/contributions/${res.json().contribution.id}` })).json().contribution;
+    expect(c.named_person).toBe("Zoë Ångström");
   });
 });
 

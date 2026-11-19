@@ -172,6 +172,9 @@ export default async function ContributionPage({
               <Link href={`/contributors/${c.contributor_id}`}>
                 {contributor.contributor.display_name}
               </Link>
+              {c.named_person && contributor.contributor.kind === "organization" && (
+                <span title="The organization chose to name who acted for it on its public record."> ({c.named_person} for it)</span>
+              )}
             </>
           )}
           .

@@ -39,7 +39,15 @@ import {
 } from "@/lib/outside-api";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { registerPublisherAction } from "../../releases/actions";
-import { backPublicMandateAction, checkConnectionAction, connectAction, disconnectAction, openPublicMandateAction, replaceKeyAction } from "./actions";
+import {
+  backPublicMandateAction,
+  checkConnectionAction,
+  connectAction,
+  disconnectAction,
+  openPublicMandateAction,
+  replaceKeyAction,
+  setNamingAction,
+} from "./actions";
 import { HeadSub, Note, loadAccount, tryRead } from "./parts";
 import { DEPLOYMENT_GRANTS, PERMISSION_WORDS } from "@/lib/organization-permissions";
 
@@ -123,7 +131,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
     mayAct
       ? tryRead(() => fetchPublicConversations(who.externalId), "The conversations with the public Grantmaker could not be read")
       : Promise.resolve({ data: null, problem: null }),
-    fetchConnectionAndDefaults(who.externalId).catch(() => ({ connection: null as ConnectionView | null, connect_with: undefined })),
+    fetchConnectionAndDefaults(who.externalId).catch(() => ({ connection: null as ConnectionView | null, connect_with: undefined, naming: undefined })),
   ]);
   const connection = connectionRead.connection;
   const acts = log ?? [];
@@ -169,6 +177,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
         connectHref={drawerHref("connect")}
         disconnectHref={drawerHref("disconnect")}
         replaceHref={drawerHref("replace-key")}
+        namesPerson={connectionRead.naming?.names_person ?? false}
       />
 
       {account && <AccountStats account={account} mayAdminister={mayAdminister} keyHref={drawerHref("key")} />}
@@ -526,12 +535,14 @@ function ConnectionCard({
   connectHref,
   disconnectHref,
   replaceHref,
+  namesPerson,
 }: {
   connection: ConnectionView | null;
   mayAdminister: boolean;
   connectHref: string;
   disconnectHref: string;
   replaceHref: string;
+  namesPerson: boolean;
 }) {
   const state = connection?.state ?? "none";
   if (state === "by_hand" && connection) {
@@ -618,6 +629,23 @@ function ConnectionCard({
           </p>
         )}
         {connection.problem && <Note tone="warn">{british(connection.problem)}</Note>}
+        <div className="w-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="w-muted" style={{ fontSize: 12.5 }}>
+            {namesPerson
+              ? `The public record names the person who made each act, beside ${orgName}.`
+              : `The public record names ${orgName} alone, not the person who made each act.`}{" "}
+            <Tip>
+              Off unless set. With it on, an act a person makes on the public graph sends their name as written on their account here, and the
+              words it puts on the record (contributions, stated views, proposals) show it beside the organisation. Who acted is always in the log
+              below either way.
+            </Tip>
+          </span>
+          {mayAdminister && (
+            <WorkForm action={setNamingAction} submit={namesPerson ? "Stop naming them" : "Name them"} inline>
+              <input type="hidden" name="on" value={namesPerson ? "0" : "1"} />
+            </WorkForm>
+          )}
+        </div>
       </Section>
     );
   }

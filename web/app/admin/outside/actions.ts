@@ -20,6 +20,7 @@ import {
   declinePublicRequest,
   disconnectConnection,
   replaceConnectionKey,
+  setOutsideNaming,
   startConnection,
   startConnectionByHand,
   type Hosting,
@@ -236,6 +237,23 @@ export async function checkConnectionAction(_prev: FormState, _form: FormData): 
   } catch (err) {
     return refused(err);
   }
+}
+
+export async function setNamingAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await actingUser();
+  if (!who) return NOT_SIGNED_IN;
+  const on = form.get("on") === "1";
+  try {
+    await setOutsideNaming(who, on);
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/admin/outside");
+  return {
+    notice: on
+      ? "From now on, an act a person makes on the public graph sends their name as written on their account here, and what it puts on the record names them beside the organisation."
+      : "From now on, the public record names the organisation alone.",
+  };
 }
 
 export async function replaceKeyAction(_prev: FormState, _form: FormData): Promise<FormState> {

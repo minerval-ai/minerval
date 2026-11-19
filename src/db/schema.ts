@@ -2991,6 +2991,88 @@ export const organizationDomains = pgTable(
   ]
 );
 
+// minerval.ai as an OpenID Connect provider for organizations
+// (docs/organizations.md, "Hosted by Minerval", "Signing in"). An admin
+// registers a client for a deployment: its name and where to send people
+// back. A deployment set with AUTH_OIDC_ISSUER to minerval.ai's issuer, and
+// this client's id and secret, signs its members in with their minerval.ai
+// accounts. Only live members of the organization the client is for can
+// sign in, and the ID token carries the organization and the person's role
+// there as `groups`. A role grants nothing inside the deployment by itself.
+export const organizationOidcClients = pgTable(
+  "organization_oidc_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull().unique(),
+    // sha-256 of the secret, hex; the secret is shown once.
+    clientSecretHash: text("client_secret_hash").notNull(),
+    name: text("name").notNull(),
+    redirectUris: text("redirect_uris").array().notNull(),
+    createdBy: uuid("created_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [index("idx_organization_oidc_clients_org").on(table.organizationId)]
+);
+
+// One sign-in through an organization's client: asked by the deployment,
+// approved by the person on minerval.ai, and its code exchanged once.
+export const oidcAuthorizationRequests = pgTable(
+  "oidc_authorization_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references((): AnyPgColumn => organizationOidcClients.id, { onDelete: "cascade" }),
+    redirectUri: text("redirect_uri").notNull(),
+    scope: text("scope").notNull(),
+    state: text("state"),
+    nonce: text("nonce"),
+    // S256 only, where the client sent one.
+    codeChallenge: text("code_challenge"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // The person who approved, when, and the code (sha-256) they were given.
+    accountId: uuid("account_id").references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    codeHash: text("code_hash").unique(),
+    codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    deniedAt: timestamp("denied_at", { withTimezone: true }),
+  },
+  (table) => [index("idx_oidc_authorization_requests_client").on(table.clientId)]
+);
+
+// This deployment's choice for its acts on the public graph
+// (docs/organizations.md, "Who acted"): whether an act a person makes there
+// sends their name, as written on their account here, for the public record
+// to name them beside the organization. Off unless set. One row at most.
+export const outsideNaming = pgTable(
+  "outside_naming",
+  {
+    id: text("id").primaryKey().default("this"),
+    namesPerson: boolean("names_person").notNull().default(false),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [check("ck_outside_naming_one", sql`${table.id} = 'this'`)]
+);
+
+// An organization's own choices about its public record (docs/organizations.md,
+// "Who acted"): whether what its members put on the record as it names them.
+export const organizationSettings = pgTable("organization_settings", {
+  organizationId: uuid("organization_id")
+    .primaryKey()
+    .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+  namesPeople: boolean("names_people").notNull().default(false),
+  setBy: uuid("set_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+  setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // A token Minerval's operator makes for a deployment Minerval provisions, and
 // the provisioning puts in its settings (MINERVAL_HOSTING_TOKEN). It is sent
 // when the deployment connects: the public graph accepts the hosting word
@@ -5481,6 +5563,10 @@ export const contributions = pgTable(
     grantId: uuid("grant_id").references((): AnyPgColumn => grants.id, {
       onDelete: "set null",
     }),
+    // The person who put it on the record for an organization, where the
+    // organization chose to name them (docs/organizations.md, "Who acted";
+    // services/named-person.ts). Null otherwise, and always for a person's own.
+    namedPerson: text("named_person"),
     fundedByJobId: uuid("funded_by_job_id"),
     // The research run that submitted it, when one did: its review is paid
     // from the contribution budget that run was delegated.

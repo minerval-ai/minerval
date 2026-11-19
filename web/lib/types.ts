@@ -1442,6 +1442,8 @@ export interface ContributionDetail {
     id: string;
     claim_id: string | null;
     contributor_id: string;
+    /** Who put it on the record for an organization, where the organization names people. */
+    named_person?: string | null;
     contribution_type: string;
     content: string;
     evidence_urls: string[];

@@ -19,6 +19,7 @@ const appDir = join(root, "web/app");
 const NOT_DESCRIBED: Record<string, string> = {
   "/logo-preview": "An internal preview of the logo.",
   "/oauth/consent": "Reached only from an OAuth client's sign-in, never navigated to.",
+  "/oidc/consent": "Reached only from a deployment's sign-in with minerval.ai (docs/organizations.md, \"Signing in\"), never navigated to.",
   "/queue": "A redirect kept for old links.",
   "/members-gate": "What a members-only deployment shows in place of a page to someone who is not a member.",
   "/account/grants": "A redirect kept for old links: the Mandates list's own tab.",

@@ -27,6 +27,10 @@ export interface OrganizationView {
   permissions?: MemberPermission[];
   /** What is left of the reader's allowance on spend, where an admin set one. */
   allowance_left_micro_usd?: number;
+  /** Its verified domain, where one is shown (read from GET /organizations/:id). */
+  domain?: { domain: string; confirmed_at: string; unconfirmed_since: string | null } | null;
+  /** Whether its public record names who acted for it. */
+  names_people?: boolean;
 }
 
 export interface GrantRow {
@@ -391,6 +395,37 @@ export async function checkDomain(me: string, id: string, domainId: string): Pro
 }
 export async function removeDomain(me: string, id: string, domainId: string): Promise<void> {
   await accountFetch(`${org(id)}/domains/${pathSegment(domainId)}`, { method: "DELETE", actingUser: me });
+}
+
+// ---- signing in to its deployments with minerval.ai (docs/organizations.md, "Signing in") ----
+
+export interface SignInClient {
+  id: string;
+  client_id: string;
+  name: string;
+  redirect_uris: string[];
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export async function listSignInClients(me: string, id: string): Promise<SignInClient[]> {
+  return (await accountFetch<{ clients: SignInClient[] }>(`${org(id)}/oidc-clients`, { actingUser: me })).clients;
+}
+export async function makeSignInClient(me: string, id: string, name: string, redirectUris: string[]): Promise<SignInClient & { client_secret: string; issuer: string }> {
+  return (await accountFetch<{ client: SignInClient & { client_secret: string; issuer: string } }>(`${org(id)}/oidc-clients`, {
+    method: "POST",
+    body: { name, redirect_uris: redirectUris },
+    actingUser: me,
+  })).client;
+}
+export async function revokeSignInClient(me: string, id: string, clientId: string): Promise<void> {
+  await accountFetch(`${org(id)}/oidc-clients/${pathSegment(clientId)}`, { method: "DELETE", actingUser: me });
+}
+
+/** An admin chooses whether the organization's public record names who acted for it. */
+export async function setOrganizationNaming(me: string, id: string, on: boolean): Promise<{ names_people: boolean }> {
+  return accountFetch(`${org(id)}/naming`, { method: "PUT", body: { names_people: on }, actingUser: me });
 }
 
 export async function retireDeployment(me: string, id: string, deploymentId: string): Promise<void> {

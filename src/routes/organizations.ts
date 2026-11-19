@@ -60,6 +60,7 @@ async function answer<T>(reply: FastifyReply, fn: () => Promise<T>, status = 200
 
 import { nextFeedBatch, receivedUsageReports, uploadUsageReport } from "../services/organization-carried.js";
 import { addDomain, checkDomain, listDomains, removeDomain, shownDomain } from "../services/organization-domains.js";
+import { namesPeople, setNamesPeople } from "../services/named-person.js";
 
 export async function organizationRoutes(app: FastifyInstance): Promise<void> {
   const reader = [app.authenticate, app.requireUser];
@@ -96,8 +97,23 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
     handler: (request, reply) =>
       answer(reply, async () => {
         const organization = await getOrganization(request.params.id, me(request));
-        return { organization: { ...organization, domain: await shownDomain(organization.id) } };
+        return { organization: { ...organization, domain: await shownDomain(organization.id), names_people: await namesPeople(organization.id) } };
       }),
+  });
+
+  app.put<{ Params: { id: string }; Body: { names_people: boolean } }>("/organizations/:id/naming", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "Choose whether the organization's public record names who acted for it (its admins, from a signed-in session): with it on, the " +
+        "words a member puts on the record as the organization (contributions, stated views, proposals) carry their name beside its own. " +
+        "Off unless set. Who acted is always on the organization's own log",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      body: { type: "object", required: ["names_people"], properties: { names_people: { type: "boolean" } } },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, () => setNamesPeople({ organizationId: request.params.id, on: request.body.names_people, by: me(request) })),
   });
 
   // ---- a verified domain (docs/organizations.md, "A verified domain") ----

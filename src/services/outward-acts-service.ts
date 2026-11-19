@@ -167,9 +167,19 @@ async function act(input: {
     if (err instanceof OutboundError) throw new OutwardError("NO_ROUTE_OUT", NO_ACCOUNT_WORDS);
     throw err;
   }
+  // The person's name, where this deployment's administrators chose to send it (services/named-person.ts).
+  const headers: Record<string, string> = {};
+  if ("actor" in input.by) {
+    const { sendsPersonName } = await import("./named-person.js");
+    if (await sendsPersonName()) {
+      const [person] = await rawQuery<{ display_name: string }>(`SELECT display_name FROM contributors WHERE id = $1`, [input.by.actor.id]);
+      // Percent-encoded: a header carries Latin-1 only, and a name may be in any script.
+      if (person?.display_name) headers["x-acting-person-name"] = encodeURIComponent(person.display_name.slice(0, 120));
+    }
+  }
   let res: { status: number; json: Record<string, any> };
   try {
-    res = await call(graph, input.method, input.path, input.body);
+    res = await call(graph, input.method, input.path, input.body, Object.keys(headers).length ? headers : undefined);
   } catch (err) {
     const said = err instanceof Error ? err.message.slice(0, 500) : "The public graph could not be reached.";
     await logOutwardAct({ kind: input.kind, by: input.by, publicRef: input.publicRef, sent: input.body, result: "failed", said });

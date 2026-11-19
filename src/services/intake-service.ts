@@ -42,6 +42,7 @@ import { loadConfig } from "../config.js";
 import { createOrder } from "./order-service.js";
 import { rawQuery } from "../db/client.js";
 import type { NodeKind, TextNodeKind } from "../schemas/kinds.js";
+import { namedPerson } from "./named-person.js";
 
 /**
  * An accepted claim proposal was PAID for (the claim_proposal owl at
@@ -106,6 +107,7 @@ export async function createClaimProposal(input: {
     .values({
       claimId: null,
       contributorId: input.contributorId,
+      namedPerson: namedPerson(),
       contributionType: PROPOSAL_TYPE_FOR_KIND[input.kind ?? "claim"],
       // A proposal is its wording alone, which rides in
       // proposed_canonical_form as a propose_edit's does; it carries no
@@ -143,6 +145,7 @@ export async function createSourceProposal(input: {
     .values({
       claimId: null,
       contributorId: input.contributorId,
+      namedPerson: namedPerson(),
       contributionType: "propose_source",
       content: input.url,
       sourceId: source.id,

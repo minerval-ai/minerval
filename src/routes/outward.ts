@@ -77,6 +77,7 @@ import {
   startConnect,
   startConnectByHand,
 } from "../services/public-graph-connection.js";
+import { sendsPersonName, setSendsPersonName } from "../services/named-person.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
 const TAG = ["the public graph, from inside"];
@@ -128,7 +129,8 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
         "where it runs (fixed where the operator set DEPLOYMENT_HOSTING), the grants its settings need and why, and its own address.",
     },
     preHandler: signedIn,
-    handler: async (_request, reply) => reply.send({ connection: await connectionStatus(), connect_with: await connectWith() }),
+    handler: async (_request, reply) =>
+      reply.send({ connection: await connectionStatus(), connect_with: await connectWith(), naming: { names_person: await sendsPersonName() } }),
   });
 
   app.post<{ Body: { name: string; hosting?: string; api_url?: string; replace?: boolean; grants?: DeploymentGrant[] } }>("/outside/connection", {
@@ -218,6 +220,18 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
         return connectionRefused(reply, err);
       }
     },
+  });
+
+  app.put<{ Body: { names_person: boolean } }>("/outside/naming", {
+    schema: {
+      tags: TAG,
+      summary:
+        "Choose whether this deployment's acts on the public graph send the name of the person who made each (administrators, from a " +
+        "signed-in session), as written on their account here, for the public record to name them beside the organization. Off unless set",
+      body: { type: "object", required: ["names_person"], properties: { names_person: { type: "boolean" } } },
+    },
+    preHandler: inSession("administer"),
+    handler: async (request, reply) => reply.send({ naming: await setSendsPersonName(request.body.names_person, (await actorOf(request)).id) }),
   });
 
   app.post("/outside/connection/key", {

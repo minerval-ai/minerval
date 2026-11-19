@@ -7,6 +7,7 @@ import {
   getOrganization,
   listDeployments,
   listDomains,
+  listSignInClients,
   listReceivedReports,
   listInvitations,
   listLog,
@@ -20,6 +21,7 @@ import {
   type CredentialRow,
   type DeploymentView,
   type DomainView,
+  type SignInClient,
   type ReceivedReport,
   type GrantRow,
   type InvitationView,
@@ -47,6 +49,9 @@ import {
   inviteAction,
   removeMemberAction,
   addDomainAction,
+  makeSignInClientAction,
+  setNamingAction,
+  revokeSignInClientAction,
   approveByHandAction,
   checkDomainAction,
   removeDomainAction,
@@ -130,6 +135,12 @@ function logLine(e: LogEntry, names: Map<string, string>, deployments: Map<strin
       return `approved the deployment ${String(d.name)}, with ${Array.isArray(d.grants) ? (d.grants as string[]).join(", ") : "its grants"}`;
     case "deployment_disconnected":
       return `the deployment ${String(d.name)} disconnected`;
+    case "names_people_set":
+      return d.names_people ? "chose to name the member who acted on the public record" : "chose to name the organization alone on the public record";
+    case "oidc_client_made":
+      return `registered the deployment ${String(d.name)} to sign members in with minerval.ai`;
+    case "oidc_client_revoked":
+      return `revoked sign-in with minerval.ai for ${String(d.name)}`;
     case "domain_added":
       return `added the domain ${String(d.domain)}`;
     case "domain_confirmed":
@@ -206,6 +217,7 @@ export default async function OrganizationPage({
     tab === "deployments" ? listOrganizationGrants(me, id).catch(() => [] as GrantRow[]) : Promise.resolve([] as GrantRow[]),
   ]);
   const credentials = tab === "members" ? await listOrganizationCredentials(me, id).catch(() => [] as CredentialRow[]) : [];
+  const signInClients = tab === "members" ? await listSignInClients(me, id).catch(() => [] as SignInClient[]) : [];
   const domains = tab === "overview" ? await listDomains(me, id).catch(() => [] as DomainView[]) : [];
   const received = tab === "billing" && admin ? await listReceivedReports(me, id).catch(() => [] as ReceivedReport[]) : [];
 
@@ -270,6 +282,25 @@ export default async function OrganizationPage({
           </section>
 
           <Domains domains={domains} admin={admin} organizationId={id} />
+
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Who acted, on the public record</h2>
+              <span className="acct-note">{org.names_people ? "Named" : "Not named"} · off unless an admin turns it on</span>
+            </div>
+            <p className="acct-prose acct-measure">
+              {org.names_people
+                ? `The words a member puts on the record as ${org.name} (contributions, stated views, proposals) name them beside it, as written on their account.`
+                : `The public record says ${org.name} and nothing else. Which member acted is on its log here.`}{" "}
+              A deployment of {org.name} makes its own choice, on its Public graph page.
+            </p>
+            {admin && (
+              <ActionForm action={setNamingAction} submit={org.names_people ? "Stop naming them" : "Name the member who acted"} inline>
+                <input type="hidden" name="organization_id" value={id} />
+                <input type="hidden" name="on" value={org.names_people ? "0" : "1"} />
+              </ActionForm>
+            )}
+          </section>
 
           <section className="acct-section">
             <div className="acct-head">
@@ -409,6 +440,8 @@ export default async function OrganizationPage({
               </ActionForm>
             )}
           </section>
+
+          <SignInClients clients={signInClients} admin={admin} organizationId={id} orgName={org.name} />
 
           <section className="acct-section">
             <div className="acct-head">
@@ -1090,6 +1123,61 @@ function ReceivedReports({ reports }: { reports: ReceivedReport[] }) {
             </div>
           );
         })
+      )}
+    </section>
+  );
+}
+
+/**
+ * Its deployments signing members in with their minerval.ai accounts
+ * (docs/organizations.md, "Signing in"): for a deployment with no identity
+ * provider of its own, or one Minerval runs.
+ */
+function SignInClients({ clients, admin, organizationId, orgName }: { clients: SignInClient[]; admin: boolean; organizationId: string; orgName: string }) {
+  const live = clients.filter((c) => !c.revoked_at);
+  if (!admin && live.length === 0) return null;
+  return (
+    <section className="acct-section">
+      <div className="acct-head">
+        <h2>Signing in to its deployments</h2>
+        <span className="acct-note">With minerval.ai accounts, for {orgName}&rsquo;s members only</span>
+      </div>
+      <p className="acct-prose acct-measure">
+        A private deployment with no identity provider of its own can sign its members in with their minerval.ai accounts. Only members of{" "}
+        {orgName} can sign in, and the deployment is told their role here as a group (<code>admin</code> or <code>member</code>). That role grants
+        nothing in the deployment: its administrators grant what each person may do there, and can grant it to either group. The deployment
+        then trusts minerval.ai to say who its members are.
+      </p>
+      {live.map((c) => (
+        <div key={c.id} className="acct-line">
+          <div>
+            {c.name}
+            <span className="acct-detail">
+              <code>{c.client_id}</code> · back to {c.redirect_uris.map((u) => u.replace(/^https?:\/\//, "")).join(", ")} ·{" "}
+              {c.last_used_at ? `last used ${c.last_used_at.slice(0, 10)}` : "not used yet"}
+            </span>
+          </div>
+          {admin && (
+            <ActionForm action={revokeSignInClientAction} submit="Revoke" inline danger>
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <input type="hidden" name="client_id" value={c.id} />
+            </ActionForm>
+          )}
+        </div>
+      ))}
+      {admin && (
+        <ActionForm action={makeSignInClientAction} submit="Register a deployment">
+          <input type="hidden" name="organization_id" value={organizationId} />
+          <label>
+            Which deployment
+            <input name="name" required maxLength={120} placeholder="Research" />
+          </label>
+          <label>
+            Where it receives people back
+            <input name="redirect_uris" required placeholder="https://research.acme.com/api/auth/callback/oidc" />
+            <small>Its own address followed by /api/auth/callback/oidc. Several, separated by spaces, if it has more than one address.</small>
+          </label>
+        </ActionForm>
       )}
     </section>
   );

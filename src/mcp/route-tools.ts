@@ -257,6 +257,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /organizations/:id/deployments": { name: "list_organization_deployments" },
   "GET /organizations/:id/domains": { name: "list_organization_domains" },
   "GET /organizations/:id/usage-reports": { name: "list_organization_usage_reports" },
+  "GET /organizations/:id/oidc-clients": { name: "list_organization_sign_in_clients" },
   // This deployment's own connection to minerval.ai (docs/organizations.md, "Connecting").
   "GET /outside/connection": { name: "get_public_graph_connection" },
   "GET /account-conversion": { name: "get_account_conversion" },
@@ -757,6 +758,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /organizations/:id/deployments/:deployment_id": ORGANIZATION_SESSION,
   "POST /organizations/:id/deployments/by-hand": ORGANIZATION_SESSION,
   "POST /organizations/:id/domains": ORGANIZATION_SESSION,
+  "POST /organizations/:id/oidc-clients": ORGANIZATION_SESSION,
+  "PUT /organizations/:id/naming": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/oidc-clients/:client_id": ORGANIZATION_SESSION,
   "POST /organizations/:id/domains/:domain_id/check": ORGANIZATION_SESSION,
   "DELETE /organizations/:id/domains/:domain_id": ORGANIZATION_SESSION,
   "GET /organizations/:id/deployments/:deployment_id/feed": CARRIED_BY_HAND,
@@ -768,6 +772,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /outside/connection": PUBLIC_GRAPH_CONNECTION_SESSION,
   "POST /outside/connection/key": PUBLIC_GRAPH_CONNECTION_SESSION,
   "POST /outside/connection/by-hand": PUBLIC_GRAPH_CONNECTION_SESSION,
+  "PUT /outside/naming": PUBLIC_GRAPH_CONNECTION_SESSION,
   "POST /mirror/follow": MIRROR_FOLLOWING_SESSION,
   "POST /mirror/pause": MIRROR_FOLLOWING_SESSION,
   "POST /mirror/check": MIRROR_FOLLOWING_SESSION,
@@ -835,6 +840,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
 export const MCP_EXCLUDED_PREFIXES: Record<string, string> = {
   "/mcp": "The MCP endpoint itself.",
   "/oauth/": "The OAuth authorization server that issues MCP credentials.",
+  "/oidc/":
+    "The OpenID Connect provider a deployment's sign-in calls (docs/organizations.md, \"Signing in\"): a browser's round trip and a " +
+    "deployment's code exchange, not an act an agent makes.",
   "/.well-known/": "OAuth discovery metadata for MCP clients.",
 };
 

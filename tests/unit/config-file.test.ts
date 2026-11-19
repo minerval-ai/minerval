@@ -128,6 +128,7 @@ describe("the table of settings", () => {
         "PANGRAM_API_KEY",
         "PUBLIC_GRAPH_API_KEY",
         "MINERVAL_HOSTING_TOKEN",
+        "OIDC_SIGNING_KEY",
         "PUBLISH_SIGNING_KEY",
         "SANDBOX_TOKEN",
         "SQL_AGENT_DATABASE_URL",

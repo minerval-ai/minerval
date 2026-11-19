@@ -607,10 +607,12 @@ describes.
   `deployment_requests`, which only the organization's members read.
 - **In the deployment**, `outward_acts` keeps who pressed the button,
   holding what, as it does now ([outward-acts.md](outward-acts.md)).
-- **Naming the person outside** is the organization's choice: a gate
-  setting, off unless set, that adds the person's name to an act, as
-  written on their account in the deployment. With it off, the public
-  record says "Acme Corp" and nothing else.
+- **Naming the person outside** is the organization's choice: a setting
+  of the deployment's acts outside, off unless set, that adds the person's
+  name to an act, as written on their account in the deployment. The public
+  graph puts it on the words the act puts on the record (contributions,
+  stated views, proposals). With it off, the public record says "Acme Corp"
+  and nothing else.
 - **On minerval.ai**, a person's acts as the organization, and an admin's
   management of it (approving a deployment, granting), are on the
   organization's log under their own account, with how each was made
@@ -1015,9 +1017,28 @@ Each phase is one pull request or a few, and leaves things working.
    admins' read, `GET /organizations/:id/usage-reports`
    (`list_organization_usage_reports`), on the Billing tab as "Usage
    recorded", the latest revision of each day counted.
-8. **minerval.ai as an OpenID Connect provider** for organizations, which
-   a hosted deployment needs and a self-hosted one may use. Naming the
-   person who acted, as a gate setting.
+8. **minerval.ai as an OpenID Connect provider** (built) for
+   organizations, which a hosted deployment needs and a self-hosted one may
+   use (`services/oidc-provider.ts`, `routes/oidc.ts`). The issuer is the
+   API's address followed by `/oidc`, with discovery, `jwks`, `authorize`,
+   `token` and `userinfo`; ID and access tokens are RS256 JWTs signed with
+   `OIDC_SIGNING_KEY`, ten minutes each, nothing refreshed. An admin
+   registers a deployment as a client on the Members tab, with where it
+   receives people back, and is shown the client id, the secret once, and
+   the issuer to set as `AUTH_OIDC_ISSUER`. A person signs in on
+   `/oidc/consent`; only live members of the client's organization can, and
+   the ID token carries the organization and their role as `groups`. A
+   deployment's `web/auth.ts` needs no change: its OpenID Connect provider,
+   with PKCE, state and nonce, speaks this. Naming the person who acted:
+   an organization's admin chooses it on Overview
+   (`organization_settings.names_people`), and a deployment's
+   administrators for its acts outside (`outside_naming`, on its Public
+   graph page; a deployment-wide setting rather than one per gate, since
+   its acts outside do not all pass a gate), which then sends the person's
+   name (`x-acting-person-name`, percent-encoded). The public graph puts it
+   on the words an organization puts on the record (`contributions.named_person`:
+   contributions, stated views, proposals); funding, taking up a request and
+   the rest stay the organization's alone.
 9. **Bearer keys go.** `MIRROR_FEED_API_KEY`, `PUBLIC_GRAPH_API_KEY` and
    `USAGE_REPORT_API_KEY` are removed from `config.ts`, `config-file.ts`,
    `env.example`, the preflight and the docs. Old keys on converted

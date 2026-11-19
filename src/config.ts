@@ -1562,6 +1562,12 @@ const configSchema = z.object({
   // where it runs only with it; set, the Connect drawer shows that answer
   // fixed (docs/organizations.md, "Hosted by Minerval"). A secret.
   minervalHostingToken: z.string().trim().default(""),
+  // minerval.ai as an OpenID Connect provider for organizations
+  // (docs/organizations.md, "Signing in"): the RSA private key, PEM, its ID
+  // tokens are signed with (RS256), its public half served at /oidc/jwks. A
+  // secret. Unset in production, the provider answers that it is not set
+  // up; elsewhere a key is made for the life of the process.
+  oidcSigningKey: z.string().default("").transform(normalizePrivateKey),
   // The largest package a graph admits, in bytes. A backstop: a page is a
   // node's assessment with its arguments and readings, a few hundred
   // kilobytes at most, and the route that receives one parses it whole
@@ -1954,6 +1960,7 @@ export function loadConfig(): Config {
     privateRunFetches: process.env.PRIVATE_RUN_FETCHES || undefined,
     publicGraphApiKey: process.env.PUBLIC_GRAPH_API_KEY,
     minervalHostingToken: process.env.MINERVAL_HOSTING_TOKEN,
+    oidcSigningKey: process.env.OIDC_SIGNING_KEY,
     publishedPageMaxBytes: process.env.PUBLISHED_PAGE_MAX_BYTES,
   });
 

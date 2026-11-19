@@ -462,6 +462,7 @@ describe("what a permission guards", () => {
       "DELETE /outside/connection": ["administer"],
       "POST /outside/connection/key": ["administer"],
       "POST /outside/connection/by-hand": ["administer"],
+      "PUT /outside/naming": ["administer"],
       "POST /mirror/follow": ["administer"],
       "POST /mirror/pause": ["administer"],
       "POST /mirror/check": ["administer"],

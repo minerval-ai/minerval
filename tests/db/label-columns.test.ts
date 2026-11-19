@@ -219,6 +219,8 @@ describe("the label column, in the catalog", () => {
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
+      // Sign-ins through an organization's OpenID Connect client: a person, a code hash and times (docs/organizations.md, "Signing in").
+      "oidc_authorization_requests",
       // Verified domains: a domain, a token for its TXT record and when it was checked (docs/organizations.md, "A verified domain").
       "organization_domains",
       // Who acts for an organization, what each member and deployment may do as it, the invitations
@@ -227,6 +229,12 @@ describe("the label column, in the catalog", () => {
       "organization_invitations",
       "organization_log",
       "organization_members",
+      // The clients an organization registers for its deployments to sign members in with minerval.ai: names, addresses, a secret's hash.
+      "organization_oidc_clients",
+      // An organization's choice whether its public record names who acted: one flag (docs/organizations.md, "Who acted").
+      "organization_settings",
+      // A deployment's choice whether its acts outside send the person's name: one flag.
+      "outside_naming",
       // The owl ledger and what is paid out of it.
       "owl_ledger",
       // Whose material a source is, and who may do what (src/permissions.ts).

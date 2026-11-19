@@ -342,6 +342,7 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   { key: "public_graph.price", env: "PUBLIC_GRAPH_PRICE", kind: "text", field: "publicGraphPrice" },
   secret("public_graph.api_key", "PUBLIC_GRAPH_API_KEY"),
   secret("public_graph.hosting_token", "MINERVAL_HOSTING_TOKEN"),
+  secret("oidc.signing_key", "OIDC_SIGNING_KEY"),
 
   { key: "usage_report.url", env: "USAGE_REPORT_URL", kind: "text", field: "usageReportUrl" },
   { key: "usage_report.dir", env: "USAGE_REPORT_DIR", kind: "text", field: "usageReportDir" },

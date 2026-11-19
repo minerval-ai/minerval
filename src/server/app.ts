@@ -39,6 +39,7 @@ import { usageRoutes } from "../routes/usage.js";
 import { billingRoutes } from "../routes/billing.js";
 import { mcpRoutes } from "../routes/mcp.js";
 import { oauthRoutes } from "../routes/oauth.js";
+import { oidcRoutes } from "../routes/oidc.js";
 import { extensionRoutes } from "../routes/extension.js";
 import { orderRoutes } from "../routes/orders.js";
 import { budgetJobRoutes } from "../routes/budget-jobs.js";
@@ -246,6 +247,10 @@ export async function buildApp() {
   }
   // OAuth endpoints live at absolute paths (/.well-known/*, /oauth/*), so no prefix.
   await app.register(oauthRoutes);
+  // minerval.ai as an OpenID Connect provider for organizations' deployments
+  // (docs/organizations.md, "Signing in"). Mounted everywhere, as every route
+  // the public graph has is; it serves only where organizations are.
+  await app.register(oidcRoutes);
   if (featureOn("extension", config)) {
     await app.register(extensionRoutes, { prefix: "/extension" });
   }
