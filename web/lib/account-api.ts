@@ -3,7 +3,6 @@ import type {
   AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
 } from "./types";
 import { viewerExternalId } from "./viewer";
-import { actingOrganization } from "./acting-as";
 
 // Server-only client for the account/keys/usage half of the API (#70).
 // Authenticates with the frontend's service key and acts on behalf of the
@@ -72,7 +71,17 @@ export type ActAs = "switch" | "self";
 
 async function actingAs(as: ActAs): Promise<{ actingOrganization?: string }> {
   if (as === "self") return {};
-  const org = await actingOrganization();
+  // Loaded when first asked, not at the top: it reads the request's cookies
+  // (next/headers), which the root unit suite, importing this module without
+  // the web app's packages, cannot load. Where it cannot be loaded this is
+  // not running in the web app, and acting as the person is the safe answer.
+  let acting: typeof import("./acting-as") | null = null;
+  try {
+    acting = await import("./acting-as");
+  } catch {
+    return {};
+  }
+  const org = await acting.actingOrganization();
   return org ? { actingOrganization: org.id } : {};
 }
 
