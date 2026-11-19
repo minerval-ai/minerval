@@ -21,7 +21,7 @@
 import crypto from "node:crypto";
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
-import type { OrganizationRole } from "../db/schema.js";
+import { DEPLOYMENT_GRANTS, MEMBER_PERMISSIONS, type DeploymentGrant, type MemberPermission, type OrganizationRole } from "../db/schema.js";
 
 /** The prefix of every organization's external id. No sign-in provider makes it. */
 export const ORGANIZATION_EXTERNAL_PREFIX = "org:";
@@ -64,6 +64,11 @@ export interface OrganizationView {
   created_at: string;
   /** The person's own role in it, where the reader is a member. */
   role?: OrganizationRole;
+  /**
+   * What the reader may do as the organization: every member permission for
+   * an admin, the ones they were granted for a member.
+   */
+  permissions?: MemberPermission[];
 }
 
 export interface MemberView {
@@ -73,6 +78,19 @@ export interface MemberView {
   role: OrganizationRole;
   added_at: string;
   added_by: string | null;
+  /** What they may do as the organization: every member permission for an admin. */
+  permissions: MemberPermission[];
+  /** Their live grants, each with its id, for withdrawing. Empty for an admin, who holds everything without one. */
+  grants: GrantView[];
+}
+
+export interface GrantView {
+  id: string;
+  permission: MemberPermission | DeploymentGrant;
+  account_id: string | null;
+  deployment_id: string | null;
+  granted_at: string;
+  granted_by: string | null;
 }
 
 export interface InvitationView {
@@ -101,14 +119,27 @@ interface OrgRow {
   created_at: Date;
 }
 
-function view(row: OrgRow, role?: OrganizationRole): OrganizationView {
+function view(row: OrgRow, role?: OrganizationRole, granted: readonly MemberPermission[] = []): OrganizationView {
   return {
     id: row.id,
     name: row.display_name,
     external_id: row.external_id,
     created_at: new Date(row.created_at).toISOString(),
-    ...(role ? { role } : {}),
+    ...(role ? { role, permissions: role === "admin" ? [...MEMBER_PERMISSIONS] : [...granted] } : {}),
   };
+}
+
+/** A person's live member grants, by organization. */
+async function grantedTo(accountId: string, organizationId?: string): Promise<Map<string, MemberPermission[]>> {
+  const rows = await rawQuery<{ organization_id: string; permission: MemberPermission }>(
+    `SELECT organization_id, permission FROM organization_grants
+      WHERE account_id = $1 AND withdrawn_at IS NULL ${organizationId ? "AND organization_id = $2" : ""}
+      ORDER BY permission`,
+    organizationId ? [accountId, organizationId] : [accountId]
+  );
+  const by = new Map<string, MemberPermission[]>();
+  for (const r of rows) by.set(r.organization_id, [...(by.get(r.organization_id) ?? []), r.permission]);
+  return by;
 }
 
 function cleanName(name: unknown): string {
@@ -220,7 +251,8 @@ export async function listMyOrganizations(accountId: string): Promise<Organizati
       ORDER BY c.display_name`,
     [accountId]
   );
-  return rows.map((r) => view(r, r.role));
+  const granted = await grantedTo(accountId);
+  return rows.map((r) => view(r, r.role, granted.get(r.id)));
 }
 
 /** One organization, for one of its members. Anyone else is told it does not exist. */
@@ -234,7 +266,7 @@ export async function getOrganization(organizationId: string, accountId: string)
     [organizationId, accountId]
   );
   if (!row) throw NOT_FOUND();
-  return view(row, row.role);
+  return view(row, row.role, (await grantedTo(accountId, organizationId)).get(organizationId));
 }
 
 /** The reader's role, or a refusal that says the organization does not exist. */
@@ -271,7 +303,16 @@ export async function listMembers(organizationId: string, readerId: string): Pro
       ORDER BY (m.role = 'admin') DESC, c.display_name`,
     [organizationId]
   );
-  return rows.map((r) => ({ ...r, added_at: new Date(r.added_at).toISOString() }));
+  const grants = await liveGrants(organizationId);
+  return rows.map((r) => {
+    const own = grants.filter((g) => g.account_id === r.account_id);
+    return {
+      ...r,
+      added_at: new Date(r.added_at).toISOString(),
+      permissions: r.role === "admin" ? [...MEMBER_PERMISSIONS] : own.map((g) => g.permission as MemberPermission),
+      grants: r.role === "admin" ? [] : own,
+    };
+  });
 }
 
 /** Make a member an admin, or an admin a member. Refused where it would leave no admin. */
@@ -293,6 +334,8 @@ export async function setRole(input: { organizationId: string; accountId: string
       [org.id, input.accountId, input.role]
     );
     await log(tx, { organizationId: org.id, actorId: input.by, kind: "role_changed", detail: { account_id: input.accountId, from: current, to: input.role } });
+    // An admin holds every permission without a grant; one made a member again starts from none.
+    if (input.role === "admin") await withdrawAllOf(tx, { organizationId: org.id, accountId: input.accountId, by: input.by });
   });
   return listMembers(input.organizationId, input.by);
 }
@@ -317,6 +360,7 @@ export async function removeMember(input: { organizationId: string; accountId: s
       [org.id, input.accountId, input.by]
     );
     await log(tx, { organizationId: org.id, actorId: input.by, kind: leaving ? "left" : "removed", detail: { account_id: input.accountId, role: current } });
+    await withdrawAllOf(tx, { organizationId: org.id, accountId: input.accountId, by: input.by });
   });
 }
 
@@ -495,10 +539,9 @@ export async function listLog(organizationId: string, readerId: string, limit = 
 }
 
 /**
- * An act an admin made in the organization's name from minerval.ai
- * (docs/organizations.md, "Acting from minerval.ai"): which route, and what
- * the API answered. Written after the response, so it records what
- * happened.
+ * An act a person made as the organization (docs/organizations.md, "Acting
+ * as the organization"): which route, and what the API answered. Written
+ * after the response, so it records what happened.
  */
 export async function logActedAs(entry: { organizationId: string; actorId: string; method: string; route: string; status: number }): Promise<void> {
   await inTransaction((tx) =>
@@ -521,6 +564,172 @@ export async function isLiveAdmin(organizationId: string, accountId: string): Pr
     [organizationId, accountId]
   );
   return Boolean(row?.ok);
+}
+
+// ---- grants ------------------------------------------------------------------
+//
+// What an organization grants its members and its deployments, from one list
+// (docs/organizations.md, "What an organization grants"). Admins grant and
+// withdraw; every member reads them. Each change is on the log.
+
+interface GrantRow {
+  id: string;
+  permission: MemberPermission | DeploymentGrant;
+  account_id: string | null;
+  deployment_id: string | null;
+  granted_at: Date;
+  granted_by: string | null;
+}
+
+function grantView(r: GrantRow): GrantView {
+  return { ...r, granted_at: new Date(r.granted_at).toISOString() };
+}
+
+async function liveGrants(organizationId: string): Promise<GrantView[]> {
+  const rows = await rawQuery<GrantRow>(
+    `SELECT g.id, g.permission, g.account_id, g.deployment_id, g.granted_at, b.display_name AS granted_by
+       FROM organization_grants g LEFT JOIN contributors b ON b.id = g.granted_by
+      WHERE g.organization_id = $1 AND g.withdrawn_at IS NULL
+      ORDER BY g.granted_at`,
+    [organizationId]
+  );
+  return rows.map(grantView);
+}
+
+/** An organization's live grants, to its members and its deployments (its members only). */
+export async function listGrants(organizationId: string, readerId: string): Promise<GrantView[]> {
+  await requireMember(organizationId, readerId);
+  return liveGrants(organizationId);
+}
+
+async function withdrawAllOf(tx: TxQuery, input: { organizationId: string; accountId: string; by: string }): Promise<void> {
+  const withdrawn = await tx.query<{ permission: string }>(
+    `UPDATE organization_grants SET withdrawn_at = now(), withdrawn_by = $3
+      WHERE organization_id = $1 AND account_id = $2 AND withdrawn_at IS NULL
+      RETURNING permission`,
+    [input.organizationId, input.accountId, input.by]
+  );
+  if (withdrawn.length > 0) {
+    await log(tx, {
+      organizationId: input.organizationId,
+      actorId: input.by,
+      kind: "grants_withdrawn",
+      detail: { account_id: input.accountId, permissions: withdrawn.map((w) => w.permission) },
+    });
+  }
+}
+
+/**
+ * Give a member or a deployment a permission (admins). A member can be given
+ * a member permission, a deployment a deployment one. An admin is given
+ * nothing: they hold every member permission already. Giving one already
+ * held changes nothing.
+ */
+export async function grantPermission(input: {
+  organizationId: string;
+  permission: unknown;
+  accountId?: string | null;
+  deploymentId?: string | null;
+  by: string;
+}): Promise<GrantView[]> {
+  const toMember = typeof input.accountId === "string" && input.accountId !== "";
+  const toDeployment = typeof input.deploymentId === "string" && input.deploymentId !== "";
+  if (toMember === toDeployment) {
+    throw new OrganizationError("GRANTEE_REQUIRED", "Name one member (account_id) or one deployment (deployment_id).", 422);
+  }
+  const allowed: readonly string[] = toMember ? MEMBER_PERMISSIONS : DEPLOYMENT_GRANTS;
+  if (typeof input.permission !== "string" || !allowed.includes(input.permission)) {
+    throw new OrganizationError(
+      "BAD_PERMISSION",
+      `A ${toMember ? "member" : "deployment"} can be given ${allowed.join(", ")}.`,
+      422
+    );
+  }
+  const permission = input.permission;
+  await inTransaction(async (tx) => {
+    const org = await lockOrganization(tx, input.organizationId);
+    const byRole = await roleOf(tx, org.id, input.by);
+    if (!byRole) throw NOT_FOUND();
+    if (byRole !== "admin") throw ADMINS_ONLY();
+    if (toMember) {
+      const role = await roleOf(tx, org.id, input.accountId!);
+      if (!role) throw new OrganizationError("NOT_A_MEMBER", "That person is not a member of this organization.", 404);
+      if (role === "admin") {
+        throw new OrganizationError("ADMIN_HOLDS_ALL", "An admin holds every permission already.", 409);
+      }
+    } else {
+      if (!isUuid(input.deploymentId!)) throw new OrganizationError("NOT_A_DEPLOYMENT", "No live deployment of this organization has that id.", 404);
+      const [dep] = await tx.query<{ id: string }>(
+        `SELECT id FROM deployments WHERE id = $1 AND organization_id = $2 AND retired_at IS NULL`,
+        [input.deploymentId, org.id]
+      );
+      if (!dep) throw new OrganizationError("NOT_A_DEPLOYMENT", "No live deployment of this organization has that id.", 404);
+    }
+    const added = await tx.query<{ id: string }>(
+      `INSERT INTO organization_grants (organization_id, account_id, deployment_id, permission, granted_by)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT DO NOTHING RETURNING id`,
+      [org.id, toMember ? input.accountId : null, toDeployment ? input.deploymentId : null, permission, input.by]
+    );
+    if (added.length > 0) {
+      await log(tx, {
+        organizationId: org.id,
+        actorId: input.by,
+        kind: "granted",
+        detail: { permission, ...(toMember ? { account_id: input.accountId } : { deployment_id: input.deploymentId }) },
+      });
+    }
+  });
+  return liveGrants(input.organizationId);
+}
+
+/** Withdraw a live grant (admins). It stops working at the grantee's next request. */
+export async function withdrawGrant(input: { organizationId: string; grantId: string; by: string }): Promise<GrantView[]> {
+  await inTransaction(async (tx) => {
+    const org = await lockOrganization(tx, input.organizationId);
+    const byRole = await roleOf(tx, org.id, input.by);
+    if (!byRole) throw NOT_FOUND();
+    if (byRole !== "admin") throw ADMINS_ONLY();
+    if (!isUuid(input.grantId)) throw new OrganizationError("GRANT_NOT_FOUND", "No live grant of this organization has that id.", 404);
+    const [row] = await tx.query<{ permission: string; account_id: string | null; deployment_id: string | null }>(
+      `UPDATE organization_grants SET withdrawn_at = now(), withdrawn_by = $3
+        WHERE id = $1 AND organization_id = $2 AND withdrawn_at IS NULL
+        RETURNING permission, account_id, deployment_id`,
+      [input.grantId, org.id, input.by]
+    );
+    if (!row) throw new OrganizationError("GRANT_NOT_FOUND", "No live grant of this organization has that id.", 404);
+    await log(tx, {
+      organizationId: org.id,
+      actorId: input.by,
+      kind: "withdrew",
+      detail: { permission: row.permission, ...(row.account_id ? { account_id: row.account_id } : { deployment_id: row.deployment_id }) },
+    });
+  });
+  return liveGrants(input.organizationId);
+}
+
+/**
+ * A person's standing in an organization right now, for acting as it: their
+ * role and live permissions, or null where they are not a live member of a
+ * live organization.
+ */
+export async function memberStanding(
+  organizationId: string,
+  accountId: string
+): Promise<{ role: OrganizationRole; permissions: MemberPermission[] } | null> {
+  if (!isUuid(organizationId)) return null;
+  const [row] = await rawQuery<{ role: OrganizationRole; permissions: MemberPermission[] }>(
+    `SELECT m.role,
+            COALESCE(array_agg(g.permission ORDER BY g.permission) FILTER (WHERE g.id IS NOT NULL), '{}') AS permissions
+       FROM organization_members m
+       JOIN contributors c ON c.id = m.organization_id AND c.kind = 'organization' AND NOT c.is_suspended
+       LEFT JOIN organization_grants g
+         ON g.organization_id = m.organization_id AND g.account_id = m.account_id AND g.withdrawn_at IS NULL
+      WHERE m.organization_id = $1 AND m.account_id = $2 AND m.removed_at IS NULL
+      GROUP BY m.role`,
+    [organizationId, accountId]
+  );
+  return row ?? null;
 }
 
 // ---- old keys -------------------------------------------------------------

@@ -64,7 +64,7 @@ import {
 } from "../../mcp/dispatch.js";
 import { membersOnly, type Standing } from "../../permissions.js";
 import type { DeploymentGrant } from "../../db/schema.js";
-import { DEPLOYMENT_ROUTE_GRANTS } from "../deployment-grants.js";
+import { deploymentNeeds, memberMayCall } from "../organization-routes.js";
 import { deploymentByKey, logDeploymentRequest, recordNonce } from "../../services/deployment-service.js";
 import {
   EMPTY_BODY_HASH,
@@ -76,9 +76,9 @@ import {
 import { Transform } from "node:stream";
 import { createHash } from "node:crypto";
 import {
-  isLiveAdmin,
   isOrganizationExternalId,
   logActedAs,
+  memberStanding,
 } from "../../services/organization-service.js";
 
 export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass" | "deployment";
@@ -128,13 +128,13 @@ export interface RequestAuth {
    */
   fixedLabel?: FixedLabel;
   /**
-   * Set when a signed-in admin acts for an organization from minerval.ai
-   * (x-acting-organization; docs/organizations.md, "Acting from
-   * minerval.ai"). The request is the organization's (userId is the
+   * Set when a signed-in person acts as an organization
+   * (x-acting-organization; docs/organizations.md, "Acting as the
+   * organization"). The request is the organization's (userId is the
    * organization's account); this is the person, whom the organization's
    * log names.
    */
-  actingAdmin?: { accountId: string; externalId: string | null };
+  actingMember?: { accountId: string; externalId: string | null };
   /**
    * Set for a request signed by a connected deployment's key
    * (docs/organizations.md, "Signed requests"). The request is its
@@ -157,38 +157,11 @@ export function markAuthenticated(request: FastifyRequest): void {
 
 export const DEV_EXTERNAL_ID = "dev:local";
 
-/** The header with which the web tier says a signed-in admin acts for an organization. */
-export const ACTING_ORGANIZATION_HEADER = "x-acting-organization";
-
 /**
- * The routes an admin may call as an organization from minerval.ai: the acts
- * that spend its owls (buying them, mandates and their conversations with
- * the Grantmaker, funding a node, a request or a mandate, asking a mandate
- * for a fresh assessment) and the reads behind them. Contributing,
- * proposing and publishing are a deployment's work, under its grants, and
- * are not here (docs/organizations.md, "Acting from minerval.ai").
+ * The header with which the web tier says a signed-in person is acting as an
+ * organization. What they may do as it is src/server/organization-routes.ts.
  */
-export const ORGANIZATION_ACTING_ROUTES: ReadonlySet<string> = new Set([
-  "GET /users/me",
-  "GET /billing/packs",
-  "GET /billing/ledger",
-  "POST /billing/checkout",
-  "GET /grants",
-  "GET /grants/:id",
-  "POST /grants/:id/approve",
-  "POST /grants/:id/topup",
-  "POST /grants/:id/cancel",
-  "GET /grant-conversations",
-  "GET /grant-conversations/:id",
-  "POST /grant-conversations",
-  "POST /grant-conversations/:id/messages",
-  "POST /grant-conversations/:id/fund",
-  "POST /mandates/:id/contribute",
-  "POST /mandates/:id/raise",
-  "POST /mandates/:id/withdraw",
-  "POST /claims/:claim_id/contribute",
-  "POST /requests/:request_id/contribute",
-]);
+export const ACTING_ORGANIZATION_HEADER = "x-acting-organization";
 
 /**
  * The routes a platform-grantmaking key may call (#529): open, continue,
@@ -344,19 +317,20 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
           return reply.code(401).send({ error: SIGNATURE_FAULT_WORDS[fault], code: `SIGNATURE_${fault}` });
         }
         const route = routeKeyOf(request);
-        const needed = DEPLOYMENT_ROUTE_GRANTS[route];
+        const needed = deploymentNeeds(route);
         if (!needed) {
           return reply.code(403).send({
             error: "A connected deployment may not call this route. What it may call is the routes its grants open.",
             code: "NOT_A_DEPLOYMENT_ROUTE",
           });
         }
-        const holds = needed === "any" ? deployment.grants.length > 0 : deployment.grants.includes(needed);
+        const holds = needed === "any" ? deployment.grants.length > 0 : needed.some((g) => deployment.grants.includes(g));
         if (!holds) {
+          const words = needed === "any" ? "any grant" : needed.join(" or ");
           return reply.code(403).send({
-            error: `This deployment does not hold ${needed === "any" ? "any grant" : needed}. An admin of ${deployment.organization_name} gives it on minerval.ai.`,
+            error: `This deployment does not hold ${words}. An admin of ${deployment.organization_name} gives it on minerval.ai.`,
             code: "GRANT_NOT_HELD",
-            grant: needed,
+            grant: needed === "any" ? "any" : needed[0],
           });
         }
         // A write may be made once: its nonce is refused if seen with this key lately.
@@ -544,40 +518,45 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         };
       }
 
-      // An admin acting for an organization from minerval.ai: a signed-in
-      // person, on a route that spends or reads the organization's money,
-      // who is a live admin of it right now. The request then is the
+      // A person acting as an organization (docs/organizations.md, "Acting
+      // as the organization"): signed in, a live member of it right now, on
+      // a route its map opens to members, holding the permission the route
+      // needs (an admin holds them all). The request then is the
       // organization's.
       const actingOrganization = request.headers[ACTING_ORGANIZATION_HEADER];
       if (actingOrganization !== undefined) {
         const devSession = auth.method === "dev_bypass" && auth.userId !== null;
         if (!auth.isSession && !devSession) {
           return reply.code(403).send({
-            error: "Only a person in a signed-in session acts for an organization",
+            error: "Only a person in a signed-in session acts as an organization",
             code: "ORGANIZATION_SESSION_REQUIRED",
           });
         }
-        const route = routeKeyOf(request);
-        if (!ORGANIZATION_ACTING_ROUTES.has(route)) {
+        const organizationId = typeof actingOrganization === "string" ? actingOrganization : "";
+        const standing = auth.userId ? await memberStanding(organizationId, auth.userId) : null;
+        if (!standing) {
+          return reply.code(403).send({
+            error: "You are not a member of that organization, so you cannot act as it.",
+            code: "NOT_A_MEMBER",
+          });
+        }
+        const check = memberMayCall(routeKeyOf(request), request.method, standing);
+        if (!check.ok) {
           return reply.code(403).send({
             error:
-              "This is not an act an admin makes for an organization from minerval.ai. Contributing, proposing and publishing are a connected deployment's work.",
-            code: "NOT_AN_ORGANIZATION_ACT",
+              check.code === "PERMISSION_NOT_HELD"
+                ? `Acting as this organization, ${check.reason.charAt(0).toLowerCase()}${check.reason.slice(1)} An admin of it grants that on its Members tab.`
+                : check.reason,
+            code: check.code,
+            ...(check.permission ? { permission: check.permission } : {}),
           });
         }
-        const organizationId = typeof actingOrganization === "string" ? actingOrganization : "";
-        if (!auth.userId || !(await isLiveAdmin(organizationId, auth.userId))) {
-          return reply.code(403).send({
-            error: "You are not an admin of that organization",
-            code: "ADMIN_REQUIRED",
-          });
-        }
-        const person = { accountId: auth.userId, externalId: auth.contributorExternalId };
+        const person = { accountId: auth.userId!, externalId: auth.contributorExternalId };
         auth = {
           ...auth,
           userId: organizationId,
           contributorExternalId: `org:${organizationId}`,
-          actingAdmin: person,
+          actingMember: person,
         };
       }
 
@@ -586,7 +565,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     }
   );
 
-  // Every act an admin made for an organization is on the organization's
+  // Every act a person made as an organization is on the organization's
   // log, with the route and what the API answered. Reads are not logged.
   app.addHook("onResponse", async (request, reply) => {
     // Every write a deployment signed is on its organization's record of them.
@@ -603,7 +582,7 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         request.log.error({ err }, "deployment requests: could not record a signed write");
       }
     }
-    const acting = request.auth?.actingAdmin;
+    const acting = request.auth?.actingMember;
     if (!acting || request.method === "GET" || !request.auth?.userId) return;
     try {
       await logActedAs({

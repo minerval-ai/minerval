@@ -196,7 +196,6 @@ describe("the label column, in the catalog", () => {
       "deployment_connect_requests",
       // The operator's record of a provider fault: a class, a provider and counts.
       "deployment_faults",
-      "deployment_grants",
       "deployment_request_nonces",
       "deployment_requests",
       "deployments",
@@ -218,7 +217,9 @@ describe("the label column, in the catalog", () => {
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
-      // Who acts for an organization, the invitations that add them, and its log: who an account is.
+      // Who acts for an organization, what each member and deployment may do as it, the invitations
+      // that add them, and its log: who an account is.
+      "organization_grants",
       "organization_invitations",
       "organization_log",
       "organization_members",

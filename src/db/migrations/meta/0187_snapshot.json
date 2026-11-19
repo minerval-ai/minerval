@@ -1,5 +1,5 @@
 {
-  "id": "04fa0af2-fa09-493f-ac69-f00abbfa3306",
+  "id": "3e5f2000-f637-43d5-8356-48ca041b286d",
   "prevId": "6548b983-8e16-4cfd-aeab-5c5de041ef11",
   "version": "7",
   "dialect": "postgresql",
@@ -9524,7 +9524,7 @@
           "name": "stake",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "sensitivity_label": {
           "name": "sensitivity_label",
@@ -14109,7 +14109,7 @@
           "name": "stake",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "sensitivity_label": {
           "name": "sensitivity_label",
@@ -19807,6 +19807,216 @@
       },
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.organization_grants": {
+      "name": "organization_grants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "withdrawn_by": {
+          "name": "withdrawn_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_organization_grants_member_live": {
+          "name": "uq_organization_grants_member_live",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"organization_grants\".\"withdrawn_at\" IS NULL AND \"organization_grants\".\"account_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "uq_organization_grants_deployment_live": {
+          "name": "uq_organization_grants_deployment_live",
+          "columns": [
+            {
+              "expression": "deployment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"organization_grants\".\"withdrawn_at\" IS NULL AND \"organization_grants\".\"deployment_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_organization_grants_org": {
+          "name": "idx_organization_grants_org",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "organization_grants_organization_id_contributors_id_fk": {
+          "name": "organization_grants_organization_id_contributors_id_fk",
+          "tableFrom": "organization_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_grants_account_id_contributors_id_fk": {
+          "name": "organization_grants_account_id_contributors_id_fk",
+          "tableFrom": "organization_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_grants_deployment_id_deployments_id_fk": {
+          "name": "organization_grants_deployment_id_deployments_id_fk",
+          "tableFrom": "organization_grants",
+          "tableTo": "deployments",
+          "columnsFrom": [
+            "deployment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_grants_granted_by_contributors_id_fk": {
+          "name": "organization_grants_granted_by_contributors_id_fk",
+          "tableFrom": "organization_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "organization_grants_withdrawn_by_contributors_id_fk": {
+          "name": "organization_grants_withdrawn_by_contributors_id_fk",
+          "tableFrom": "organization_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "withdrawn_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_organization_grants_one_grantee": {
+          "name": "ck_organization_grants_one_grantee",
+          "value": "(\"organization_grants\".\"account_id\" IS NULL) <> (\"organization_grants\".\"deployment_id\" IS NULL)"
+        },
+        "ck_organization_grants_permission": {
+          "name": "ck_organization_grants_permission",
+          "value": "(\"organization_grants\".\"account_id\" IS NOT NULL AND \"organization_grants\".\"permission\" IN ('spend', 'buy', 'speak', 'propose', 'take_up', 'claim_prizes'))\n        OR (\"organization_grants\".\"deployment_id\" IS NOT NULL AND \"organization_grants\".\"permission\" IN ('read_feed', 'report_usage', 'publish', 'spend', 'speak', 'propose', 'take_up'))"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.organization_invitations": {

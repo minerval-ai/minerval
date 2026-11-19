@@ -67,16 +67,29 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   each other at once cannot both succeed. If every admin's account is
   gone, the operator key makes a person an admin
   (`POST /operator/organizations/:id/admins`), logged as made with it.
-- **Acting for it.** A signed-in admin acts as the organization from
-  minerval.ai with `x-acting-organization: <id>` beside `x-acting-user`.
-  The API checks that the person is a live admin of it now and that the
-  route is one of `ORGANIZATION_ACTING_ROUTES` (src/server/plugins/auth.ts):
-  buying owls, its mandates and their conversations with the Grantmaker,
-  funding a node, a request or a mandate, asking a mandate for a fresh
-  assessment, and the reads behind them. The request is then the
-  organization's, and the act is on its log under the admin. A key, a
-  token or the Assistant never acts as an organization, and the web tier
-  cannot name one in `x-acting-user` (`ORGANIZATION_NOT_ACTABLE`).
+- **What each may do as it.** Admins grant members and deployments
+  permissions from one list (`organization_grants`; `POST
+  /organizations/:id/grants`, `DELETE /organizations/:id/grants/:grant_id`,
+  read by every member at `GET /organizations/:id/grants`): for a member
+  `spend`, `buy`, `speak`, `propose`, `take_up` and `claim_prizes`; for a
+  deployment `read_feed`, `report_usage`, `publish`, `spend`, `speak`,
+  `propose` and `take_up`. An admin holds every member permission without
+  a grant. A member's grants are withdrawn when they leave or are made an
+  admin. Each grant and withdrawal is on the log.
+- **Acting as it.** A signed-in member acts as the organization with
+  `x-acting-organization: <id>` beside `x-acting-user`. The API checks that
+  they are a live member now, and that they hold the permission the route
+  needs, from one map for members and deployments
+  (`src/server/organization-routes.ts`). A route that writes and is not in
+  it refuses the header (`NOT_AN_ORGANIZATION_ACT`), as do a person's own
+  routes listed there with their reasons (keys, OAuth, their pages, the
+  Assistant for now, prizes until the rules allow an organization), and a
+  permission not held answers `PERMISSION_NOT_HELD`, naming it. Reads are
+  open to any live member, but for the person's own and the ledger, which
+  is admins'. The request is then the organization's, and each write is on
+  its log under the person. A key or a token never acts as an
+  organization, and the web tier cannot name one in `x-acting-user`
+  (`ORGANIZATION_NOT_ACTABLE`).
 - **A shared login becomes one in place** (`POST /account-conversion`,
   accepted at `POST /account-conversions/:id/accept` by the person it
   names as first admin). The row keeps its id, so its record, pages, owls
@@ -90,7 +103,7 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   "Signed requests"). The auth plugin checks the signature over the host,
   method, path, body hash, time, nonce and key id, against the live
   deployment the key id names, and then that the route is one its grants
-  open (`src/server/deployment-grants.ts`; any other route answers
+  open (`src/server/organization-routes.ts`; any other route answers
   `NOT_A_DEPLOYMENT_ROUTE`). A write's nonce is refused if seen with the key
   in the last ten minutes. The request is the organization's, with
   `method: "deployment"`; it is not a session and acts for no person. Each

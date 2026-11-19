@@ -2788,8 +2788,36 @@ export const accountConversions = pgTable(
 // do is the grants an admin of the organization gave it. None of these
 // tables carries a label: they say who a request is, as api_keys does.
 // ---------------------------------------------------------------------------
-export const DEPLOYMENT_GRANTS = ["read_feed", "report_usage", "publish", "act"] as const;
+// What an organization grants (docs/organizations.md, "What an organization
+// grants"): one list for its members and its deployments, each kind of act
+// severable. Admins hold every member permission, always, and are the only
+// ones who grant. Which routes each opens is src/server/organization-routes.ts.
+export const ORGANIZATION_PERMISSIONS = [
+  "spend",
+  "buy",
+  "speak",
+  "propose",
+  "take_up",
+  "claim_prizes",
+  "publish",
+  "read_feed",
+  "report_usage",
+] as const;
+export type OrganizationPermission = (typeof ORGANIZATION_PERMISSIONS)[number];
+
+// What a member can be granted: publishing, the feed and usage reports are a
+// deployment's, done with its own keys and its own private graph.
+export const MEMBER_PERMISSIONS = ["spend", "buy", "speak", "propose", "take_up", "claim_prizes"] as const satisfies readonly OrganizationPermission[];
+export type MemberPermission = (typeof MEMBER_PERMISSIONS)[number];
+
+// What a deployment can be granted: buying and claiming a prize need a person
+// present (a card payment; the prize rules' identity code and tax form).
+export const DEPLOYMENT_GRANTS = ["read_feed", "report_usage", "publish", "spend", "speak", "propose", "take_up"] as const satisfies readonly OrganizationPermission[];
 export type DeploymentGrant = (typeof DEPLOYMENT_GRANTS)[number];
+
+// The grant phase 2 named `act`, which phase 3 split. A deployment built
+// before the split still asks for it when it connects; it means these four.
+export const ACT_SPLIT = ["spend", "speak", "propose", "take_up"] as const satisfies readonly DeploymentGrant[];
 
 export const deployments = pgTable(
   "deployments",
@@ -2818,23 +2846,40 @@ export const deployments = pgTable(
   ]
 );
 
-// One row per grant given. Withdrawing sets withdrawn_at; nothing is edited.
-export const deploymentGrants = pgTable(
-  "deployment_grants",
+// One row per permission an organization gave, to a member or to a
+// deployment (docs/organizations.md, "What an organization grants").
+// Withdrawing sets withdrawn_at; nothing is edited. A member's grants are
+// withdrawn when they leave, so a person added again starts with none.
+export const organizationGrants = pgTable(
+  "organization_grants",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    deploymentId: uuid("deployment_id")
+    organizationId: uuid("organization_id")
       .notNull()
-      .references((): AnyPgColumn => deployments.id, { onDelete: "cascade" }),
-    grant: text("grant").$type<DeploymentGrant>().notNull(),
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    // Exactly one of these: the member's account, or the deployment.
+    accountId: uuid("account_id").references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    deploymentId: uuid("deployment_id").references((): AnyPgColumn => deployments.id, { onDelete: "cascade" }),
+    permission: text("permission").$type<OrganizationPermission>().notNull(),
     grantedBy: uuid("granted_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
     withdrawnBy: uuid("withdrawn_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
     withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("uq_deployment_grants_live").on(table.deploymentId, table.grant).where(sql`${table.withdrawnAt} IS NULL`),
-    check("ck_deployment_grants_grant", sql`${table.grant} IN ('read_feed', 'report_usage', 'publish', 'act')`),
+    uniqueIndex("uq_organization_grants_member_live")
+      .on(table.organizationId, table.accountId, table.permission)
+      .where(sql`${table.withdrawnAt} IS NULL AND ${table.accountId} IS NOT NULL`),
+    uniqueIndex("uq_organization_grants_deployment_live")
+      .on(table.deploymentId, table.permission)
+      .where(sql`${table.withdrawnAt} IS NULL AND ${table.deploymentId} IS NOT NULL`),
+    index("idx_organization_grants_org").on(table.organizationId),
+    check("ck_organization_grants_one_grantee", sql`(${table.accountId} IS NULL) <> (${table.deploymentId} IS NULL)`),
+    check(
+      "ck_organization_grants_permission",
+      sql`(${table.accountId} IS NOT NULL AND ${table.permission} IN ('spend', 'buy', 'speak', 'propose', 'take_up', 'claim_prizes'))
+        OR (${table.deploymentId} IS NOT NULL AND ${table.permission} IN ('read_feed', 'report_usage', 'publish', 'spend', 'speak', 'propose', 'take_up'))`
+    ),
   ]
 );
 

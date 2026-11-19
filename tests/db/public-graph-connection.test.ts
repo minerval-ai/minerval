@@ -48,7 +48,7 @@ const fake = {
   key: null as string | null,
   code: "WDJB-MJHT",
   approved: false,
-  grants: ["read_feed", "report_usage", "act"] as string[],
+  grants: ["read_feed", "report_usage", "spend"] as string[],
   retired: false,
   seen: [] as Array<{ method: string; path: string; signed: boolean; bearer: boolean }>,
   reports: [] as string[],
@@ -164,7 +164,7 @@ describe("connecting to minerval.ai", () => {
     const start = await asAdmin({
       method: "POST",
       url: "/outside/connection",
-      payload: { name: "Research", grants: ["read_feed", "report_usage", "act"], api_url: API },
+      payload: { name: "Research", grants: ["read_feed", "report_usage", "spend"], api_url: API },
     });
     expect(start.statusCode, start.body).toBe(201);
     expect(start.json().connection).toMatchObject({ state: "waiting", code: fake.code, connected: false });
@@ -180,7 +180,7 @@ describe("connecting to minerval.ai", () => {
       state: "connected",
       connected: true,
       organization: { name: "Acme Corp" },
-      grants: ["read_feed", "report_usage", "act"],
+      grants: ["read_feed", "report_usage", "spend"],
     });
     expect(approved.body).not.toContain("PRIVATE KEY");
 
