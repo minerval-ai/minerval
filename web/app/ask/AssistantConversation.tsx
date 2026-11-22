@@ -21,6 +21,7 @@ import type {
   AssistantHeldActionView,
   AssistantMessageView,
   AssistantModelView,
+  GuestTermsView,
 } from "../../lib/account-api";
 
 // A conversation with the Assistant: the agent that works for the signed-in
@@ -395,6 +396,46 @@ interface Live {
 }
 const EMPTY_LIVE: Live = { partial: "", turn: -1, note: null, activity: [] };
 
+/** Signing in, coming back to where the visitor is. */
+function SignInLink({ children }: { children: ReactNode }) {
+  const [here, setHere] = useState("/ask");
+  useEffect(() => setHere(window.location.pathname + window.location.search), []);
+  return <Link href={`/signin?callbackUrl=${encodeURIComponent(here)}`}>{children}</Link>;
+}
+
+/**
+ * What a guest is told beside the composer: that they are a guest, what
+ * they have, the bounds, and that an account keeps the conversation.
+ */
+function GuestLine({
+  terms,
+  balanceMicroUsd,
+  started,
+  modelName,
+}: {
+  terms: GuestTermsView;
+  modelName: string | undefined;
+  balanceMicroUsd: number;
+  started: boolean;
+}) {
+  return (
+    <p className="ask-guest">
+      {started ? (
+        <>
+          Guest · <Owls microUsd={balanceMicroUsd} /> left.
+        </>
+      ) : (
+        <>
+          Try it without an account: {terms.owls} free owls{modelName ? ` on ${modelName}` : ""}.
+        </>
+      )}{" "}
+      <SignInLink>Make an account</SignInLink>
+      {terms.signup_owls > 0 ? ` for ${terms.signup_owls} more` : ""} and to keep{" "}
+      {started ? "this conversation" : "your conversations"}.
+    </p>
+  );
+}
+
 type Panel = { type: "claim"; citation: AssistantCitationView } | { type: "page"; id: string } | null;
 
 export function AssistantConversation({
@@ -407,6 +448,7 @@ export function AssistantConversation({
   question,
   startLabels,
   owlSource,
+  guest,
   children,
 }: {
   initial: Convo | null;
@@ -422,6 +464,12 @@ export function AssistantConversation({
   startLabels?: MyLabels | null;
   /** Where the person gets more owls here: bought, or created by an administrator (#1095). */
   owlSource: OwlSource;
+  /**
+   * Set for a visitor with no account (docs/accounts.md, "Guests"): the
+   * terms they use the Assistant on, which the page states before the first
+   * message and keeps beside the composer, with the way to make an account.
+   */
+  guest?: GuestTermsView | null;
   /** What an empty conversation shows above the composer. */
   children?: ReactNode;
 }) {
@@ -799,7 +847,19 @@ export function AssistantConversation({
         </div>
 
         <div className="ask-dock">
-          {balance <= 0 ? (
+          {guest && <GuestLine
+              terms={guest}
+              balanceMicroUsd={balance}
+              started={Boolean(convo)}
+              modelName={(convo?.models ?? models)[0]?.name}
+            />}
+          {guest && balance <= 0 && convo ? (
+            <p className="ask-notice">
+              Your guest owls are spent. <SignInLink>Make an account</SignInLink> to go on
+              {guest.signup_owls > 0 ? ` (${guest.signup_owls} free owls)` : ""}; this conversation
+              comes with you.
+            </p>
+          ) : balance <= 0 && !guest ? (
             <p className="ask-notice">
               Your balance is 0 owls. The Assistant&rsquo;s work is charged in owls at what it
               costs, so it needs some to reply. Searching and reading the graph stay free.{" "}
@@ -875,7 +935,17 @@ export function AssistantConversation({
               </div>
             </div>
           )}
-          {error && <p className="form-error">{error}</p>}
+          {error && (
+            <p className="form-error">
+              {error}
+              {guest && (
+                <>
+                  {" "}
+                  <SignInLink>Sign in</SignInLink>
+                </>
+              )}
+            </p>
+          )}
           <div className="ask-bill">
             <span>
               {convo ? (
@@ -887,6 +957,7 @@ export function AssistantConversation({
               )}
               balance <Owls microUsd={balance} />
             </span>
+            {!guest && (
             <details className="ask-allowed">
               <summary>
                 {allowedCount === 0
@@ -914,6 +985,7 @@ export function AssistantConversation({
                 ))}
               </div>
             </details>
+            )}
           </div>
         </div>
       </div>

@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { claim?: string; label?: string };
+  let body: { claim?: string; label?: string; assess?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -87,6 +87,8 @@ export async function POST(request: NextRequest) {
     const contribution = await proposeClaimIntake(session.externalId, {
       claim,
       ...(typeof body.label === "string" && body.label ? { label: body.label } : {}),
+      // Assessed once accepted unless the proposer unticked it.
+      ...(body.assess === false ? { assess: false } : {}),
     });
     return NextResponse.json({ contribution }, { status: 202 });
   } catch (err) {

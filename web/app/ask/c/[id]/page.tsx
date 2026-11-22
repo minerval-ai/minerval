@@ -9,6 +9,7 @@ import {
 } from "../../../../lib/account-api";
 import { AssistantConversation } from "../../AssistantConversation";
 import { loadOwlSource } from "../../../../lib/load-owl-source";
+import { currentGuest } from "../../../../lib/guest";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: "Ask · Minerval" };
@@ -24,14 +25,16 @@ export default async function AskConversationPage({
 }) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.externalId) redirect("/signin");
+  // A visitor with no account sees their guest's conversations (lib/guest.ts).
+  const externalId = session?.externalId ?? (await currentGuest());
+  if (!externalId) redirect(`/signin?callbackUrl=${encodeURIComponent(`/ask/c/${id}`)}`);
   if (!accountApiConfigured()) notFound();
 
   let convo: AssistantConversationView;
   // Where owls come from here, for the notice shown when the balance is 0.
-  const owlSource = loadOwlSource(session.externalId);
+  const owlSource = session?.externalId ? loadOwlSource(externalId) : Promise.resolve({ kind: "none" } as const);
   try {
-    convo = await getAssistantConversation(session.externalId, id);
+    convo = await getAssistantConversation(externalId, id, session?.externalId ? "switch" : "self");
   } catch (err) {
     if (err instanceof AccountApiError && (err.status === 404 || err.status === 400)) notFound();
     throw err;
@@ -46,6 +49,7 @@ export default async function AskConversationPage({
       allowedAlways={convo.allowed_kinds.always}
       kindLabels={convo.allowed_kinds.labels}
       owlSource={await owlSource}
+      guest={convo.guest ?? null}
     />
   );
 }

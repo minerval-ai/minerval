@@ -156,8 +156,7 @@ export default async function ContributionPage({
             <Link href={`/claims/${becameId}`}>
               {claim?.claim.text ?? "its page"}
             </Link>
-            . Its assessment may still be under way; the page shows where it
-            stands.
+            .
           </p>
         </div>
       )}

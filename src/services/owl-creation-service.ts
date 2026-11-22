@@ -540,6 +540,7 @@ export async function createdOwlsSummary(limit = 50): Promise<CreatedOwlsSummary
       [
         OWL_REASONS.signupGrant,
         OWL_REASONS.monthlyGrant,
+        OWL_REASONS.guestGrant,
         OWL_REASONS.contributionAward,
         OWL_REASONS.prizeAward,
         OWL_REASONS.adminAdjust,

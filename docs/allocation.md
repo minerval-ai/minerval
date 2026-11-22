@@ -1942,7 +1942,10 @@ Design principles, in force in the implementation:
   Contribution Reviewer like anyone (`submit_contribution`), new claims,
   questions and quantities included, each review paid from the escrow
   (`submitGrantContribution`); an accepted proposal gets no express pass
-  charged to the funder, since the mandate funds its own passes.
+  charged to the funder, since the mandate funds its own passes: a propose
+  item no assess, reassess or deepen item names gets a standard assess
+  item for its ref when the plan is stored, unless it says `assess: false`
+  (`withProposalsAssessed`; docs/accounts.md, "Proposing a node").
 - **A mandate can be planned around a node the graph does not hold yet
   (#656).** A funder's question, claim or quantity that the graph holds in
   no wording used to leave the plan with nothing to assess, deepen or be

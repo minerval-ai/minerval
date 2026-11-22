@@ -177,6 +177,9 @@ owl_packs = [
 ]
 signup_grant_owls = 10
 monthly_grant_owls = 1
+guest_ask_owls = 5
+guest_ask_daily_owls = 100
+guest_ask_per_address_per_day = 1
 cap_claim_proposal_owls = 2
 cap_assessment_owls = 2
 cap_source_ingest_owls = 10

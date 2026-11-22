@@ -24,7 +24,7 @@ import { ActingLine, useActing, useActingBlocked } from "@/components/account/Ac
 type SubmitState =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "sent"; contributionId: string | null }
+  | { kind: "sent"; contributionId: string | null; assess: boolean }
   | { kind: "error"; message: string };
 
 // `labels`: where a members-only deployment holds material at more than one
@@ -112,6 +112,8 @@ export function ProposeClaim({
         body: JSON.stringify({
           claim: data.get("claim"),
           ...(data.get("label") ? { label: data.get("label") } : {}),
+          // The box is ticked by default: a proposal is assessed once accepted.
+          ...(data.get("assess") ? {} : { assess: false }),
         }),
       });
       if (res.ok) {
@@ -121,6 +123,7 @@ export function ProposeClaim({
         setStatus({
           kind: "sent",
           contributionId: body?.contribution?.id ?? null,
+          assess: data.get("assess") !== null,
         });
       } else {
         const body = (await res.json().catch(() => null)) as {
@@ -193,9 +196,10 @@ export function ProposeClaim({
         <div className="contribute-box">
           {outcome?.becameClaimId ? (
             <p style={{ margin: 0 }}>
-              <strong>Accepted.</strong> It is in the graph:{" "}
-              <a href={`/claims/${outcome.becameClaimId}`}>open its page</a>.
-              Its assessment may still be under way. The review is on{" "}
+              <strong>Accepted.</strong> It is in the graph
+              {status.assess ? " and being assessed now" : ""}:{" "}
+              <a href={`/claims/${outcome.becameClaimId}`}>open its page</a>
+              . The review is on{" "}
               <a href={`/contributions/${status.contributionId}`}>
                 its public record
               </a>
@@ -270,6 +274,11 @@ export function ProposeClaim({
             graph, evidence and arguments for or against it go on its page,
             where each is reviewed on its merits.
           </p>
+
+          <label className="contribute-hint" style={{ display: "block" }}>
+            <input type="checkbox" name="assess" value="1" defaultChecked />{" "}
+            Assess it once accepted (up to 2 owls; refunded if not accepted)
+          </label>
 
           <ActingLine permission="propose" />
           <div className="contribute-actions">

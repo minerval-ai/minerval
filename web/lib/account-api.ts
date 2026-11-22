@@ -298,6 +298,8 @@ export async function provisionUser(input: {
   // The groups a single sign-on's claims carried: all of them, or absent
   // for a sign-in that names no groups at all.
   groups?: string[];
+  // The guest this person was on /ask, whose conversations go with them.
+  guestExternalId?: string | null;
 }): Promise<AccountUser> {
   const r = await accountFetch<{ user: AccountUser }>("/users/provision", {
     method: "POST",
@@ -309,6 +311,7 @@ export async function provisionUser(input: {
       ...(input.email ? { email: input.email } : {}),
       ...(input.avatarUrl ? { avatar_url: input.avatarUrl } : {}),
       ...(input.groups ? { groups: input.groups } : {}),
+      ...(input.guestExternalId ? { guest_external_id: input.guestExternalId } : {}),
     },
   });
   return r.user;
@@ -757,7 +760,7 @@ export async function submitContribution(
 /** Intake (#157): propose a claim not yet in the graph; reviewed before it materializes. */
 export async function proposeClaimIntake(
   externalId: string,
-  input: { claim: string; label?: string },
+  input: { claim: string; label?: string; assess?: boolean },
   as: ActAs = "switch"
 ): Promise<{ id: string; review_status: string }> {
   const r = await accountFetch<{
@@ -765,7 +768,11 @@ export async function proposeClaimIntake(
   }>("/claims/propose", {
     method: "POST",
     actingUser: externalId, ...(await actingAs(as)),
-    body: { claim: input.claim, ...(input.label ? { label: input.label } : {}) },
+    body: {
+      claim: input.claim,
+      ...(input.label ? { label: input.label } : {}),
+      ...(input.assess === false ? { assess: false } : {}),
+    },
   });
   return r.contribution;
 }
@@ -1633,6 +1640,8 @@ export interface AssistantConversationView extends AssistantSummaryView {
     stopping: boolean;
   };
   balance_micro_usd: number;
+  /** Set for a guest's conversation (docs/accounts.md, "Guests"). */
+  guest?: GuestView;
 }
 
 export interface AssistantHome {
@@ -1640,6 +1649,39 @@ export interface AssistantHome {
   models: AssistantModelView[];
   balance_micro_usd: number;
   allowed_kinds: { always: string[]; labels: Record<string, string> };
+  /** Set for a guest (docs/accounts.md, "Guests"). */
+  guest?: GuestView;
+}
+
+/** The terms visitors without an account use the Assistant on. */
+export interface GuestTermsView {
+  owls: number;
+  daily_owls: number;
+  per_address_per_day: number;
+  signup_owls: number;
+}
+
+export interface GuestView extends GuestTermsView {
+  granted_owls: number;
+}
+
+/** Whether this deployment offers guests on /ask, and on what terms. */
+export async function fetchGuestTerms(): Promise<{
+  offered: boolean;
+  terms: GuestTermsView;
+  models: AssistantModelView[];
+}> {
+  return accountFetch("/users/guest", { noViewer: true });
+}
+
+/** A guest account for a visitor at `address` (lib/guest.ts). */
+export async function makeGuest(address: string): Promise<{ external_id: string; granted_owls: number }> {
+  const r = await accountFetch<{ guest: { external_id: string; granted_owls: number } }>("/users/guest", {
+    method: "POST",
+    noViewer: true,
+    body: { address },
+  });
+  return r.guest;
 }
 
 export async function getAssistantHome(externalId: string, as: ActAs = "switch"): Promise<AssistantHome> {

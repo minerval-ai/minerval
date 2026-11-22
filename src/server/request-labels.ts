@@ -292,6 +292,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
 
   // ---- accounts, keys and money ----
   "POST /users/provision": { rule: "none", why: ACCOUNT },
+  "POST /users/guest": { rule: "none", why: "Makes a guest account and its pass and grant: accounts and the owl ledger, which carry no label." },
   "POST /api-keys": {
     rule: "none",
     why: "A key is the account's own and carries no label of the kind a reader is held to. The label the key will work at is named in this request and checked by the route (routes/api-keys.ts).",

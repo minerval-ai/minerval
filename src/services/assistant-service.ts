@@ -45,6 +45,7 @@ import {
   getAssistantContext,
   getAssistantTitleSystemPrompt,
   EXTENSION_SECTION,
+  guestSection,
   NODE_SECTION,
   WEB_SECTION,
 } from "../llm/prompts/assistant.js";
@@ -65,6 +66,7 @@ import {
   type HeldKind,
 } from "../llm/tools/assistant-tools.js";
 import { chargeMetered } from "./owl-ledger-service.js";
+import { GUEST_EXTERNAL_ID_PREFIX, guestStanding, guestTerms, isGuestExternalId } from "./guest-service.js";
 import { openAssistantStream, publishAssistantEvent } from "./assistant-stream.js";
 import { getEntitlement, serializeEntitlement, serializeOwlPacks } from "./billing-service.js";
 import { getClaimCards } from "./claim-card-service.js";
@@ -182,10 +184,18 @@ export async function settleAssistantTurns(): Promise<void> {
   while (pendingTurns.size > 0) await Promise.all([...pendingTurns]);
 }
 
-/** The models a user may pick for a conversation: the default first. */
-export function assistantModels(): Array<{ id: string; name: string; default: boolean }> {
+/**
+ * The models a user may pick for a conversation: the default first. A guest
+ * (docs/accounts.md, "Guests") is offered the standard model alone: a
+ * guest's few owls go further on it, and the frontier model is for accounts.
+ */
+export function assistantModels(
+  externalId?: string | null
+): Array<{ id: string; name: string; default: boolean }> {
   const config = loadConfig();
-  const ids = [...new Set([config.assistantModel, config.assistantStandardModel])];
+  const ids = isGuestExternalId(externalId)
+    ? [config.assistantStandardModel]
+    : [...new Set([config.assistantModel, config.assistantStandardModel])];
   return ids.map((id, i) => ({ id, name: modelDisplayName(id), default: i === 0 }));
 }
 
@@ -671,10 +681,14 @@ async function runTurn(
       runAssistantTurn({
         transcript: transcriptOf(convo),
         context,
-        sections:
-          convo.surface === "extension"
+        sections: [
+          ...(convo.surface === "extension"
             ? [EXTENSION_SECTION]
-            : [WEB_SECTION, ...((convo.origin as Origin)?.node_id ? [NODE_SECTION] : [])],
+            : [WEB_SECTION, ...((convo.origin as Origin)?.node_id ? [NODE_SECTION] : [])]),
+          ...(isGuestExternalId(user.externalId)
+            ? [guestSection(loadConfig().guestAskOwls, loadConfig().signupGrantOwls)]
+            : []),
+        ],
         model,
         account: account!,
         conversationMicroUsd: convo.spentMicroUsd,
@@ -910,7 +924,8 @@ export async function startAssistantConversation(input: {
 }): Promise<AssistantResult> {
   const message = cleanMessage(input.message);
   if (!message) return { ok: false, code: "EMPTY_MESSAGE", message: "The message is empty" };
-  if (input.model && !assistantModels().some((m) => m.id === input.model)) {
+  const offered = assistantModels(input.user.externalId);
+  if (input.model && !offered.some((m) => m.id === input.model)) {
     return { ok: false, code: "UNKNOWN_MODEL", message: "That model is not offered for the Assistant" };
   }
   const denied = await affordable(input.user.actingFor?.id ?? input.user.id);
@@ -929,7 +944,8 @@ export async function startAssistantConversation(input: {
           ? { node_id: input.nodeId }
           : null,
       ...(input.page ? { surface: "extension" } : {}),
-      model: input.model ?? null,
+      // A guest's conversation is on the one model a guest is offered.
+      model: input.model ?? (isGuestExternalId(input.user.externalId) ? offered[0]!.id : null),
     })
     .returning();
   const begun = await beginTurn(input.app, input.user, convo!, message);
@@ -1018,7 +1034,8 @@ export async function setAssistantModel(
   model: string,
   actingFor: string | null = null
 ): Promise<AssistantResult> {
-  if (!assistantModels().some((m) => m.id === model)) {
+  const guest = await guestStanding(userId);
+  if (!assistantModels(guest ? `${GUEST_EXTERNAL_ID_PREFIX}` : null).some((m) => m.id === model)) {
     return { ok: false, code: "UNKNOWN_MODEL", message: "That model is not offered for the Assistant" };
   }
   const [convo] = await getDb()
@@ -1150,18 +1167,21 @@ export function serializeAssistantSummary(convo: AssistantConversation, showLabe
 
 /** A conversation in full: transcript, held actions, turn, bill and balance. */
 export async function serializeAssistantConversation(convo: AssistantConversation) {
-  const [held, account, entitlement, showLabels] = await Promise.all([
+  const [held, account, entitlement, showLabels, guest] = await Promise.all([
     heldActionsOf(convo.id),
     getAllowance(convo.userId),
     getEntitlement(payerOf(convo)),
     assistantShowsLabels(),
+    guestStanding(convo.userId),
   ]);
   return {
     ...serializeAssistantSummary(convo, showLabels),
     surface: convo.surface,
     origin: convo.origin ?? null,
     model: modelFor(convo),
-    models: assistantModels(),
+    models: assistantModels(guest ? GUEST_EXTERNAL_ID_PREFIX : null),
+    // Set for a guest's conversation (docs/accounts.md, "Guests").
+    ...(guest ? { guest: { granted_owls: guest.grantedOwls, ...guestTerms() } } : {}),
     messages: (convo.messages ?? []) as AssistantMessage[],
     held_actions: held.map((h) => serializeHeld(h, showLabels)),
     allowed_kinds: {

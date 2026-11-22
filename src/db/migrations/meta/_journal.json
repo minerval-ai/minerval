@@ -1401,6 +1401,13 @@
       "when": 1795119902649,
       "tag": "0199_revoke_old_organization_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1795318073365,
+      "tag": "0200_guests_and_assess_on_accept",
+      "breakpoints": true
     }
   ]
 }

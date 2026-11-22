@@ -118,3 +118,37 @@ describe("a mandate scoped to a proposal", () => {
     expect(validateMandate(mandate({ scope_ref: "root", scope_claim_id: CLAIM_ID }))).toMatch(/not both/);
   });
 });
+
+describe("a proposed node is assessed once accepted, by default (docs/accounts.md, \"Proposing a node\")", () => {
+  it("gives a proposal no item assesses a standard assess item for its ref", () => {
+    const stored = normalizePlanItems(items(propose({ ref: "housing" })));
+    expect(stored.map((i) => i.action)).toEqual(["propose", "assess"]);
+    expect(stored[1]).toMatchObject({ action: "assess", claim_ref: "housing", variant: "standard" });
+  });
+
+  it("names a proposal with no ref from its wording, so its assess item can", () => {
+    const stored = normalizePlanItems(items(propose()));
+    expect(stored[0]!.ref).toMatch(/^p-[0-9a-f]{12}$/);
+    expect(stored[1]).toMatchObject({ action: "assess", claim_ref: stored[0]!.ref });
+    // The same wording is the same ref, so storing the plan again adds nothing.
+    expect(normalizePlanItems(stored).map((i) => i.action)).toEqual(["propose", "assess"]);
+  });
+
+  it("adds nothing where the plan already assesses it, or the proposal says assess: false", () => {
+    for (const action of ["assess", "reassess", "deepen"]) {
+      const stored = normalizePlanItems(
+        items(propose({ ref: "housing" }), { action, claim_ref: "housing", rationale: WHY, variant: "strong" })
+      );
+      expect(stored.filter((i) => ["assess", "reassess", "deepen"].includes(i.action))).toHaveLength(1);
+    }
+    const unassessed = normalizePlanItems(items(propose({ ref: "housing", assess: false })));
+    expect(unassessed.map((i) => i.action)).toEqual(["propose"]);
+    expect(unassessed[0]).toMatchObject({ assess: false });
+  });
+
+  it("is said to the Grantmaker", () => {
+    expect(PLAN_KIND_RULES).toContain("assess: false");
+    const props = PLAN_ITEM_SCHEMA.properties as Record<string, unknown>;
+    expect(props.assess).toBeDefined();
+  });
+});

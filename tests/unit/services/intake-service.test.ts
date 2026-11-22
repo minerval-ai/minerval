@@ -58,10 +58,16 @@ const mocks = vi.hoisted(() => ({
   enqueueSteward: vi.fn(),
   enqueueUrlExtraction: vi.fn(),
   getOrCreateSource: vi.fn(async () => ({ id: "source-1" })),
+  createOrder: vi.fn(),
+  rawQuery: vi.fn(async () => [] as unknown[]),
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
   getDb: () => fakeDb(),
+  rawQuery: mocks.rawQuery,
+}));
+vi.mock("../../../src/services/order-service.js", () => ({
+  createOrder: mocks.createOrder,
 }));
 vi.mock("../../../src/llm/agents/matcher.js", () => ({
   matchClaim: mocks.matchClaim,
@@ -118,6 +124,66 @@ beforeEach(() => {
   mocks.enqueueSteward.mockReset();
   mocks.enqueueUrlExtraction.mockReset();
   mocks.getOrCreateSource.mockReset().mockResolvedValue({ id: "source-1" });
+  // No order can be made unless a test says so: the pipeline onboards.
+  mocks.createOrder.mockReset().mockResolvedValue({ ok: false, code: "CLAIM_NOT_FOUND", message: "x" });
+  mocks.rawQuery.mockReset().mockResolvedValue([]);
+});
+
+describe("assessing a proposal once accepted (docs/accounts.md, \"Proposing a node\")", () => {
+  const novel = {
+    is_match: false,
+    matched_claim_id: null,
+    new_canonical_form: "The daytime clear sky appears blue",
+    instance_stance: "affirms",
+  };
+
+  it("hands a novel node to the proposer's paid order alone, not also to the pipeline", async () => {
+    state.selectResults.push([pendingContribution()]);
+    mocks.matchClaim.mockResolvedValue(novel);
+    mocks.rawQuery.mockResolvedValue([{ id: "charge-1" }]);
+    mocks.createOrder.mockResolvedValue({ ok: true, order: { id: "order-1" } });
+
+    const result = await materializeAcceptedIntake("contrib-1");
+
+    expect(result.action).toBe("created_claim");
+    expect(mocks.createOrder).toHaveBeenCalledWith({
+      userId: "user-1",
+      claimId: result.claimId,
+      contributionId: "contrib-1",
+      chargeEntryId: "charge-1",
+    });
+    // The order's pass is the node's first (order-pipeline.ts): no second,
+    // background pass for the order to wait on or repeat.
+    expect(mocks.enqueueClaimPipeline).not.toHaveBeenCalled();
+    expect(mocks.createJob).not.toHaveBeenCalled();
+  });
+
+  it("onboards through the pipeline when no order could be made", async () => {
+    state.selectResults.push([pendingContribution()]);
+    mocks.matchClaim.mockResolvedValue(novel);
+    mocks.createOrder.mockRejectedValue(new Error("down"));
+
+    const result = await materializeAcceptedIntake("contrib-1");
+
+    expect(mocks.enqueueClaimPipeline).toHaveBeenCalledWith({ claimId: result.claimId, jobId: "job-1" });
+  });
+
+  it("orders nothing for a proposal made without assessing, or a mandate's", async () => {
+    for (const overrides of [{ assessOnAccept: false }, { grantId: "grant-1" }]) {
+      state.selectResults.push([pendingContribution(overrides)]);
+      mocks.matchClaim.mockResolvedValue(novel);
+      await materializeAcceptedIntake("contrib-1");
+    }
+    expect(mocks.createOrder).not.toHaveBeenCalled();
+    expect(mocks.enqueueClaimPipeline).toHaveBeenCalledTimes(2);
+  });
+
+  it("files the proposer's choice with the proposal", async () => {
+    await createClaimProposal({ claimText: "The sky is blue", contributorId: "user-1", assessOnAccept: false });
+    expect(state.inserts[0]!.values).toMatchObject({ assessOnAccept: false });
+    await createClaimProposal({ claimText: "The sky is blue", contributorId: "user-1" });
+    expect(state.inserts[1]!.values).toMatchObject({ assessOnAccept: true });
+  });
 });
 
 describe("isIntakeContributionType", () => {

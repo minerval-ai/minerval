@@ -12,7 +12,7 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
   const { id } = await params;
   return asUser(async (externalId) => ({
     conversation: await getAssistantConversation(externalId, id),
-  }));
+  }), 200, { guests: "use" });
 }
 
 // Choose the model for the replies that follow.
@@ -25,10 +25,10 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
   const model = body.model;
   return asUser(async (externalId) => ({
     conversation: await setAssistantModel(externalId, id, model),
-  }));
+  }), 200, { guests: "use" });
 }
 
 export async function DELETE(_request: NextRequest, { params }: Ctx) {
   const { id } = await params;
-  return asUser((externalId) => deleteAssistantConversation(externalId, id));
+  return asUser((externalId) => deleteAssistantConversation(externalId, id), 200, { guests: "use" });
 }

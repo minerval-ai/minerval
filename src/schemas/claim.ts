@@ -60,6 +60,9 @@ export const claimProposeBody = z.object({
   // client is dropped here, never stored).
   claim: z.string().min(1).max(2000),
   kind: z.enum(["claim", "question", "quantity"]).default("claim"),
+  // Assess the node as soon as review accepts it (the default), paid by
+  // the proposal's charge; false proposes it without assessing.
+  assess: z.boolean().default(true),
 });
 
 export const claimPatchBody = z.object({

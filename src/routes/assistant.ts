@@ -52,6 +52,7 @@ import {
   subscribeAssistantStream,
 } from "../services/assistant-stream.js";
 import { getEntitlement } from "../services/billing-service.js";
+import { guestStanding, guestTerms, isGuestExternalId } from "../services/guest-service.js";
 
 const TURN_PROTOCOL =
   "Returns at once, before the Assistant replies: the conversation comes back with your " +
@@ -211,17 +212,21 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     preHandler: guards,
     handler: async (request, reply) => {
       const { userId, actingFor } = scopeOf(request);
-      const [rows, entitlement, always, showLabels] = await Promise.all([
+      const [rows, entitlement, always, showLabels, guest] = await Promise.all([
         listAssistantConversations(userId, request.query.limit ?? 50, request.query.offset ?? 0, actingFor),
         // The balance a conversation would be charged to: the organization's when acting as one.
         getEntitlement(actingFor ?? userId),
         getAllowance(userId),
         assistantShowsLabels(),
+        guestStanding(userId),
       ]);
       return reply.send({
         conversations: rows.map((c) => serializeAssistantSummary(c, showLabels)),
         // What a new conversation would start with.
-        models: assistantModels(),
+        models: assistantModels(userOf(request).externalId),
+        // Set for a guest (docs/accounts.md, "Guests"): what they were given,
+        // and the bounds and the account that the page tells them about.
+        ...(guest ? { guest: { granted_owls: guest.grantedOwls, ...guestTerms() } } : {}),
         balance_micro_usd: entitlement.owlBalanceMicroUsd,
         allowed_kinds: { always, labels: HELD_KINDS },
       });
@@ -459,7 +464,9 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
         conversationId: request.params.id,
         actionId: request.params.action_id,
         decision: request.body.decision,
-        ...(request.body.allow ? { allow: request.body.allow } : {}),
+        // A guest presses each card: what runs without asking is an
+        // account's to widen (docs/accounts.md, "Guests").
+        ...(request.body.allow && !isGuestExternalId(userOf(request).externalId) ? { allow: request.body.allow } : {}),
       });
       if (!result.ok) {
         return reply

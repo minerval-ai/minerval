@@ -14,5 +14,5 @@ export async function POST(
   }
   return asUser(async (externalId) => ({
     conversation: await sendAssistantMessage(externalId, id, message),
-  }));
+  }), 200, { guests: "use" });
 }

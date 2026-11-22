@@ -39,9 +39,24 @@ import { resolveStanding } from "../../services/permission-service.js";
 import { getCallerSkill, listCallerSkills } from "../../mcp/caller-skills.js";
 import { runAsAssistant } from "../assistant-acting.js";
 import { rawSourceLabelsOf } from "../../raw-sources.js";
+import { isGuestExternalId } from "../../services/guest-account.js";
 import { NO_CONNECTION_TOOLS, type ConnectionToolBundle } from "./connection-tools.js";
 
 type Tool = Anthropic.Tool;
+
+/**
+ * The acts a guest's Assistant is offered besides reads: proposing to the
+ * graph and getting a node assessed, which is what a visitor comes with;
+ * held for the guest's press like anyone's. Everything else that writes
+ * (funding, publishing, keys, organizations) waits for an account, for the
+ * reason the guest's owls are the platform's: they are a gift to try the
+ * Assistant, not money to direct the graph with.
+ */
+export const GUEST_TOOLS: ReadonlySet<string> = new Set([
+  "propose_claim",
+  "submit_contribution",
+  "order_assessment",
+]);
 
 /** The kinds of held action a user can allow to run without a card. */
 export const HELD_KINDS = {
@@ -460,7 +475,13 @@ export async function openAccountTools(
   const readOnly = new Set(
     tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name)
   );
-  const definitions: Tool[] = tools.map((t) => ({
+  // A guest (docs/accounts.md, "Guests") is offered the reads and the few
+  // acts GUEST_TOOLS names, and is told so (prompts/assistant.ts,
+  // GUEST_SECTION). The call below refuses anything else, whatever name the
+  // model sends.
+  const guest = isGuestExternalId(auth.contributorExternalId);
+  const offered = (name: string) => !guest || readOnly.has(name) || GUEST_TOOLS.has(name);
+  const definitions: Tool[] = tools.filter((t) => offered(t.name)).map((t) => ({
     name: t.name,
     description: t.description ?? "",
     input_schema: t.inputSchema as Tool["input_schema"],
@@ -492,6 +513,17 @@ export async function openAccountTools(
       return JSON.stringify({ error: { code: decided.refusal.code, message: decided.refusal.error } });
     },
     async call(name, input) {
+      if (!offered(name)) {
+        return {
+          isError: true,
+          text: JSON.stringify({
+            error: {
+              code: "GUEST_NOT_ALLOWED",
+              message: `${name} is not offered to a guest. Your user can make an account to do this.`,
+            },
+          }),
+        };
+      }
       const result = await runAsAssistant(() => client.callTool({ name, arguments: input }));
       const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
       const text = content

@@ -23,5 +23,5 @@ export async function POST(
       decision,
       ...(scope === "conversation" || scope === "always" ? { allow: { scope } } : {}),
     }),
-  }));
+  }), 200, { guests: "use" });
 }

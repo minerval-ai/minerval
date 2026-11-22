@@ -48,7 +48,7 @@ import { isDirectService } from "../server/plugins/auth.js";
 import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
 import { allocateToClaimAssessment } from "../services/allocation-service.js";
-import { createOrder, serializeOrder } from "../services/order-service.js";
+import { assessmentUnderWay, createOrder, serializeOrder } from "../services/order-service.js";
 import {
   createClaimMandate,
   GRANTMAKER_SHARE,
@@ -710,6 +710,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               // is what it was.
               ...(mirrorRoles().applier ? { mirrored: MIRRORED_SCHEMA } : {}),
               subclaim_count: { type: "integer" },
+              // A pass on the node under way where the reader is: "running",
+              // or "queued" while an order for it (anyone's) waits. Null when
+              // none is. An accepted proposal's node reads queued at once.
+              assessment_under_way: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  state: { type: "string", enum: ["running", "queued"] },
+                  since: { type: "string", nullable: true },
+                },
+              },
               // Steward-seeded prior (#285): the parent claim's Steward's
               // preliminary credence/note, served only while this claim has
               // no current assessment — the claim still reads as unassessed.
@@ -913,6 +924,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           // Beside the judgment it qualifies, whichever kind keeps it.
           ...(since ? { since_assessed: since } : {}),
           subclaim_count: subclaimCount,
+          assessment_under_way: await assessmentUnderWay(claim.id).catch(() => null),
           ...extras,
           quantity,
           threshold_of: thresholdOf,
@@ -1700,12 +1712,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  const proposalQuota = app.requireAgenticQuota("claim_proposal");
+
   // POST /claims/propose
   app.post("/propose", {
     schema: {
       tags: ["claims"],
       summary:
-        "Propose a new claim, question or quantity, judged on its wording alone (user proposals enter the review queue). Arguments and evidence go on the node once it exists, as contributions reviewed on their merits.",
+        "Propose a new claim, question or quantity, judged on its wording alone (user proposals enter the review queue). By default the node is assessed as soon as review accepts it, on the express lane, paid by this proposal's charge (up to the claim_proposal cap; the unused part settles back); assess: false proposes it without assessing and charges nothing. Arguments and evidence go on the node once it exists, as contributions reviewed on their merits.",
       body: {
         type: "object",
         required: ["claim"],
@@ -1723,6 +1737,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             description:
               "Optional guess at the kind. The Matcher decides whether the node enters as a claim, a question or a quantity. " +
               "A quantity's wording says what is measured, in which population and under which conditions, and in what unit.",
+          },
+          assess: {
+            type: "boolean",
+            default: true,
+            description:
+              "Assess the node as soon as review accepts it (the default): its first Steward pass runs at once, paid by " +
+              "this proposal's charge, and its page shows the assessment under way. false proposes it without assessing: " +
+              "nothing is charged, the proposal counts against the hourly limit on free contributions, and the node waits " +
+              "for the graph's own allocation or an order (order_assessment).",
           },
         },
       },
@@ -1746,6 +1769,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                 submitted_at: { type: "string", format: "date-time" },
               },
             },
+            assess_on_accept: { type: "boolean" },
             message: { type: "string" },
           },
         },
@@ -1756,8 +1780,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     },
     // Proposing a claim commands a full Steward pass on it, capped at the
     // claim_proposal cap (the same as an assessment order's). See
-    // src/services/owl.ts.
-    preHandler: [app.authenticate, app.requireAgenticQuota("claim_proposal")],
+    // src/services/owl.ts. A proposal made without assessing commands no
+    // pass and is not priced, so the balance check is skipped for it.
+    preHandler: [
+      app.authenticate,
+      async (request, reply) => {
+        if ((request.body as { assess?: unknown } | undefined)?.assess === false) return;
+        return proposalQuota(request, reply);
+      },
+    ],
     handler: async (request, reply) => {
       const body = claimProposeBody.parse(request.body);
       const auth = request.auth;
@@ -1791,15 +1822,18 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       // — and the Contribution Reviewer decides; acceptance canonicalizes
       // through the Matcher and only then materializes a live claim.
       // Priced: the owl charge below bounds proposals, so no hourly count.
-      const contributor = await gateContributor(request, reply, { priced: true });
+      // A proposal made without assessing is a free contribution, and
+      // carries the hourly count free contributions carry.
+      const contributor = await gateContributor(request, reply, { priced: body.assess });
       if (!contributor) return;
 
       // Charge at start: the owl buys the review-and-assess work the
       // proposal commands. Linked to the contribution so an intake rejection
       // refunds it automatically — a good-faith proposal that doesn't pass
-      // costs nothing (#71).
-      const charge = await chargeAgenticOp(auth, "claim_proposal");
-      if (!charge.allowed) return app.sendQuotaDenial(reply, charge);
+      // costs nothing (#71). Nothing is charged for a proposal made without
+      // assessing: its review is free like any contribution's.
+      const charge = body.assess ? await chargeAgenticOp(auth, "claim_proposal") : null;
+      if (charge && !charge.allowed) return app.sendQuotaDenial(reply, charge);
 
       let contribution;
       try {
@@ -1807,13 +1841,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           claimText: body.claim,
           contributorId: contributor.id,
           kind: body.kind,
+          assessOnAccept: body.assess,
         });
-        if (charge.entryId) {
+        if (charge?.entryId) {
           await attachChargeContribution(charge.entryId, contribution.id);
         }
       } catch (err) {
         // The proposal never materialized: the user must not pay for a 500.
-        await refundAgenticOp(auth, "claim_proposal").catch(() => {});
+        if (charge) await refundAgenticOp(auth, "claim_proposal").catch(() => {});
         throw err;
       }
 
@@ -1824,12 +1859,17 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           review_status: contribution.reviewStatus,
           submitted_at: contribution.submittedAt.toISOString(),
         },
+        assess_on_accept: body.assess,
         message:
           "Proposal queued for review. If accepted, it will be matched " +
-          "against the graph and materialized into it; GET /contributions/" +
+          "against the graph and materialized into it" +
+          (body.assess
+            ? ", and its first assessment starts at once"
+            : "; it was proposed without assessing, so it waits for the graph's own allocation or an order") +
+          ". GET /contributions/" +
           contribution.id +
-          " then returns became_claim_id and page_url, the node it became " +
-          "(its assessment may still be under way).",
+          " then returns became_claim_id and page_url, the node it became, " +
+          "whose page shows the assessment under way until it lands.",
       });
     },
   });

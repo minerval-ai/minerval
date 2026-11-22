@@ -17,6 +17,7 @@
  * disclosed on the assessments they produce, and grant stakes feed queue
  * priority only (§19, "Allocating Attention and Paid Attention").
  */
+import { createHash } from "node:crypto";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, grants, type Grant } from "../db/schema.js";
@@ -131,6 +132,12 @@ export interface PlanItem {
   kind?: NodeKind;
   /** propose only: the wording proposed. */
   text?: string;
+  /**
+   * propose only: false to propose the node without assessing it. Absent
+   * or true, normalizePlanItems gives the proposal an assess item when no
+   * item in the plan assesses it.
+   */
+  assess?: boolean;
   /** propose only, written by the materializer: the contribution it filed. */
   contribution_id?: string;
   url?: string;
@@ -219,7 +226,12 @@ export const PLAN_KIND_RULES =
   "what depended on it. Give the item a ref and other items may name it " +
   "as claim_ref in place of claim_id (and the mandate as scope_ref): they " +
   "wait for the review, take the node's id when it is accepted, and are " +
-  "priced and run like any other item from then on. " +
+  "priced and run like any other item from then on. A proposed node is " +
+  "assessed once accepted, as anyone's is: a propose item that no " +
+  "assess, reassess or deepen item names gets a standard assess item for " +
+  "its ref when the plan is stored, priced from your escrow like any " +
+  "other. Give the propose item assess: false to propose a node without " +
+  "assessing it (another mandate or the graph's own allocation may). " +
   "assess/reassess/deepen: an active node of any kind (claim, quantity, " +
   "or question; claim_id is the node's id, or claim_ref a proposal's ref). The item is a standing " +
   "order for one Steward pass: your mandate commissions it whole, like a " +
@@ -352,6 +364,12 @@ export const PLAN_ITEM_SCHEMA = {
       type: "string",
       enum: [...TEXT_NODE_KINDS],
       description: "Required for propose: the kind you propose. The Matcher settles the node's kind.",
+    },
+    assess: {
+      type: "boolean",
+      description:
+        "propose only, optional: false to propose the node without assessing it. By default a proposal " +
+        "no other item assesses gets a standard assess item when the plan is stored.",
     },
     text: {
       type: "string",
@@ -592,6 +610,49 @@ export const PLAN_ITEM_AUTHORS = [
 ] as const;
 export type PlanItemAuthor = (typeof PLAN_ITEM_AUTHORS)[number];
 
+const ASSESSING_ACTIONS = new Set(["assess", "reassess", "deepen"]);
+
+/**
+ * A proposed node is assessed once accepted, by default, wherever it was
+ * proposed (docs/accounts.md, "Proposing a node"; docs/allocation.md). For
+ * each propose item with a ref that no assessing item in `items` names (by
+ * claim_ref, or by the node id the proposal already became), and that does
+ * not say assess: false, an assess item for the ref is added after it,
+ * standard tier, priced from the escrow like any other. Items are judged as
+ * the author passed them, before normalization drops what is the
+ * materializer's to write.
+ */
+export function withProposalsAssessed(items: readonly PlanItem[]): PlanItem[] {
+  const assessed = new Set<string>();
+  for (const it of items) {
+    if (!ASSESSING_ACTIONS.has(it.action)) continue;
+    if (it.claim_ref) assessed.add(`ref:${it.claim_ref}`);
+    if (it.claim_id) assessed.add(`id:${it.claim_id}`);
+  }
+  const out: PlanItem[] = [];
+  for (const original of items) {
+    // A proposal with no ref is given one from its wording, so the item that
+    // assesses it can name it.
+    const it =
+      original.action === "propose" && !original.ref && original.assess !== false && original.text
+        ? { ...original, ref: `p-${createHash("sha256").update(String(original.text).trim()).digest("hex").slice(0, 12)}` }
+        : original;
+    out.push(it);
+    if (it.action !== "propose" || !it.ref || it.assess === false) continue;
+    if (assessed.has(`ref:${it.ref}`) || (it.claim_id && assessed.has(`id:${it.claim_id}`))) continue;
+    assessed.add(`ref:${it.ref}`);
+    out.push({
+      action: "assess",
+      claim_ref: it.ref,
+      variant: "standard",
+      rationale:
+        "The proposed node's first assessment, which a proposal gets once it is accepted unless the propose " +
+        "item says assess: false.",
+    });
+  }
+  return out;
+}
+
 /** Who wrote a set of items, when, and in which run (normalizePlanItems). */
 export interface PlanItemStamp {
   by: PlanItemAuthor;
@@ -604,7 +665,7 @@ export interface PlanItemStamp {
 export function normalizePlanItems(items: readonly PlanItem[], stamp?: PlanItemStamp): PlanItem[] {
   const at = stamp ? (stamp.at ?? new Date()).toISOString() : null;
   const runId = stamp ? (stamp.runId !== undefined ? stamp.runId : getUsageContext().runId ?? null) : null;
-  return items.map((it) => {
+  return withProposalsAssessed(items).map((it) => {
     const focus = it.action === "ingest" && typeof it.focus === "string" ? it.focus.trim() : "";
     const partition =
       it.action === "sweep" && typeof it.partition === "string" ? it.partition.trim().toLowerCase() : "";
@@ -616,7 +677,14 @@ export function normalizePlanItems(items: readonly PlanItem[], stamp?: PlanItemS
       // to write, never the plan's author's.
       ...(it.claim_id && !propose ? { claim_id: it.claim_id } : {}),
       ...(it.claim_ref && !it.claim_id && !propose ? { claim_ref: it.claim_ref } : {}),
-      ...(propose ? { kind: it.kind, text: String(it.text).trim(), ...(it.ref ? { ref: it.ref } : {}) } : {}),
+      ...(propose
+        ? {
+            kind: it.kind,
+            text: String(it.text).trim(),
+            ...(it.ref ? { ref: it.ref } : {}),
+            ...(it.assess === false ? { assess: false } : {}),
+          }
+        : {}),
       ...(it.url ? { url: it.url } : {}),
       ...(focus ? { focus } : {}),
       ...(partition ? { partition } : {}),
