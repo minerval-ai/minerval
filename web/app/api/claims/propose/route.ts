@@ -37,8 +37,7 @@ function friendlyError(err: AccountApiError, gettingOwls: string): { status: num
         status: 402,
         error:
           "Proposing a claim or question holds up to 2 owls while its assessment runs, and your " +
-          `balance cannot cover it; the unused part of the hold comes back when the run finishes. ${gettingOwls} ` +
-          "Or untick “Assess it” to propose it without assessing, which is free.",
+          `balance cannot cover it; the unused part of the hold comes back when the run finishes. ${gettingOwls}`,
       };
     case "LABEL_REQUIRED":
     case "LABEL_NOT_READABLE":

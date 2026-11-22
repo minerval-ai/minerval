@@ -422,26 +422,16 @@ function GuestLine({
     <p className="ask-guest">
       {started ? (
         <>
-          You are a guest: <Owls microUsd={balanceMicroUsd} /> of the {terms.owls} owls Minerval gave
-          you are left.
+          Guest · <Owls microUsd={balanceMicroUsd} /> left.
         </>
       ) : (
         <>
-          No account needed to try it: Minerval gives a visitor {terms.owls} owls of the
-          Assistant&rsquo;s work{modelName ? `, on ${modelName}` : ""}. It can read the graph for you, and propose
-          claims and get them assessed when you press the button.
+          Try it without an account: {terms.owls} free owls{modelName ? ` on ${modelName}` : ""}.
         </>
       )}{" "}
-      <SignInLink>Make an account</SignInLink> to keep {started ? "this conversation" : "your conversations"}
-      {terms.signup_owls > 0 ? ` and get ${terms.signup_owls} owls` : ""}, use every model and
-      everything the Assistant can do.
-      {!started && (
-        <span className="order-caption">
-          {" "}
-          Guests are limited to {terms.per_address_per_day === 1 ? "one session" : `${terms.per_address_per_day} sessions`} a
-          day from one address, and to {terms.daily_owls} owls a day among all of them.
-        </span>
-      )}
+      <SignInLink>Make an account</SignInLink>
+      {terms.signup_owls > 0 ? ` for ${terms.signup_owls} more` : ""} and to keep{" "}
+      {started ? "this conversation" : "your conversations"}.
     </p>
   );
 }
@@ -865,10 +855,9 @@ export function AssistantConversation({
             />}
           {guest && balance <= 0 && convo ? (
             <p className="ask-notice">
-              The owls Minerval gave you are spent. Searching and reading the graph stay free.{" "}
-              <SignInLink>Make an account</SignInLink> to go on: it is free
-              {guest.signup_owls > 0 ? `, comes with ${guest.signup_owls} owls,` : ""} and this
-              conversation goes with you.
+              Your guest owls are spent. <SignInLink>Make an account</SignInLink> to go on
+              {guest.signup_owls > 0 ? ` (${guest.signup_owls} free owls)` : ""}; this conversation
+              comes with you.
             </p>
           ) : balance <= 0 && !guest ? (
             <p className="ask-notice">
@@ -952,7 +941,7 @@ export function AssistantConversation({
               {guest && (
                 <>
                   {" "}
-                  <SignInLink>Sign in or make an account</SignInLink>
+                  <SignInLink>Sign in</SignInLink>
                 </>
               )}
             </p>

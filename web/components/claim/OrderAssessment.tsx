@@ -150,7 +150,7 @@ export function OrderAssessment({
     return (
       <p className="order-line">
         <a href="/signin">Sign in</a> to have this claim assessed. It costs
-        at most 2 owls, and new accounts start with free owls.
+        at most 2 owls, and new accounts start with 5 free.
       </p>
     );
   }
@@ -159,8 +159,7 @@ export function OrderAssessment({
     // A proposal's order was paid for when the proposal was made.
     return order.charged ? (
       <p className="order-line" role="status">
-        Being assessed: its assessment is queued and starts shortly. This page
-        updates when the verdict lands.
+        Assessment queued.
       </p>
     ) : (
       <p className="order-line" role="status">
@@ -238,10 +237,7 @@ function UnderWayLine({
   return (
     <p className="order-line" role="status">
       <span className="under-way-dot" aria-hidden="true" />
-      {underWay.state === "running"
-        ? `${what} now: a Steward is examining the evidence.`
-        : `${what}: its assessment is queued and starts shortly.`}{" "}
-      This page updates when the verdict lands.
+      {underWay.state === "running" ? `${what}…` : `${what === "Being assessed" ? "Assessment" : "Reassessment"} queued.`}
     </p>
   );
 }

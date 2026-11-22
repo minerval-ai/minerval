@@ -199,9 +199,6 @@ export function ProposeClaim({
               <strong>Accepted.</strong> It is in the graph
               {status.assess ? " and being assessed now" : ""}:{" "}
               <a href={`/claims/${outcome.becameClaimId}`}>open its page</a>
-              {status.assess
-                ? ", which shows the assessment under way and updates when the verdict lands"
-                : ""}
               . The review is on{" "}
               <a href={`/contributions/${status.contributionId}`}>
                 its public record
@@ -220,11 +217,9 @@ export function ProposeClaim({
             </p>
           ) : (
           <p style={{ margin: 0 }}>
-            <strong>Received.</strong> The proposal is awaiting review, which
-            usually takes a few minutes. If it is accepted, it is matched against
-            the graph and enters it
-            {status.assess ? ", its assessment starts at once," : ""} and a link
-            to its page appears here.{" "}
+            <strong>Received.</strong> The proposal is awaiting review. If it
+            is accepted, it is matched against the graph and enters it, and a
+            link to its page appears here.{" "}
             {status.contributionId ? (
               <>
                 The decision and its reasoning will appear on{" "}
@@ -282,10 +277,7 @@ export function ProposeClaim({
 
           <label className="contribute-hint" style={{ display: "block" }}>
             <input type="checkbox" name="assess" value="1" defaultChecked />{" "}
-            Assess it as soon as it is accepted · up to 2 owls, held when you
-            submit; the unused part comes back, and all of it if the proposal
-            is not accepted. Untick to propose it without assessing: that is
-            free, and the node waits until someone has it assessed.
+            Assess it once accepted (up to 2 owls; refunded if not accepted)
           </label>
 
           <ActingLine permission="propose" />
