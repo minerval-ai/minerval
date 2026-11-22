@@ -1730,6 +1730,13 @@ html { scroll-behavior: smooth; }
 .owl-mark { margin-right: 0.3em; flex-shrink: 0; }
 
 /* claim-page order surface + decomposition funding */
+.under-way-dot {
+  display: inline-block; width: .5rem; height: .5rem; border-radius: 50%;
+  background: var(--st-inconclusive, currentColor); margin-right: .45rem; vertical-align: .08rem;
+  animation: under-way-pulse 1.6s ease-in-out infinite;
+}
+@keyframes under-way-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .under-way-dot { animation: none; } }
 .order-line { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); margin: 0.5rem 0; }
 .order-line .linklike { font-size: inherit; }
 .order-button {
@@ -2464,6 +2471,12 @@ a.ask-cite:not([class*="st-"]), a.ask-cite:not([class*="st-"]):visited { color: 
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.4rem 1.2rem; align-items: baseline;
   font-size: 0.78rem; color: var(--muted); border-top: 1px solid var(--rule-soft); padding-top: 0.6rem;
 }
+.ask-guest {
+  margin: 0 0 .6rem;
+  font-size: .88rem;
+  color: var(--muted);
+}
+.ask-guest a { font-weight: 600; }
 .ask-notice {
   font-size: 0.86rem; border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem 1rem;
   background: var(--paper-sunk); margin: 0;

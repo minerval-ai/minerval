@@ -37,7 +37,8 @@ function friendlyError(err: AccountApiError, gettingOwls: string): { status: num
         status: 402,
         error:
           "Proposing a claim or question holds up to 2 owls while its assessment runs, and your " +
-          `balance cannot cover it; the unused part of the hold comes back when the run finishes. ${gettingOwls}`,
+          `balance cannot cover it; the unused part of the hold comes back when the run finishes. ${gettingOwls} ` +
+          "Or untick “Assess it” to propose it without assessing, which is free.",
       };
     case "LABEL_REQUIRED":
     case "LABEL_NOT_READABLE":
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { claim?: string; label?: string };
+  let body: { claim?: string; label?: string; assess?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -87,6 +88,8 @@ export async function POST(request: NextRequest) {
     const contribution = await proposeClaimIntake(session.externalId, {
       claim,
       ...(typeof body.label === "string" && body.label ? { label: body.label } : {}),
+      // Assessed once accepted unless the proposer unticked it.
+      ...(body.assess === false ? { assess: false } : {}),
     });
     return NextResponse.json({ contribution }, { status: 202 });
   } catch (err) {

@@ -204,6 +204,8 @@ describe("the label column, in the catalog", () => {
       // Where the subscription router has read the event log to: a number.
       "event_router_state",
       // Hosting tokens for deployments Minerval provisions, kept as hashes (docs/organizations.md, "Hosted by Minerval").
+      // A guest's pass on /ask: an account, what it was given, an address hashed with its day (docs/accounts.md, "Guests").
+      "guest_passes",
       "hosted_deployment_tokens",
       // The labels themselves.
       "label_reads",

@@ -662,6 +662,9 @@ export interface ClaimDetail {
   // did (lib/since-assessed.ts); absent otherwise.
   judgment_inputs?: JudgmentInputs | null;
   subclaim_count: number;
+  // A pass on the node under way where the reader is; absent when the API
+  // predates the field.
+  assessment_under_way?: AssessmentUnderWay | null;
   // Steward-seeded prior (#285); absent when the claim is assessed, unseeded,
   // or the API predates the field.
   seed?: ClaimSeed | null;
@@ -2241,4 +2244,10 @@ export interface ContributionStatedView {
   source_id: string | null;
   instance_id: string | null;
   challenge: StatedViewChallenge | null;
+}
+
+/** A pass on a node under way: running, or queued as an order waits. */
+export interface AssessmentUnderWay {
+  state: "running" | "queued";
+  since: string | null;
 }

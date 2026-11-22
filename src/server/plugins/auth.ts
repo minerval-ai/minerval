@@ -75,6 +75,7 @@ import {
 } from "../../services/request-signature.js";
 import { Transform } from "node:stream";
 import { createHash } from "node:crypto";
+import { isGuestExternalId } from "../../services/guest-account.js";
 import {
   actingStandingOf,
   isOrganizationExternalId,
@@ -300,6 +301,13 @@ async function asCredentialFor(
       actingStanding: standing,
     },
   };
+}
+
+/** The routes a guest's web session may call (the Assistant proxy's). */
+function guestMayReach(request: FastifyRequest): boolean {
+  const url = request.routeOptions?.url ?? request.url.split("?")[0] ?? "";
+  if (url === "/users/me" && request.method === "GET") return true;
+  return url === "/assistant/conversations" || url.startsWith("/assistant/conversations/");
 }
 
 export async function registerAuth(app: FastifyInstance): Promise<void> {
@@ -606,6 +614,17 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
           return reply
             .code(403)
             .send({ error: "Account suspended", code: "ACCOUNT_SUSPENDED" });
+        }
+        // A guest (docs/accounts.md, "Guests") reaches the API only through
+        // the web tier's Assistant proxy: its conversations, and its own
+        // account read. Everything else it does, it does through the
+        // Assistant's tools, which are limited for a guest where they are
+        // built (llm/tools/assistant-tools.ts).
+        if (isGuestExternalId(actingUser.externalId) && !guestMayReach(request)) {
+          return reply.code(403).send({
+            error: "A guest can talk to the Assistant, and nothing else. Make an account to do this.",
+            code: "GUEST_NOT_ALLOWED",
+          });
         }
         // A session is the person, not the key the web tier presented for
         // them: it has no fixed label, and says or derives one per request.

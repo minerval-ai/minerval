@@ -150,6 +150,7 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
   "POST /mcp": "The MCP transport: a client acts as the identity its credential was made for (docs/organizations.md, \"Other credentials\").",
   "DELETE /mcp": "The MCP transport: a client acts as the identity its credential was made for (docs/organizations.md, \"Other credentials\").",
   "POST /users/provision": SERVICE,
+  "POST /users/guest": SERVICE,
   "POST /pages": "A saved page is its person's notebook, not an act on the public graph.",
   "DELETE /pages/:id": "A saved page is its person's notebook, not an act on the public graph.",
   "POST /pages/:id/share": "A saved page is its person's notebook, not an act on the public graph.",

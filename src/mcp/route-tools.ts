@@ -105,10 +105,14 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     note:
       "The proposal is reviewed by the Contribution Reviewer before anything " +
       "enters the graph; track it with get_contribution_status, which " +
-      "returns became_claim_id and page_url once it is accepted. " +
+      "returns became_claim_id and page_url once it is accepted. An accepted " +
+      "node is assessed at once by default; give your user its page_url, " +
+      "where the assessment shows as under way until it lands. " +
       SPENDS_OWLS +
       " A rejected good-faith proposal refunds. There is no hourly cap: " +
-      "your balance is the bound.",
+      "your balance is the bound. With assess: false nothing is charged and " +
+      "the node is not assessed on acceptance; such proposals count against " +
+      "the hourly limit on free contributions.",
   },
 
   "POST /claims/propose-list": {
@@ -715,6 +719,8 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "'propose_argument', which goes through the Contribution Reviewer.",
 
   "POST /users/provision": SERVICE_ONLY,
+  "POST /users/guest": SERVICE_ONLY,
+  "GET /users/guest": SERVICE_ONLY,
   "GET /usage/allocation": SERVICE_ONLY,
   "GET /usage/system": SERVICE_ONLY,
   "GET /reports": SERVICE_ONLY + " (raise_issue is the MCP side of reports.)",

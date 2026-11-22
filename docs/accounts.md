@@ -1050,11 +1050,46 @@ Semantics:
   `claims.importance`: money buys scheduling, not epistemic standing.
 - **Accepted claim proposals** create a proposal-funded order automatically
   (the claim_proposal charge rides along), so a paid proposal's claim runs
-  as soon as its funded action dispatches (#284).
+  as soon as its funded action dispatches (#284), and that pass is the
+  node's first (see "Proposing a node").
 - The run is attributed to the ordering user (usage context userId +
   jobId=order id), so per-order cost is queryable from `llm_usage`.
 - `GET /orders` (optionally `?claim_id=` for the claim page's poll),
   `GET /orders/:id`.
+
+## Proposing a node
+
+A node proposed for a person is assessed as soon as review accepts it.
+Proposing and assessing used to read as two acts: the proposal was
+accepted, its page said "Not yet assessed" beside a button to buy an
+assessment, and the first pass came later or, from some doors, not at all.
+Now, by default, wherever the proposal comes from:
+
+- **`POST /claims/propose`** (the claims index's form, the browser
+  extension, MCP's `propose_claim`, the Assistant's) charges the
+  `claim_proposal` cap when it is made. On acceptance the node gets an
+  express-lane order paid by that charge, and the order's pass is the
+  node's first: a novel node is not also handed to the claim pipeline,
+  whose background pass the order would otherwise wait on or repeat
+  (`src/services/intake-service.ts`). A first pass that fails onboards the
+  node through the pipeline, as any node is (`src/workers/order-pipeline.ts`).
+  An order whose node is mid-pass waits without holding up the orders
+  behind it.
+- **`assess: false`** proposes without assessing: nothing is charged, the
+  proposal counts against the hourly limit on free contributions, and the
+  node waits for the graph's own allocation or an order. The form has it
+  as a box, ticked by default (`contributions.assess_on_accept`).
+- **A mandate's proposal** is assessed from the mandate's escrow: a plan's
+  propose item that no assess, reassess or deepen item names gets a
+  standard `assess` item for its ref when the plan is stored
+  (`withProposalsAssessed`, `src/services/grant-service.ts`). A propose item
+  with `assess: false` is filed without one. The funder's own balance is
+  never charged for it.
+
+A node's page says when a pass on it is under way, to every reader:
+`GET /claims/:id` carries `assessment_under_way` (`running`, or `queued`
+while an order for it waits, anyone's), and the page shows "Being
+assessed" in place of the button until the verdict lands.
 
 ## Deep decomposition — a mandate on one claim
 
@@ -1335,6 +1370,49 @@ where the bill and the balance are in view.
 
 **Model.** Claude Fable 5.2 by default (`ASSISTANT_MODEL`), with Claude
 Opus 5.5 as the cheaper choice per conversation (`ASSISTANT_STANDARD_MODEL`).
+
+## Guests
+
+A visitor with no account may use the Assistant at `/ask` on owls Minerval
+gives them (`src/services/guest-service.ts`, `web/lib/guest.ts`). The page
+says what a guest gets, and the bounds below, before the first message,
+and asks them, beside the composer and once their owls are spent, to make
+an account: it is free, comes with the signup grant, and keeps their
+conversations.
+
+- **The account.** The first message a visitor sends makes a guest
+  account (`POST /users/guest`, service-only: the web tier calls it with
+  the visitor's address). Its external id is `guest:<uuid>`, which no
+  sign-in makes, and the web tier keeps it in an httpOnly cookie signed with
+  the sign-in secret. A guest is given `GUEST_ASK_OWLS` (5) as a
+  `guest_grant` ledger row, and no signup grant or monthly owl.
+- **What a guest can do.** Talk to the Assistant, on the standard model
+  alone (`ASSISTANT_STANDARD_MODEL`, Opus): a guest's few owls go further on
+  it. The Assistant's tools are every read and three acts, `propose_claim`,
+  `submit_contribution` and `order_assessment`, each held for the guest's
+  press (`GUEST_TOOLS`, `src/llm/tools/assistant-tools.ts`); a guest cannot
+  allow a kind to run without asking. Nothing else that writes is offered,
+  and the Assistant is told so and why (`guestSection`,
+  `src/llm/prompts/assistant.ts`). A guest's session reaches only the
+  Assistant's conversation routes and `GET /users/me`
+  (`src/server/plugins/auth.ts`, `GUEST_NOT_ALLOWED`).
+- **The bounds.** A guest's balance bounds their own use, as anyone's does.
+  The whole day's giving is a sum of owls, `GUEST_ASK_DAILY_OWLS` (100) over
+  a rolling 24 hours, because the platform's money is what is at stake.
+  `GUEST_ASK_PER_ADDRESS_PER_DAY` (1) is a count of guest accounts one
+  address makes in a UTC day, for the reason the anonymous rate limit is a
+  count: a visitor has no account or budget of their own, and an address is
+  all that tells one from the next. The address is Cloudflare's
+  `cf-connecting-ip`. It is never stored: a pass keeps a hash of the
+  address and the day, and the hash is cleared after two days. Each refusal
+  (`GUEST_ADDRESS_LIMIT`, `GUEST_DAILY_LIMIT`, 429) names the bound it met
+  and the way past it, an account. `0` in any setting turns guests off,
+  and a members-only deployment has none.
+- **Signing in.** When a guest signs in, the web tier names the guest as it
+  provisions the account (`guest_external_id` on `POST /users/provision`),
+  and their conversations, held actions and pages move to it, once
+  (`guest_passes.carried_to_id`). Unspent guest owls do not move; the
+  account gets the signup grant.
 
 ## The owl ledger
 

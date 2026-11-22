@@ -293,7 +293,7 @@ export function ClaimView({
         </p>
       )}
 
-      {isQuantity && !qAssessment && <OrderAssessment claimId={claim.id} variant="unassessed" />}
+      {isQuantity && !qAssessment && <OrderAssessment claimId={claim.id} variant="unassessed" underWay={detail.assessment_under_way ?? null} />}
 
       {versionsAbove}
 
@@ -307,7 +307,7 @@ export function ClaimView({
           </p>
           {/* The demand side: a purchase fully funds the action, and a
               fully funded action runs now. */}
-          <OrderAssessment claimId={claim.id} variant="unassessed" />
+          <OrderAssessment claimId={claim.id} variant="unassessed" underWay={detail.assessment_under_way ?? null} />
         </>
       )}
 
@@ -492,7 +492,7 @@ export function ClaimView({
           {/* Reassessment on demand: quiet, but always available. Where
               something has moved under the judgment, it is offered beside
               what moved instead, and once on the page is enough. */}
-          {!changedSince && <OrderAssessment claimId={claim.id} variant="reassess" />}
+          {!changedSince && <OrderAssessment claimId={claim.id} variant="reassess" underWay={detail.assessment_under_way ?? null} />}
         </section>
       )}
 

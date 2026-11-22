@@ -174,6 +174,7 @@ describe("write-surface governance (#157)", () => {
         claimText: "The sky is blue",
         contributorId: CONTRIBUTOR.id,
         kind: "claim",
+        assessOnAccept: true,
       });
       expect(mocks.proposeClaim).not.toHaveBeenCalled();
     });
@@ -192,11 +193,13 @@ describe("write-surface governance (#157)", () => {
         claimText: "The sky is blue",
         contributorId: CONTRIBUTOR.id,
         kind: "claim",
+        assessOnAccept: true,
       });
       expect(mocks.createClaimProposal).toHaveBeenNthCalledWith(2, {
         claimText: "What sets the colour of the sky?",
         contributorId: CONTRIBUTOR.id,
         kind: "question",
+        assessOnAccept: true,
       });
     });
 

@@ -2682,6 +2682,36 @@ export const contributors = pgTable("contributors", {
 ]);
 
 // ---------------------------------------------------------------------------
+// guest_passes: the owls given to guests on /ask (docs/accounts.md, "Guests";
+// src/services/guest-service.ts). One row per guest account made. The
+// day's giving is summed from these rows against GUEST_ASK_DAILY_OWLS, and
+// `address_hash` counts the guests one address made against
+// GUEST_ASK_PER_ADDRESS_PER_DAY. The address itself is never stored: the
+// hash is of the address and the UTC day, so it matches only that day's
+// passes, and making a pass clears it on rows older than two days.
+// ---------------------------------------------------------------------------
+export const guestPasses = pgTable(
+  "guest_passes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    addressHash: text("address_hash"),
+    grantedMicroUsd: bigint("granted_micro_usd", { mode: "number" }).notNull(),
+    // The account the guest went on to make, when they signed in and their
+    // conversations were carried to it.
+    carriedToId: uuid("carried_to_id").references(() => contributors.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_guest_passes_time").on(table.createdAt),
+    index("idx_guest_passes_address").on(table.addressHash, table.createdAt),
+    uniqueIndex("uq_guest_passes_account").on(table.accountId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // Organizations (docs/organizations.md, "Organizations on minerval.ai")
 //
 // An organization is a `contributors` row of kind 'organization'. The people
@@ -5602,6 +5632,12 @@ export const contributions = pgTable(
       onDelete: "set null",
     }),
     proposedCanonicalForm: text("proposed_canonical_form"),
+    // For a proposed node (propose_claim, propose_question, propose_quantity):
+    // whether its first assessment runs as soon as review accepts it, which
+    // is the default (docs/accounts.md, "Proposing a node"). False when the
+    // proposer chose to propose without assessing: the node then waits for
+    // the graph's own allocation like any other.
+    assessOnAccept: boolean("assess_on_accept").notNull().default(true),
     // 'propose_source' intake (#157): the stored document awaiting review. A
     // source row is inert until extraction runs — it appears in no read path
     // except through claim instances — so storing the submission verbatim

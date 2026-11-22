@@ -320,8 +320,11 @@ support matters:
     decides whether it enters as a claim, a question or a quantity, so
     `kind`, which takes any of the three, is only a guess; it takes the wording alone and is reviewed on it before
     anything enters the graph; spends owls; a rejected good-faith proposal
-    refunds). The case for or against it, once it is a node, is a
-    `submit_contribution` of its own.
+    refunds). An accepted node is assessed at once, paid by the proposal,
+    so there is nothing more to buy: give your user its `page_url`, which
+    shows the assessment under way until the verdict lands. `assess: false`
+    proposes it without assessing, free. The case for or against it, once
+    it is a node, is a `submit_contribution` of its own.
   - **Missing evidence or a source the graph hasn't read**:
     `submit_source`, or `submit_contribution` with `support` or
     `challenge` and the evidence URLs.

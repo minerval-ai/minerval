@@ -54,7 +54,7 @@ import { namedPerson } from "./named-person.js";
 async function createProposalFundedOrder(
   contribution: { id: string; contributorId: string },
   claimId: string
-): Promise<void> {
+): Promise<boolean> {
   try {
     const [charge] = await rawQuery<{ id: string }>(
       `SELECT id FROM owl_ledger
@@ -62,18 +62,27 @@ async function createProposalFundedOrder(
         ORDER BY created_at ASC LIMIT 1`,
       [contribution.id]
     );
-    await createOrder({
+    const made = await createOrder({
       userId: contribution.contributorId,
       claimId,
       contributionId: contribution.id,
       chargeEntryId: charge?.id ?? null,
     });
+    // An order the proposer already has open on the node (they ordered it
+    // themselves meanwhile) is as good as this one.
+    return made.ok || made.code === "ORDER_ALREADY_OPEN";
   } catch (err) {
     console.warn(
       `[intake] could not create funded order for contribution ${contribution.id}:`,
       err instanceof Error ? err.message : err
     );
+    return false;
   }
+}
+
+/** Whether an accepted proposal's node is assessed at once, on the proposer's order. */
+function assessesOnAccept(contribution: { grantId?: string | null; assessOnAccept?: boolean }): boolean {
+  return !contribution.grantId && contribution.assessOnAccept !== false;
 }
 
 export type IntakeContributionType =
@@ -100,6 +109,12 @@ export async function createClaimProposal(input: {
   contributorId: string;
   /** A question or a quantity proposed directly is a propose_question or a propose_quantity (§7a). */
   kind?: TextNodeKind;
+  /**
+   * Whether the node's first assessment runs as soon as review accepts it
+   * (the default), paid by the proposal's charge. False proposes without
+   * assessing, and nothing is charged for the pass.
+   */
+  assessOnAccept?: boolean;
 }) {
   const db = getDb();
   const [contribution] = await db
@@ -114,6 +129,7 @@ export async function createClaimProposal(input: {
       // argument (the case for a node is a contribution on it once it exists).
       content: "",
       proposedCanonicalForm: input.claimText,
+      assessOnAccept: input.assessOnAccept ?? true,
       sensitivityLabel: currentLabel(),
     })
     .returning();
@@ -217,6 +233,8 @@ async function materializeProposedClaim(contribution: {
   contributorId: string;
   /** Set when a mandate submitted it: its passes are the mandate's to fund. */
   grantId?: string | null;
+  /** False when the proposer chose to propose without assessing. */
+  assessOnAccept?: boolean;
   contributionType: string;
   content: string;
   proposedCanonicalForm: string | null;
@@ -288,8 +306,9 @@ async function materializeProposedClaim(contribution: {
 
     // The proposal was paid for: run that steward pass on the express lane.
     // A mandate's proposal paid only for its review; the mandate funds any
-    // pass from its own escrow, never the funder's balance.
-    if (!contribution.grantId) await createProposalFundedOrder(contribution, match.matched_claim_id);
+    // pass from its own escrow (its plan's assess item for the proposal,
+    // grant-service.ts withProposalsAssessed), never the funder's balance.
+    if (assessesOnAccept(contribution)) await createProposalFundedOrder(contribution, match.matched_claim_id);
 
     return {
       action: "matched_existing_claim",
@@ -341,23 +360,31 @@ async function materializeProposedClaim(contribution: {
     .set({ claimId: claim!.id })
     .where(eq(contributions.id, contribution.id));
 
-  const job = await createJob(
-    "claim_pipeline",
-    { claimId: claim!.id },
-    { userId: contribution.contributorId, apiKeyId: null }
-  );
-  await enqueueClaimPipeline({ claimId: claim!.id, jobId: job.id });
-
   // The proposal was paid for: the new claim's first Steward pass runs on
-  // the express lane instead of waiting its turn in the background queue.
-  // Not for a mandate's proposal, whose passes the mandate funds.
-  if (!contribution.grantId) await createProposalFundedOrder(contribution, claim!.id);
+  // the express lane, and is the node's onboarding (order-pipeline.ts runs
+  // a node never onboarded as structure_and_assess). The node is not also
+  // handed to the claim pipeline, which would queue a second, background
+  // pass that the order then waits on or repeats. Without an order (a
+  // mandate's proposal, whose passes the mandate funds; a proposal made
+  // without assessing; an order that could not be made) the pipeline
+  // onboards it as it onboards any node.
+  const ordered = assessesOnAccept(contribution) && (await createProposalFundedOrder(contribution, claim!.id));
+  let jobId: string | undefined;
+  if (!ordered) {
+    const job = await createJob(
+      "claim_pipeline",
+      { claimId: claim!.id },
+      { userId: contribution.contributorId, apiKeyId: null }
+    );
+    jobId = job.id;
+    await enqueueClaimPipeline({ claimId: claim!.id, jobId });
+  }
 
   return {
     action: "created_claim",
     claimId: claim!.id,
     canonicalText,
-    jobId: job.id,
+    ...(jobId ? { jobId } : {}),
   };
 }
 

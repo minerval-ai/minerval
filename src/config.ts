@@ -504,6 +504,18 @@ const configSchema = z.object({
   // trickle so returning users always have something. 0 disables either.
   signupGrantOwls: z.coerce.number().default(10),
   monthlyGrantOwls: z.coerce.number().default(1),
+  // Guests on /ask (docs/accounts.md, "Guests"): a visitor with no account
+  // may talk to the Assistant on owls the platform gives, up to
+  // guestAskOwls each. The platform's money is what bounds it, so the whole
+  // day's giving is a sum of owls (guestAskDailyOwls, over a rolling 24
+  // hours); 0 for either turns guests off. guestAskPerAddressPerDay is a
+  // count, for the reason the anonymous rate limit is one: a visitor has no
+  // account or budget of their own, and an address is the only thing that
+  // tells one visitor from the next. Guests are a public-graph offer: a
+  // members-only deployment has none.
+  guestAskOwls: z.coerce.number().min(0).default(5),
+  guestAskDailyOwls: z.coerce.number().min(0).default(100),
+  guestAskPerAddressPerDay: z.coerce.number().int().min(0).default(1),
   // Owls earned per kudos point of an accepted contribution (the old 1–5
   // scale from claim importance, paid in the spendable currency). OFF at
   // launch (0 = no awards minted): accepted contributions minting
@@ -1733,6 +1745,9 @@ export function loadConfig(): Config {
     auditRunBudgetOwls: process.env.AUDIT_RUN_BUDGET_OWLS,
     signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
     monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
+    guestAskOwls: process.env.GUEST_ASK_OWLS,
+    guestAskDailyOwls: process.env.GUEST_ASK_DAILY_OWLS,
+    guestAskPerAddressPerDay: process.env.GUEST_ASK_PER_ADDRESS_PER_DAY,
     contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
     extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,
     agenticRateLimitPerHour: process.env.AGENTIC_RATE_LIMIT_PER_HOUR,
@@ -2031,6 +2046,9 @@ export function loadConfig(): Config {
       ..._config,
       signupGrantOwls: process.env.SIGNUP_GRANT_OWLS ? _config.signupGrantOwls : 0,
       monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS ? _config.monthlyGrantOwls : 0,
+      // Guests are the public graph's offer alone: a members-only
+      // deployment's readers are its members.
+      guestAskOwls: 0,
     };
   }
 

@@ -278,6 +278,9 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   { key: "pricing.owl_packs", env: "OWL_PACKS", kind: "list", field: "owlPacks" },
   { key: "pricing.signup_grant_owls", env: "SIGNUP_GRANT_OWLS", kind: "number", field: "signupGrantOwls" },
   { key: "pricing.monthly_grant_owls", env: "MONTHLY_GRANT_OWLS", kind: "number", field: "monthlyGrantOwls" },
+  { key: "pricing.guest_ask_owls", env: "GUEST_ASK_OWLS", kind: "number", field: "guestAskOwls" },
+  { key: "pricing.guest_ask_daily_owls", env: "GUEST_ASK_DAILY_OWLS", kind: "number", field: "guestAskDailyOwls" },
+  { key: "pricing.guest_ask_per_address_per_day", env: "GUEST_ASK_PER_ADDRESS_PER_DAY", kind: "number", field: "guestAskPerAddressPerDay" },
   {
     key: "pricing.cap_claim_proposal_owls",
     env: "CAP_CLAIM_PROPOSAL_OWLS",

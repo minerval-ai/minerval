@@ -12,6 +12,11 @@ import { fetchMyLabels, type MyLabels } from "../../lib/admin-api";
 import { loadStanding } from "../../lib/standing";
 import { loadOwlSource } from "../../lib/load-owl-source";
 import type { OwlSource } from "../../lib/owl-source";
+import { fetchGuestTerms, getAssistantHome } from "../../lib/account-api";
+import { currentGuest } from "../../lib/guest";
+
+// Owls as the API counts them (micro-USD at face value, 1 owl = 1e6).
+const owlsToMicro = (owls: number) => Math.round(owls * 1_000_000);
 
 export const metadata: Metadata = {
   title: "Ask · Minerval",
@@ -62,6 +67,50 @@ export default async function AskPage({
   const here = `/ask${
     node || q ? `?${new URLSearchParams({ ...(q ? { q } : {}), ...(node ? { node } : {}) })}` : ""
   }`;
+
+  // A visitor with no account may try the Assistant as a guest
+  // (docs/accounts.md, "Guests"), on terms the page states first. A browser
+  // that is already a guest picks up where it is.
+  if (!session?.externalId && accountApiConfigured()) {
+    const guestId = await currentGuest();
+    const [offer, guestHome] = await Promise.all([
+      fetchGuestTerms().catch(() => null),
+      guestId ? getAssistantHome(guestId, "self").catch(() => null) : Promise.resolve(null),
+    ]);
+    if (guestHome?.guest || offer?.offered) {
+      const terms = guestHome?.guest ?? offer!.terms;
+      return (
+        <AssistantConversation
+          key={here}
+          initial={null}
+          models={guestHome?.models ?? offer?.models ?? []}
+          balanceMicroUsd={guestHome ? guestHome.balance_micro_usd : owlsToMicro(terms.owls)}
+          allowedAlways={[]}
+          kindLabels={guestHome?.allowed_kinds.labels ?? {}}
+          owlSource={{ kind: "none" }}
+          guest={terms}
+          {...(node && /^[0-9a-f-]{36}$/i.test(node) ? { nodeId: node } : {})}
+          {...(q ? { question: q.slice(0, 2000) } : {})}
+        >
+          <div className="ask-welcome">
+            <h2>What do you want to know or do?</h2>
+            <p>{LEDE}</p>
+            {guestHome && guestHome.conversations.length > 0 && (
+              <p className="order-caption">
+                Your conversations as a guest:{" "}
+                {guestHome.conversations.slice(0, 5).map((c, i) => (
+                  <span key={c.id}>
+                    {i > 0 ? " · " : ""}
+                    <Link href={`/ask/c/${c.id}`}>{c.title || "Untitled"}</Link>
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+        </AssistantConversation>
+      );
+    }
+  }
 
   if (!session?.externalId || !home) {
     return (

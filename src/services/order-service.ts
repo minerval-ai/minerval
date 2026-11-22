@@ -296,3 +296,34 @@ export function serializeOrder(o: AssessmentOrder, costMicroUsd?: number) {
     completed_at: o.completedAt?.toISOString() ?? null,
   };
 }
+
+/**
+ * Whether a pass on a node is under way where the reader is, for the node's
+ * page (docs/accounts.md, "Proposing a node"): "running" while its Steward
+ * runs (an order's pass or any other), "queued" while an order for it,
+ * anyone's, waits on the express lane. Null otherwise. An accepted
+ * proposal's node reads "queued" from the moment it exists, so its page says
+ * its assessment is coming rather than offering to buy one.
+ */
+export async function assessmentUnderWay(
+  claimId: string
+): Promise<{ state: "running" | "queued"; since: string | null } | null> {
+  const atThisLabel = oneLabelOnly() ? "" : "AND o.sensitivity_label = $2";
+  const params: unknown[] = oneLabelOnly() ? [claimId] : [claimId, currentLabel()];
+  const [row] = await rawQuery<{ running: boolean; stewarded_at: Date | null; queued_at: Date | null; order_running: boolean }>(
+    `SELECT (c.steward_state = 'running' AND c.stewarded_at > now() - interval '15 minutes') AS running,
+            c.stewarded_at,
+            (SELECT min(o.created_at) FROM assessment_orders o
+              WHERE o.claim_id = c.id AND o.status = 'pending' ${atThisLabel}) AS queued_at,
+            EXISTS (SELECT 1 FROM assessment_orders o
+              WHERE o.claim_id = c.id AND o.status = 'running' ${atThisLabel}) AS order_running
+       FROM claims c WHERE c.id = $1`,
+    params
+  );
+  if (!row) return null;
+  if (row.running || row.order_running) {
+    return { state: "running", since: row.stewarded_at ? new Date(row.stewarded_at).toISOString() : null };
+  }
+  if (row.queued_at) return { state: "queued", since: new Date(row.queued_at).toISOString() };
+  return null;
+}

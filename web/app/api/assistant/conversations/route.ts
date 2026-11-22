@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
         ...(typeof body.label === "string" && body.label ? { label: body.label } : {}),
       }),
     }),
-    201
+    201,
+    { guests: "make" }
   );
 }

@@ -34,6 +34,7 @@ import {
   OWL_REASONS,
 } from "../services/owl-ledger-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../services/owl.js";
+import { enqueueClaimPipeline } from "../services/queue-service.js";
 
 interface OrderRow {
   id: string;
@@ -112,11 +113,22 @@ export async function processNextOrderTask(
     `UPDATE assessment_orders
         SET status = 'running', started_at = now()
       WHERE id = (
-        SELECT id FROM assessment_orders
-         WHERE status = 'pending'
-         ORDER BY created_at ASC
+        SELECT o.id FROM assessment_orders o
+         WHERE o.status = 'pending'
+           -- An order whose node is mid-pass at its own label waits without
+           -- holding up the orders behind it: dispatchOrder would only find
+           -- the slot busy and put it back, and the oldest-first pick would
+           -- take the same order again on every tick.
+           AND NOT EXISTS (
+             SELECT 1 FROM claims c
+              WHERE c.id = o.claim_id
+                AND c.sensitivity_label = o.sensitivity_label
+                AND c.steward_state = 'running'
+                AND c.stewarded_at > now() - interval '15 minutes'
+           )
+         ORDER BY o.created_at ASC
          LIMIT 1
-         FOR UPDATE SKIP LOCKED
+         FOR UPDATE OF o SKIP LOCKED
       )
       RETURNING id, user_id, claim_id, contribution_id, price_micro_usd,
                 charge_entry_id, sensitivity_label`
@@ -271,6 +283,16 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
       `UPDATE ${slot.rel} SET ${STEWARD_SUCCESS_CLEAR_SET} WHERE ${slot.is("$1")}`,
       [order.claim_id]
     );
+    // A first pass onboards the node, as the claim pipeline would have: an
+    // accepted proposal's node is handed to its order and not to the
+    // pipeline (intake-service.ts), so the pass that structured it says so.
+    if (virgin) {
+      await rawQuery(
+        `UPDATE claims SET decomposition_status = 'complete', updated_at = now()
+          WHERE id = $1 AND decomposition_status = 'pending'`,
+        [order.claim_id]
+      );
+    }
     await rawQuery(
       `UPDATE assessment_orders
           SET status = 'done', completed_at = now(), error = NULL
@@ -311,6 +333,14 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
         WHERE id = $1`,
       [order.id, msg]
     );
+    // A node that was never onboarded was handed to this order alone
+    // (intake-service.ts): it goes to the claim pipeline now, so it is not
+    // left with no first pass coming.
+    if (virgin) {
+      await enqueueClaimPipeline({ claimId: order.claim_id, jobId: "steward" }).catch((e) =>
+        console.error(`[orders] onboarding ${order.claim_id} after a failed first pass failed:`, e)
+      );
+    }
     return {
       status: "processed",
       orderId: order.id,

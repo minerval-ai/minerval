@@ -17,12 +17,15 @@ import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js"
 import { owlLedger } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { owlsToMicroUsd, type PricedOp } from "./owl.js";
+import { GUEST_EXTERNAL_ID_PREFIX } from "./guest-account.js";
 import { allowanceLeft, countAgainstAllowance } from "./organization-spending.js";
 
 export const OWL_REASONS = {
   purchase: "purchase",
   signupGrant: "signup_grant",
   monthlyGrant: "monthly_grant",
+  /** The owls a guest on /ask is given (guest-service.ts). */
+  guestGrant: "guest_grant",
   contributionAward: "contribution_award",
   charge: "charge",
   refund: "refund",
@@ -375,8 +378,14 @@ export async function ensureFreeGrants(userId: string): Promise<void> {
   // given nothing (docs/organizations.md, "Making one"): granting it owls
   // would let anyone mint them by making organizations, which its members
   // can then spend as it. The platform account is funded by the operator.
-  const [account] = await rawQuery<{ kind: string }>(`SELECT kind FROM contributors WHERE id = $1`, [userId]);
+  const [account] = await rawQuery<{ kind: string; external_id: string | null }>(
+    `SELECT kind, external_id FROM contributors WHERE id = $1`,
+    [userId]
+  );
   if (account && account.kind !== "person") return;
+  // A guest is given its guest allowance and nothing else: the signup grant
+  // is for an account, which is what a guest is asked to make.
+  if (account?.external_id?.startsWith(GUEST_EXTERNAL_ID_PREFIX)) return;
   if (config.signupGrantOwls > 0) {
     await recordOwlEntry({
       userId,

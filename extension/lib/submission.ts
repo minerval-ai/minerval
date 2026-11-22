@@ -19,7 +19,7 @@ export function submissionLabel(sub: Submission): string {
     case "accepted":
       if (!sub.claim) return "Accepted · being added to the graph";
       return sub.claim.status === "unassessed"
-        ? "Accepted · in the graph, awaiting its first assessment"
+        ? "Accepted · in the graph, being assessed"
         : `Accepted · in the graph: ${sub.claim.status}`;
     case "rejected":
       return "Declined by review · the charge was refunded";

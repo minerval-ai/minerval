@@ -137,8 +137,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.externalId = externalId;
         // When this sign-in happened, for the fixed age below.
         if (membersOnly()) token.signedInAt = Date.now();
+        // A visitor who used the Assistant as a guest keeps those
+        // conversations: the API carries them to this account (lib/guest.ts).
+        const { currentGuest, forgetGuest } = await import("./lib/guest");
+        const guestExternalId = await currentGuest();
         try {
           await provisionUser({
+            guestExternalId,
             externalId,
             displayName: user.name ?? externalId,
             email: user.email ?? null,
@@ -150,6 +155,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               ? { groups: groupsFromClaims(profile as Record<string, unknown> | undefined) }
               : {}),
           });
+          if (guestExternalId) await forgetGuest();
         } catch (err) {
           // Keep the session; the dashboard surfaces provisioning problems.
           console.error("[auth] account provisioning failed:", err);

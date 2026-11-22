@@ -16,6 +16,15 @@ import { listOpenPrizeClaimsFor } from "../services/prize-account-service.js";
 import { trustLevelFor } from "../services/reputation-service.js";
 import { membersOnly } from "../permissions.js";
 import {
+  GUEST_EXTERNAL_ID_PREFIX,
+  carryGuestToAccount,
+  guestTerms,
+  guestsOffered,
+  isGuestExternalId,
+  makeGuestPass,
+} from "../services/guest-service.js";
+import { assistantModels } from "../services/assistant-service.js";
+import {
   establishFirstAdministrator,
   recordSignInGroups,
 } from "../services/permission-service.js";
@@ -68,6 +77,10 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
           // it is the whole list: a group left out is one the person is no
           // longer in.
           ...(membersOnly() ? { groups: { type: "array", items: { type: "string" } } } : {}),
+          // The guest this person was on /ask before signing in, from the
+          // web tier's cookie: their conversations with the Assistant are
+          // carried to the account (docs/accounts.md, "Guests").
+          guest_external_id: { type: "string", maxLength: 200 },
         },
       },
     },
@@ -79,10 +92,15 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         email?: string;
         avatar_url?: string;
         groups?: string[];
+        guest_external_id?: string;
       };
       // No sign-in makes an organization's or the platform's identity:
       // nobody signs in as either (docs/organizations.md).
-      if (isOrganizationExternalId(body.external_id) || body.external_id.startsWith("platform:")) {
+      if (
+        isOrganizationExternalId(body.external_id) ||
+        body.external_id.startsWith("platform:") ||
+        isGuestExternalId(body.external_id)
+      ) {
         return reply.code(422).send({
           error: "That identity is an organization's or the platform's, and no sign-in makes one.",
           code: "NOT_A_SIGN_IN_IDENTITY",
@@ -100,7 +118,59 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         // permission the first time they sign in, once (permission-service).
         await establishFirstAdministrator({ id: user.id, externalId: user.externalId });
       }
-      return reply.send({ user: serializeUser(user) });
+      let carried = 0;
+      if (body.guest_external_id) {
+        carried = await carryGuestToAccount({ guestExternalId: body.guest_external_id, accountId: user.id }).catch(
+          (err) => {
+            // The sign-in stands whether or not the guest's conversations came with it.
+            console.error("[users] carrying a guest's conversations failed:", err instanceof Error ? err.message : err);
+            return 0;
+          }
+        );
+      }
+      return reply.send({ user: serializeUser(user), ...(carried > 0 ? { carried_conversations: carried } : {}) });
+    },
+  });
+
+  // GET /users/guest — whether this deployment offers guests on /ask, and
+  // on what terms, for the page a signed-out visitor sees before their first
+  // message (every bound is stated before it is met).
+  app.get("/guest", {
+    schema: {
+      tags: ["users"],
+      summary: "Whether visitors without an account may use the Assistant here, and on what terms",
+    },
+    preHandler: [app.authenticate, app.requireService],
+    handler: async (_request, reply) =>
+      reply.send({ offered: guestsOffered(), terms: guestTerms(), models: assistantModels(GUEST_EXTERNAL_ID_PREFIX) }),
+  });
+
+  // POST /users/guest — a guest account for a visitor on /ask with no
+  // account (docs/accounts.md, "Guests"; src/services/guest-service.ts).
+  // Service-only: the web tier calls it, naming the visitor's address,
+  // which counts against the per-address bound and is not stored.
+  app.post("/guest", {
+    schema: {
+      tags: ["users"],
+      summary: "Make a guest account for a visitor on /ask, given the platform's guest owls",
+      body: {
+        type: "object",
+        required: ["address"],
+        properties: {
+          address: { type: "string", minLength: 1, maxLength: 100 },
+        },
+      },
+    },
+    preHandler: [app.authenticate, app.requireService],
+    handler: async (request, reply) => {
+      const { address } = request.body as { address: string };
+      const result = await makeGuestPass({ address });
+      if (!result.ok) {
+        return reply.code(result.code === "GUESTS_OFF" ? 403 : 429).send({ error: result.message, code: result.code });
+      }
+      return reply.code(201).send({
+        guest: { id: result.account.id, external_id: result.account.externalId, granted_owls: result.grantedOwls },
+      });
     },
   });
 

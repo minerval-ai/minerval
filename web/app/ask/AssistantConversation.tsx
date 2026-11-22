@@ -21,6 +21,7 @@ import type {
   AssistantHeldActionView,
   AssistantMessageView,
   AssistantModelView,
+  GuestTermsView,
 } from "../../lib/account-api";
 
 // A conversation with the Assistant: the agent that works for the signed-in
@@ -395,6 +396,56 @@ interface Live {
 }
 const EMPTY_LIVE: Live = { partial: "", turn: -1, note: null, activity: [] };
 
+/** Signing in, coming back to where the visitor is. */
+function SignInLink({ children }: { children: ReactNode }) {
+  const [here, setHere] = useState("/ask");
+  useEffect(() => setHere(window.location.pathname + window.location.search), []);
+  return <Link href={`/signin?callbackUrl=${encodeURIComponent(here)}`}>{children}</Link>;
+}
+
+/**
+ * What a guest is told beside the composer: that they are a guest, what
+ * they have, the bounds, and that an account keeps the conversation.
+ */
+function GuestLine({
+  terms,
+  balanceMicroUsd,
+  started,
+  modelName,
+}: {
+  terms: GuestTermsView;
+  modelName: string | undefined;
+  balanceMicroUsd: number;
+  started: boolean;
+}) {
+  return (
+    <p className="ask-guest">
+      {started ? (
+        <>
+          You are a guest: <Owls microUsd={balanceMicroUsd} /> of the {terms.owls} owls Minerval gave
+          you are left.
+        </>
+      ) : (
+        <>
+          No account needed to try it: Minerval gives a visitor {terms.owls} owls of the
+          Assistant&rsquo;s work{modelName ? `, on ${modelName}` : ""}. It can read the graph for you, and propose
+          claims and get them assessed when you press the button.
+        </>
+      )}{" "}
+      <SignInLink>Make an account</SignInLink> to keep {started ? "this conversation" : "your conversations"}
+      {terms.signup_owls > 0 ? ` and get ${terms.signup_owls} owls` : ""}, use every model and
+      everything the Assistant can do.
+      {!started && (
+        <span className="order-caption">
+          {" "}
+          Guests are limited to {terms.per_address_per_day === 1 ? "one session" : `${terms.per_address_per_day} sessions`} a
+          day from one address, and to {terms.daily_owls} owls a day among all of them.
+        </span>
+      )}
+    </p>
+  );
+}
+
 type Panel = { type: "claim"; citation: AssistantCitationView } | { type: "page"; id: string } | null;
 
 export function AssistantConversation({
@@ -407,6 +458,7 @@ export function AssistantConversation({
   question,
   startLabels,
   owlSource,
+  guest,
   children,
 }: {
   initial: Convo | null;
@@ -422,6 +474,12 @@ export function AssistantConversation({
   startLabels?: MyLabels | null;
   /** Where the person gets more owls here: bought, or created by an administrator (#1095). */
   owlSource: OwlSource;
+  /**
+   * Set for a visitor with no account (docs/accounts.md, "Guests"): the
+   * terms they use the Assistant on, which the page states before the first
+   * message and keeps beside the composer, with the way to make an account.
+   */
+  guest?: GuestTermsView | null;
   /** What an empty conversation shows above the composer. */
   children?: ReactNode;
 }) {
@@ -799,7 +857,20 @@ export function AssistantConversation({
         </div>
 
         <div className="ask-dock">
-          {balance <= 0 ? (
+          {guest && <GuestLine
+              terms={guest}
+              balanceMicroUsd={balance}
+              started={Boolean(convo)}
+              modelName={(convo?.models ?? models)[0]?.name}
+            />}
+          {guest && balance <= 0 && convo ? (
+            <p className="ask-notice">
+              The owls Minerval gave you are spent. Searching and reading the graph stay free.{" "}
+              <SignInLink>Make an account</SignInLink> to go on: it is free
+              {guest.signup_owls > 0 ? `, comes with ${guest.signup_owls} owls,` : ""} and this
+              conversation goes with you.
+            </p>
+          ) : balance <= 0 && !guest ? (
             <p className="ask-notice">
               Your balance is 0 owls. The Assistant&rsquo;s work is charged in owls at what it
               costs, so it needs some to reply. Searching and reading the graph stay free.{" "}
@@ -875,7 +946,17 @@ export function AssistantConversation({
               </div>
             </div>
           )}
-          {error && <p className="form-error">{error}</p>}
+          {error && (
+            <p className="form-error">
+              {error}
+              {guest && (
+                <>
+                  {" "}
+                  <SignInLink>Sign in or make an account</SignInLink>
+                </>
+              )}
+            </p>
+          )}
           <div className="ask-bill">
             <span>
               {convo ? (
@@ -887,6 +968,7 @@ export function AssistantConversation({
               )}
               balance <Owls microUsd={balance} />
             </span>
+            {!guest && (
             <details className="ask-allowed">
               <summary>
                 {allowedCount === 0
@@ -914,6 +996,7 @@ export function AssistantConversation({
                 ))}
               </div>
             </details>
+            )}
           </div>
         </div>
       </div>

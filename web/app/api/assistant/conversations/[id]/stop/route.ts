@@ -8,5 +8,5 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  return asUser((externalId) => stopAssistantTurn(externalId, id));
+  return asUser((externalId) => stopAssistantTurn(externalId, id), 200, { guests: "use" });
 }

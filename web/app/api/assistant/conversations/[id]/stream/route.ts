@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../../../../auth";
 import { accountApiConfigured, assistantTurnStream } from "../../../../../../lib/account-api";
+import { currentGuest } from "../../../../../../lib/guest";
 
 // The running turn as an event stream, passed through from the API as it
 // arrives. A long reply can outlast this function's time limit; the page
@@ -15,7 +16,9 @@ export async function GET(
 ) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.externalId) {
+  // A visitor with no account watches their guest's conversation (lib/guest.ts).
+  const externalId = session?.externalId ?? (await currentGuest());
+  if (!externalId) {
     return NextResponse.json({ error: "Sign in to use the Assistant.", code: "SIGN_IN" }, { status: 401 });
   }
   if (!accountApiConfigured()) {
@@ -23,7 +26,7 @@ export async function GET(
   }
   let upstream: Response;
   try {
-    upstream = await assistantTurnStream(session.externalId, id, request.signal);
+    upstream = await assistantTurnStream(externalId, id, request.signal);
   } catch {
     return NextResponse.json({ error: "The stream could not be opened." }, { status: 502 });
   }

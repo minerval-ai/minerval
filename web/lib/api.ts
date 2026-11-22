@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  AssessmentUnderWay,
   JudgmentInputs,
   ArgumentPage,
   ClaimCard,
@@ -228,6 +229,32 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
     ...(record ? { record: record.record } : {}),
     ...(statedViews ? { stated_views: statedViews.stated_views } : {}),
     findings,
+  };
+}
+
+// Whether a pass on a node is under way, read fresh (never cached), for the
+// claim page's live line (components/claim/OrderAssessment.tsx). `assessed`
+// says whether the node has a judgment now, so the line knows when the
+// pass it was showing has landed.
+export async function fetchAssessmentUnderWay(id: string): Promise<{
+  under_way: AssessmentUnderWay | null;
+  assessed: boolean;
+}> {
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  const options = await readOptions();
+  const res = await fetch(`${BASE}/claims/${pathSegment(id)}?information_depth=cursory`, {
+    headers: options.headers,
+    cache: "no-store",
+  });
+  if (!res.ok) throw new ApiError(`Minerval API ${res.status} for a claim`, res.status, await errorCode(res));
+  const body = (await res.json()) as {
+    assessment_under_way?: AssessmentUnderWay | null;
+    assessment?: unknown;
+    quantity?: { assessed?: unknown } | null;
+  };
+  return {
+    under_way: body.assessment_under_way ?? null,
+    assessed: Boolean(body.assessment) || Boolean(body.quantity?.assessed),
   };
 }
 
