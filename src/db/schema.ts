@@ -7547,7 +7547,7 @@ export const questionAssessments = pgTable(
 // ---------------------------------------------------------------------------
 // Artifacts (constitution §7b, #845)
 //
-// An artifact is a node made from other nodes: the first kind is a list. Its
+// An artifact is a node made from other nodes: a list, or a safety case. Its
 // identity is its specification (artifact_specs); the nodes it draws on are
 // ordinary edges in claim_relationships with relation_type 'draws_on', the
 // artifact the parent and each entry the child, so propagation reaches the
@@ -7557,26 +7557,45 @@ export const questionAssessments = pgTable(
 // (artifact_assessments) says how far the artifact can be relied on (§7b).
 // ---------------------------------------------------------------------------
 
-// What an artifact is: for a list, what it is for, what qualifies an entry,
-// what is excluded, and on what basis entries are ordered. Two lists with
-// different criteria are two artifacts (§7b). One row for each artifact in
-// each layer, as quantity_definitions.
+// What an artifact is. For a list: what it is for, what qualifies an entry,
+// what is excluded, and on what basis entries are ordered. For a safety case
+// (#1211): the system and the deployment it is about, the claim it argues
+// for, the standard that conclusion has to meet and whose standard it is,
+// the framework it follows, and what it does not cover. Two artifacts with
+// different specifications are two artifacts (§7b). One row for each
+// artifact in each layer, as quantity_definitions.
 export const artifactSpecs = pgTable("artifact_specs", {
   claimId: uuid("claim_id")
     .notNull()
     .references(() => claims.id, { onDelete: "cascade" }),
-  // ARTIFACT_SUBTYPES in src/schemas/kinds.ts. Lists only, for now.
+  // ARTIFACT_SUBTYPES in src/schemas/kinds.ts.
   subtype: text("subtype").notNull().default("list"),
-  // What the artifact is for: the question a reader brings to it.
-  purpose: text("purpose").notNull(),
-  // What qualifies an entry, stated so that a node can be checked against it.
-  inclusion: text("inclusion").notNull(),
+  // A list: what it is for, the question a reader brings to it.
+  purpose: text("purpose"),
+  // A list: what qualifies an entry, stated so that a node can be checked against it.
+  inclusion: text("inclusion"),
   // What is ruled out even where it would otherwise qualify. Null when nothing is.
   exclusion: text("exclusion"),
   // The stated basis of the order, never which way an entry points (§7b).
   ordering: text("ordering"),
   // Which kinds of node may be entries; empty means any.
   entryKinds: text("entry_kinds").array().notNull().default([]),
+  // A safety case: the system it is about, named specifically enough that a
+  // later model is plainly another case.
+  system: text("system"),
+  // A safety case: the deployment it is about, likewise.
+  deployment: text("deployment"),
+  // A safety case: the claim it argues for. The conclusion keeps its own
+  // Steward and its own assessment; the case's verdict is another thing
+  // (artifact_assessments.verdict).
+  conclusionClaimId: uuid("conclusion_claim_id").references(() => claims.id, { onDelete: "restrict" }),
+  // A safety case: the standard the conclusion has to meet, and whose it is.
+  standard: text("standard"),
+  standardOf: text("standard_of"),
+  // A safety case: CASE_FRAMEWORKS in src/schemas/kinds.ts.
+  framework: text("framework"),
+  // A safety case: what it does not cover. Null when it names nothing.
+  notCovered: text("not_covered"),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -7587,9 +7606,95 @@ export const artifactSpecs = pgTable("artifact_specs", {
   origin: originColumn(),
 }, (table) => [
   originCheck("ck_artifact_specs_origin", table.origin),
-  check("ck_artifact_specs_subtype", sql`${table.subtype} IN ('list')`),
+  check("ck_artifact_specs_subtype", sql`${table.subtype} IN ('list', 'safety_case')`),
+  check(
+    "ck_artifact_specs_list",
+    sql`${table.subtype} <> 'list' OR (${table.purpose} IS NOT NULL AND ${table.inclusion} IS NOT NULL)`
+  ),
+  check(
+    "ck_artifact_specs_safety_case",
+    sql`${table.subtype} <> 'safety_case' OR (${table.system} IS NOT NULL AND ${table.deployment} IS NOT NULL
+          AND ${table.conclusionClaimId} IS NOT NULL AND ${table.standard} IS NOT NULL AND ${table.standardOf} IS NOT NULL
+          AND ${table.framework} IN ('assurance_2_cae', 'none'))`
+  ),
   primaryKey({ columns: [table.claimId, table.sensitivityLabel, table.origin] }),
 ]);
+
+// The structure of a safety case as its Steward writes it (#1211): a tree of
+// claims, argument steps, side claims, evidence and defeaters. Every element
+// but a step points at the graph node it presents, which keeps its own
+// wording and its own assessment; what the row holds is the case's own: where
+// the node sits in the structure, what the case needs of it, and, for a
+// defeater, what it doubts and where it stands in the case. The graph has no
+// defeaters: the node a defeater points at is an ordinary claim, and nothing
+// outside this table says it plays that part anywhere.
+//
+// Each node an element points at is also a 'draws_on' edge from the case
+// (safety-case-service.ts keeps the two together), so propagation and
+// judgment_inputs reach a case as they reach a list.
+export const caseElements = pgTable(
+  "case_elements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    caseId: uuid("case_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // CASE_ELEMENT_TYPES in src/schemas/kinds.ts.
+    elementType: text("element_type").notNull(),
+    // What it hangs under: a step under the claim it argues for, a claim
+    // under the step it is a premise of (or under the defeater its subcase
+    // answers), a side claim and evidence under their step, a defeater under
+    // what it doubts. Null for the case's top claim alone.
+    parentId: uuid("parent_id").references((): AnyPgColumn => caseElements.id, { onDelete: "cascade" }),
+    // The graph node the element presents. Null for a step.
+    nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
+    // A step: the argument (§7) it is the case's reading of, where the graph holds one.
+    argumentId: uuid("argument_id").references(() => arguments_.id, { onDelete: "set null" }),
+    // A step: which of the framework's building blocks it is (CASE_BLOCKS). The case's own reading.
+    block: text("block"),
+    // A step: the inference in words. Any other element: what the case needs of the node it presents.
+    statement: text("statement").notNull(),
+    // A defeater: where it stands in the case (DEFEATER_STANDINGS), and why.
+    standing: text("standing"),
+    standingReason: text("standing_reason"),
+    // A sustained defeater the case proceeds past is a residual doubt: who accepted it, and why.
+    acceptedBy: text("accepted_by"),
+    acceptance: text("acceptance"),
+    // Where the element departs from the framework, in the Steward's words (§7b). Null where it does not.
+    departure: text("departure"),
+    // Whether the developer's own published case raises this element. Null where no published case is being read in.
+    raisedInPublished: boolean("raised_in_published"),
+    position: integer("position").notNull().default(0),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [
+    originCheck("ck_case_elements_origin", table.origin),
+    index("idx_case_elements_case").on(table.caseId),
+    index("idx_case_elements_parent").on(table.parentId),
+    index("idx_case_elements_node").on(table.nodeId).where(sql`node_id IS NOT NULL`),
+    check(
+      "ck_case_elements_type",
+      sql`${table.elementType} IN ('claim', 'step', 'side_claim', 'evidence', 'defeater')`
+    ),
+    check(
+      "ck_case_elements_step",
+      sql`CASE WHEN ${table.elementType} = 'step'
+               THEN ${table.nodeId} IS NULL AND ${table.block} IN ('decomposition', 'substitution', 'concretion', 'calculation', 'evidence_incorporation')
+               ELSE ${table.nodeId} IS NOT NULL AND ${table.block} IS NULL AND ${table.argumentId} IS NULL END`
+    ),
+    check(
+      "ck_case_elements_defeater",
+      sql`CASE WHEN ${table.elementType} = 'defeater'
+               THEN ${table.standing} IN ('open', 'answered', 'sustained')
+                    AND (${table.acceptedBy} IS NULL OR (${table.standing} = 'sustained' AND ${table.acceptance} IS NOT NULL))
+               ELSE ${table.standing} IS NULL AND ${table.acceptedBy} IS NULL AND ${table.acceptance} IS NULL END`
+    ),
+  ]
+);
 
 // An artifact's judgment: whether it faithfully and currently represents
 // what it draws on under its specification (§7b). The fifth table of
@@ -7617,6 +7722,15 @@ export const artifactAssessments = pgTable(
     entryOrder: uuid("entry_order").array().notNull().default([]),
     // Nodes considered and left out: [{ node_id, reason }].
     leftOut: jsonb("left_out").notNull().default([]),
+    // A safety case's second judgment (#1211): whether the case establishes
+    // its conclusion to the standard in its specification (CASE_VERDICTS).
+    // The burden is on the case. It says nothing of the conclusion's own
+    // assessment, which is its claim's. Null for any other artifact.
+    verdict: text("verdict"),
+    // Why: what the verdict rests on, the residual doubts among it.
+    verdictBasis: text("verdict_basis"),
+    // What would change the verdict.
+    wouldChange: text("would_change"),
     confidence: real("confidence"),
     marginalYield: real("marginal_yield"),
     model: text("model"),
@@ -7632,6 +7746,10 @@ export const artifactAssessments = pgTable(
   },
   (table) => [
     originCheck("ck_artifact_assessments_origin", table.origin),
+    check(
+      "ck_artifact_assessments_verdict",
+      sql`${table.verdict} IS NULL OR (${table.verdict} IN ('established', 'not_established') AND ${table.verdictBasis} IS NOT NULL)`
+    ),
     // As idx_assessments_current: swapped for one for each node and label by
     // the enforcement step where a deployment has a second label.
     uniqueIndex("idx_artifact_assessments_current")
@@ -9164,7 +9282,7 @@ export const releasePages = pgTable(
     check(
       "ck_release_pages_kind",
       sql`CASE WHEN ${table.nodeId} IS NULL THEN ${table.judgmentKind} IS NULL AND ${table.versionKey} IS NOT NULL
-               ELSE ${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment') AND ${table.judgmentId} IS NOT NULL END`
+               ELSE ${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment', 'artifact_assessment') AND ${table.judgmentId} IS NOT NULL END`
     ),
   ]
 );

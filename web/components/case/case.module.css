@@ -1,0 +1,69 @@
+/* A safety case's page (constitution §7b). Ink for what is the case's own
+   (its specification, its verdict, its fidelity, where a doubt stands in
+   it); status colour only on the nodes it presents, whose assessments are
+   the graph's and stay their own. */
+
+.spec {
+  font-family: var(--sans); font-size: 0.84rem; color: var(--ink-soft);
+  border-left: 2px solid var(--rule-strong); padding: 0.3rem 0 0.3rem 0.9rem; margin: 0.6rem 0 1.1rem;
+}
+.spec dl { display: grid; grid-template-columns: 8.2rem minmax(0, 1fr); gap: 0.35rem 0.8rem; margin: 0; }
+.spec dt { color: var(--muted); font-variant: small-caps; letter-spacing: 0.04em; }
+.spec dd { margin: 0; line-height: 1.5; color: var(--ink); }
+.specOf { color: var(--muted); }
+
+/* The two judgments, side by side and never merged: the graph's assessment
+   of the conclusion as a claim, and the case's verdict under its standard. */
+.pair {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0;
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 0 1.2rem;
+}
+.judgment { padding: 0.9rem 1rem 0.9rem 0; min-width: 0; }
+.judgment + .judgment { padding: 0.9rem 0 0.9rem 1rem; border-left: 1px solid var(--rule); }
+.judgment :global(.sc) { display: block; color: var(--muted); margin-bottom: 0.4rem; }
+.conclusion { margin: 0 0 0.55rem; font-size: 1.02rem; line-height: 1.45; }
+.marks { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.9rem; }
+.verdict { margin: 0 0 0.55rem; font-family: var(--serif); font-size: 1.08rem; line-height: 1.4; color: var(--ink); font-weight: 600; }
+.verdictNone { font-weight: 400; color: var(--muted); }
+.basis { margin: 0.45rem 0 0; font-family: var(--sans); font-size: 0.8rem; line-height: 1.5; color: var(--ink-soft); }
+.basisLabel { color: var(--muted); font-variant: small-caps; letter-spacing: 0.04em; margin-right: 0.35rem; }
+.about { margin: 0.6rem 0 0; font-family: var(--sans); font-size: 0.74rem; line-height: 1.45; color: var(--muted); }
+
+@media (max-width: 640px) {
+  .spec dl { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .spec dd { margin-bottom: 0.4rem; }
+  .pair { grid-template-columns: minmax(0, 1fr); }
+  .judgment, .judgment + .judgment { padding: 0.9rem 0; }
+  .judgment + .judgment { border-left: none; border-top: 1px solid var(--rule); }
+}
+
+.sectionNote { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); line-height: 1.5; margin: -0.3rem 0 0.6rem; }
+.quiet { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+
+/* The structure, as a tree: an element hangs under what it argues for, and a
+   defeater under what it doubts. */
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree ul { margin-left: 0.55rem; padding-left: 0.95rem; border-left: 1px solid var(--rule); }
+.element { padding: 0.65rem 0 0.2rem; scroll-margin-top: 4rem; }
+.element:target > .elementBody { background: var(--paper-card); outline: 1px solid var(--rule); outline-offset: 0.3rem; }
+.elementHead {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem;
+  font-family: var(--sans); font-size: 0.72rem; color: var(--muted);
+}
+.role { font-variant: small-caps; letter-spacing: 0.05em; color: var(--ink-soft); font-size: 0.8rem; }
+.defeater > .elementBody > .elementHead .role { color: var(--ink); font-weight: 600; }
+.nodeText { margin: 0.15rem 0 0.3rem; font-size: 1rem; line-height: 1.45; }
+.inference { margin: 0.15rem 0 0.3rem; font-size: 0.96rem; line-height: 1.45; font-style: italic; color: var(--ink); }
+.meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem;
+  font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
+}
+.line { margin: 0.3rem 0 0; font-family: var(--sans); font-size: 0.8rem; line-height: 1.5; color: var(--ink-soft); }
+.lineLabel { color: var(--muted); font-variant: small-caps; letter-spacing: 0.04em; margin-right: 0.35rem; }
+.standing { color: var(--ink); font-weight: 600; }
+.gone { color: var(--muted); font-style: italic; }
+
+.plain { list-style: none; margin: 0.4rem 0 0; padding: 0; font-family: var(--sans); font-size: 0.82rem; }
+.plain li { padding: 0.45rem 0; border-top: 1px solid var(--rule-soft); line-height: 1.5; color: var(--ink-soft); }
+.plain li:first-child { border-top: none; }
+.where { display: block; color: var(--muted); }

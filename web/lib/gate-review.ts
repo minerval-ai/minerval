@@ -4,7 +4,7 @@
 // it. Both read the same header, the facts always shown with a page
 // (docs/the-gate.md), and say them the same way.
 
-import { STATUS } from "./ontology";
+import { CASE_FIDELITY_DEF, CASE_VERDICT, LIST_FIDELITY, STATUS, isCaseVerdict, isFidelity } from "./ontology";
 import { estimateAsRecorded } from "./quantity";
 import type { AssessmentStatus } from "./types";
 
@@ -12,6 +12,7 @@ export type Tone = "ok" | "warn" | "bad" | "info" | "neu";
 
 /** The header a page is shown with whatever is removed or held, as the API records it. */
 export interface AlwaysReleased {
+  node_kind?: string;
   verdict?: Record<string, unknown>;
   judged_at?: string;
   coverage?: { examined?: boolean; on?: string[] };
@@ -25,6 +26,27 @@ export function headerOf(raw: Record<string, unknown> | undefined): AlwaysReleas
   return (raw ?? {}) as AlwaysReleased;
 }
 
+/**
+ * An artifact's judgment as a released page's header carries it
+ * (`{ fidelity, case_verdict, confidence }`): how far the list or the case can
+ * be relied on, and for a safety case whether it establishes its conclusion
+ * to its standard. Neither is a claim's status, so neither is read as one.
+ * Null for a header that is not an artifact's.
+ */
+export function artifactVerdict(
+  v: Record<string, unknown> | null | undefined,
+  nodeKind?: string | null,
+): { fidelity: { key: string; label: string; def: string } | null; isCase: boolean; caseVerdict: string | null } | null {
+  if (!v || !("fidelity" in v || nodeKind === "artifact") || "status" in v) return null;
+  const isCase = isCaseVerdict(v.case_verdict);
+  const f = isFidelity(v.fidelity) ? v.fidelity : null;
+  return {
+    fidelity: f ? { key: f, label: LIST_FIDELITY[f].label, def: isCase ? CASE_FIDELITY_DEF[f] : LIST_FIDELITY[f].def } : null,
+    isCase,
+    caseVerdict: isCaseVerdict(v.case_verdict) ? `${CASE_VERDICT[v.case_verdict]}.` : null,
+  };
+}
+
 /** The verdict as a pill: its word and its tone. Null where the item carries no verdict. */
 export function verdictPill(v: Record<string, unknown> | undefined): { text: string; tone: Tone; title?: string } | null {
   if (!v) return null;
@@ -35,6 +57,9 @@ export function verdictPill(v: Record<string, unknown> | undefined): { text: str
       status === "verified" || status === "supported" ? "ok" : status === "inconclusive" ? "warn" : status === "doubtful" || status === "contradicted" ? "bad" : "neu";
     return { text: s?.label ?? status.replace(/_/g, " "), tone, title: s?.def };
   }
+  // An artifact's fidelity, named as that: it is in ink, and is never a status of the claim a case argues for.
+  const artifact = artifactVerdict(v);
+  if (artifact) return artifact.fidelity ? { text: `Fidelity: ${artifact.fidelity.label.toLowerCase()}`, tone: "neu", title: artifact.fidelity.def } : null;
   if ("estimate" in v) return { text: "Estimate", tone: "info", title: estimateAsRecorded(v.estimate) };
   if ("standing" in v) return { text: String(v.standing).replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()), tone: "neu" };
   return null;

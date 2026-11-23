@@ -30,6 +30,7 @@ import {
   splitMarks,
   totalRemovals,
   verdictPill,
+  artifactVerdict,
 } from "@/lib/gate-review";
 import { fetchGateQueue, fetchRelease, type QueueItem, type ReceivedRelease } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
@@ -331,6 +332,8 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
   const header = headerOf(first.always_released);
   const verdict = verdictPill(header.verdict);
   const v = header.verdict ?? {};
+  // A safety case's own verdict, in its sentence: about the case, and apart from the pill.
+  const caseVerdict = artifactVerdict(header.verdict, header.node_kind)?.caseVerdict ?? null;
   const confidence = figure(v.confidence);
   const credence = figure(v.credence);
   const sources = (header.sources ?? []).length;
@@ -362,6 +365,7 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
             {verdict.text}
           </Pill>
         )}
+        {caseVerdict && <span>{caseVerdict}</span>}
         {confidence && <span>confidence {confidence}</span>}
         {credence && (
           <>

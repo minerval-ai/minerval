@@ -6,7 +6,7 @@ import { viewer } from "@/components/admin/access";
 import { CheckReleasedPage } from "@/components/claim/CheckReleasedPage";
 import { Icon } from "@/components/work/icons";
 import { Boundary, ButtonLink, Card, Empty, Kv, Pill, Tip, WorkHead, WorkPage, plural, shortDay, shortWhen, type Tone } from "@/components/work/ui";
-import { auditPill, coverageWords, figure, headerOf, labelOf, verdictPill } from "@/lib/gate-review";
+import { artifactVerdict, auditPill, coverageWords, figure, headerOf, labelOf, verdictPill } from "@/lib/gate-review";
 import { fetchRelease, fetchReleases, fetchReleasedPage, type ReleaseAct, type ReceivedPage } from "@/lib/inside-api";
 import { capital, kindWords, stateOfVersion } from "@/lib/inside-words";
 import "./released-page.css";
@@ -109,6 +109,8 @@ export default async function ReleasedPagePage({ params }: { params: Promise<{ i
   const held = page.parts.length - released;
   const verdict = verdictPill(header.verdict);
   const v = header.verdict ?? {};
+  // An artifact's page carries a fidelity, and a safety case's a verdict of its own; neither is a claim's status.
+  const artifact = artifactVerdict(header.verdict, header.node_kind);
   const coverage = coverageWords(header.coverage, releasedTo);
   const made = header.made ?? {};
   const runLog = (made.run_log ?? null) as { sealed?: boolean; steps?: number | null; chain_verifies?: boolean | null } | null;
@@ -207,7 +209,11 @@ export default async function ReleasedPagePage({ params }: { params: Promise<{ i
           >
             <Kv
               rows={[
-                verdict && ["Verdict", <Pill key="v" tone={verdict.tone} title={verdict.title}>{verdict.text}</Pill>],
+                verdict &&
+                  (artifact?.fidelity
+                    ? ["Fidelity", <Pill key="v" tone={verdict.tone} title={verdict.title}>{artifact.fidelity.label}</Pill>]
+                    : ["Verdict", <Pill key="v" tone={verdict.tone} title={verdict.title}>{verdict.text}</Pill>]),
+                artifact?.caseVerdict ? ["The case's verdict", <span key="cv">{artifact.caseVerdict}</span>] : null,
                 "estimate" in v && ["Estimate", verdict?.title ?? "—"],
                 figure(v.confidence) !== null && ["Confidence", <span key="c" className="w-shown-num">{figure(v.confidence)}</span>],
                 "status" in v && ["Credence", <span key="cr" className="w-shown-num">{figure(v.credence) ?? <span className="w-faint">not given</span>}</span>],

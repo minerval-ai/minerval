@@ -62,6 +62,7 @@ import {
   questionAssessments,
   artifactAssessments,
   artifactSpecs,
+  caseElements,
   sourceInterests,
   sourceSegments,
   sources,
@@ -200,6 +201,8 @@ const ENTRIES: readonly TableEntry[] = [
     },
   },
   { table: argumentSubclaims, removeBeforeWrite: true },
+  // A safety case's structure (#1211): after the arguments its steps may name.
+  { table: caseElements },
   {
     table: claimInstances,
     keepWhenReferenced: `detached_at = COALESCE(detached_at, now()), detached_reason = COALESCE(detached_reason, 'Withdrawn by the public graph.')`,

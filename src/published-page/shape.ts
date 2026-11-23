@@ -105,6 +105,8 @@ export interface PublishedPageShape {
   sources: ShapedSource[];
   stated_views: Block[];
   subclaims: ShapedSubclaim[];
+  /** A safety case's structure, an element to a block, in the case's order. Empty on any other page. */
+  case_elements: Block[];
   removals: Record<string, number>;
   parts: number;
   held_parts: number;
@@ -125,6 +127,7 @@ const KIND_WORDS: Record<string, [string, string]> = {
   supplier: ["a source's supplier and recorded interest, by name", "sources' suppliers and recorded interests, by name"],
   stated_view: ["a stated view", "stated views"],
   subclaim: ["a subclaim with how it bears", "subclaims with how they bear"],
+  case_element: ["an element of the case's structure", "elements of the case's structure"],
 };
 
 /**
@@ -284,6 +287,7 @@ export function shapeOfPublishedPage(pkg: PublishedPagePackage): PublishedPageSh
     sources,
     stated_views: of("stated_view").map(block),
     subclaims: of("subclaim").map(shapeSubclaim),
+    case_elements: of("case_element").map(block),
     removals: (header.removals as Record<string, number>) ?? {},
     parts: page.parts.length,
     held_parts: held.length,

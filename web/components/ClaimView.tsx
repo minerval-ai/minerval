@@ -38,7 +38,8 @@ import {
 import { PageHead } from "@/components/PageHead";
 import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
 import {
-  OtherVerdict, PublicationRecord, PublishedSaidBack, PublishedAssessment, PublishedDecomposition, PublishedGaps, PublishedIntro,
+  OtherVerdict, PublicationRecord, PublishedSaidBack, PublishedAssessment, PublishedCaseStructure, PublishedDecomposition, PublishedGaps, PublishedIntro,
+  hasCaseStructure,
   PublishedNotes, PublishedProvenance, TakenOut,
 } from "./claim/PublishedPage";
 import { isReadingAddress } from "@/lib/source-address";
@@ -536,7 +537,10 @@ export function ClaimView({
       <AttemptLog claimId={claim.id} attempts={attempts} />
       <ResearchLog runs={detail.research_runs} />
 
-      {published?.page && (
+      {/* A safety case's structure stands where a claim's decomposition would;
+          the decomposition is kept only where the page records one as well. */}
+      {published?.page && <PublishedCaseStructure view={published} />}
+      {published?.page && !(hasCaseStructure(published) && published.page.arguments.length === 0 && published.page.subclaims.length === 0) && (
         <section>
           <h2>Decomposition</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>

@@ -83,6 +83,9 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   // Spends the user's owls on a Steward pass and adds a node to the shared
   // graph under their account, as propose_claim does.
   propose_list: "propose",
+  // As propose_list: a Steward pass paid from the user's owls, and a node in
+  // the shared graph under their account.
+  propose_safety_case: "propose",
   submit_source: "submit",
   submit_contribution: "submit",
   submit_published_page: "submit",
@@ -205,6 +208,7 @@ export function alwaysAsks(tool: string, input: Record<string, unknown>): boolea
 export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   propose_claim: "Propose a node to the graph",
   propose_list: "Propose a list to the graph, with the criteria its entries must meet",
+  propose_safety_case: "Propose a safety case to the graph: the system, the deployment, the claim it argues for and the standard",
   submit_source: "Submit a source for the graph to read",
   submit_contribution: "Submit a contribution",
   submit_published_page: "Submit a page your deployment publishes, as a source on its node",

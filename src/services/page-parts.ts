@@ -25,6 +25,7 @@ import { markOf, type Mark } from "./page-fingerprint.js";
  * something the page records as missing: a request it keeps, or what a
  * question's assessment says remains open. `supplier` is the name of who
  * supplied one source and the words of any interest recorded for it.
+ * `case_element` is one element of a safety case's structure (#1211).
  */
 import { ITEM_PART_WORDS } from "./gate-kinds.js";
 
@@ -38,6 +39,7 @@ export const PART_KINDS = [
   "supplier",
   "stated_view",
   "subclaim",
+  "case_element",
 ] as const;
 export type PartKind = (typeof PART_KINDS)[number];
 
@@ -65,6 +67,7 @@ const KIND_WORDS: Record<string, [one: string, several: string]> = {
   supplier: ["a source's supplier and recorded interest, by name", "sources' suppliers and recorded interests, by name"],
   stated_view: ["a stated view", "stated views"],
   subclaim: ["a subclaim with how it bears", "subclaims with how they bear"],
+  case_element: ["an element of the case's structure", "elements of the case's structure"],
 };
 
 /** A part's kind in words: "an argument against". An item that is not a node's page has parts of its own kinds (gate-kinds.ts). */

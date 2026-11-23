@@ -40,7 +40,7 @@ import {
 } from "./formalization-service.js";
 import { getQuantityDetail, getThresholdOf } from "./quantity-service.js";
 import { getQuestionDetail } from "./question-service.js";
-import { getListDetail } from "./artifact-service.js";
+import { getArtifactDetail } from "./safety-case-service.js";
 import { listRequests } from "./request-service.js";
 import { countClaimInstances } from "./claim-instance-service.js";
 import { listUnplacedPassages } from "./argument-instance-service.js";
@@ -118,6 +118,11 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`list` on a list (§7b): its specification, its entries in order with each entry's verdict and why it qualifies, " +
   "what was considered and left out, its fidelity with the assessment (`assessment.id` is what a finding cites), " +
   "and `stale`, true when an entry moved, joined or left since the list was judged; a list's fidelity is never a verdict on its entries; " +
+  "`safety_case` on a safety case (§7b): its specification (system, deployment, standard, framework), `conclusion` with the graph's own " +
+  "assessment of it, its structure (`elements`: claims, steps with their building block, side claims, evidence, and defeaters with where each " +
+  "stands, each presenting a graph node with that node's own judgment), `form` (where it fails its framework's form), `counts_against`, its " +
+  "fidelity, and `verdict`: whether the case establishes its conclusion to its standard, which is a statement about the case and is not the " +
+  "conclusion's assessment; a defeater is the case's name for the part an ordinary claim plays in it; " +
   "`threshold_of` on a claim that cuts a quantity); `coverage`, " +
   COVERAGE_DESCRIPTION +
   "; `since_assessed` (once " +
@@ -280,7 +285,7 @@ export async function getClaimView(
     quantity,
     thresholdOf,
     question,
-    list,
+    artifact,
     requests,
     subclaimCount,
     instanceCount,
@@ -304,7 +309,7 @@ export async function getClaimView(
     kind === "quantity" ? getQuantityDetail(claimId) : null,
     kind === "claim" ? getThresholdOf(claimId) : null,
     kind === "question" ? getQuestionDetail(claimId) : null,
-    kind === "artifact" ? getListDetail(claimId) : null,
+    kind === "artifact" ? getArtifactDetail(claimId) : null,
     // Requests degrade to none rather than failing the read, as tags do.
     listRequests({ claimId, limit: REQUESTS_LIMIT }).catch(() => ({ items: [], total: 0 })),
     getSubclaimCount(claimId),
@@ -436,7 +441,8 @@ export async function getClaimView(
     quantity: quantity ? { ...quantity, ...kindJudgment } : quantity,
     threshold_of: thresholdOf,
     question: question ? { ...question, ...kindJudgment } : question,
-    ...(list ? { list: { ...list, ...kindJudgment } } : {}),
+    ...(artifact?.list ? { list: { ...artifact.list, ...kindJudgment } } : {}),
+    ...(artifact?.safety_case ? { safety_case: { ...artifact.safety_case, ...kindJudgment } } : {}),
     ...formalizationRecord,
     waiting_messages: waiting,
     requests: requests.items.map((r) => ({
