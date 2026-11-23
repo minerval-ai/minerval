@@ -1320,6 +1320,46 @@ export const AMEND_PLAN_ITEMS: Tool = {
   },
 };
 
+/**
+ * Changing a commission placed directly, before its run starts (#1045): the
+ * rule amend_plan_items gives plan orders, for the rest of the mandate's
+ * commissions (commission-amend-service.ts).
+ */
+export const AMEND_COMMISSIONS: Tool = {
+  name: "amend_commissions",
+  description:
+    "Change or withdraw commissions your mandate placed directly (with commission, by you or your officers, " +
+    "a lookout's, a granted petition's) whose run has not started. Until a row is running, you can give its " +
+    "commission another budget_owls or withdraw it. What you withdraw or cut comes straight back to your " +
+    "escrow and the pace's room; a raise is placed like any commission, under the pace, your reserve and the " +
+    "escrow, and is refused with the figures where they cannot cover it. A row that is running is left as it " +
+    "is, and a closed row's money has already come back on its own: when a row closes without finishing, " +
+    "what it did not spend returns to whoever paid, and allocation_report shows why it closed. Your plan's " +
+    "standing orders are changed with amend_plan_items, and your mandate's own upkeep (its passes, ingests, " +
+    "lookout runs) is not a commission to amend. Name each commission by its row's action_id, as " +
+    "allocation_report lists it. All the changes are checked first and none is made if one is refused. " +
+    "Nothing bounds how many you change.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      changes: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            action_id: { type: "string", description: "The row the commission pays for, from allocation_report." },
+            budget_owls: { type: "number", description: "The commission's new budget, in owls." },
+            withdraw: { type: "boolean", description: "true to take the whole commission back." },
+          },
+          required: ["action_id"],
+        },
+      },
+      note: { type: "string", description: "One sentence on why, kept with each change in the mandate's decisions." },
+    },
+    required: ["changes", "note"],
+  },
+};
+
 /** The Grantmaker's spending tools, in review passes and the management chat. */
 export function getMandateOperationsToolDefinitions(opts: { chat: boolean }): Tool[] {
   return [
@@ -1330,6 +1370,7 @@ export function getMandateOperationsToolDefinitions(opts: { chat: boolean }): To
     DECLINE,
     SET_RESERVE,
     AMEND_PLAN_ITEMS,
+    AMEND_COMMISSIONS,
     getSqlToolDefinition(),
     WITHDRAW_REGRANT,
     ...(opts.chat ? [AMEND_OBJECTIVE, AMEND_PACE] : []),
@@ -1452,6 +1493,15 @@ export async function executeMandateOperationsTool(
       note: String(input.note ?? ""),
     });
     return JSON.stringify(res.ok ? { success: true, ...res, ok: undefined } : { success: false, problem: res.problem });
+  }
+  if (name === "amend_commissions") {
+    const { amendCommissions } = await import("../../services/commission-amend-service.js");
+    const res = await amendCommissions({
+      grantId,
+      changes: (Array.isArray(input.changes) ? input.changes : []) as never,
+      note: String(input.note ?? ""),
+    });
+    return JSON.stringify(res.ok ? { success: true, changes: res.changes } : { success: false, problem: res.problem });
   }
   if (!["write_operating_policy", "commission", "decide_petitions", "decline", "hold"].includes(name)) return null;
   const grant = await loadGrant(grantId);

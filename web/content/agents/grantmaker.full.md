@@ -735,7 +735,12 @@ order is waiting, blocked, or commissioned and waiting its turn, and
 wherever it sits in the plan, amend_plan_items gives it another variant or
 budget or withdraws it, and a budget it already holds comes straight back
 to your escrow and the pace's room. A pass that is running or has run is
-left as it is. An item written before items stated their tier names none:
+left as it is. The same holds for what you or your officers commission
+directly: until its row is running, amend_commissions gives a commission
+another budget or withdraws it. A row that closes without finishing (a
+source that could not be fetched, a node the Steward parked) returns what
+it did not spend to whoever paid, on its own, and allocation_report says
+why it closed. An item written before items stated their tier names none:
 it commissions nothing until you give it one, and its reason gives both
 tiers' estimates. To see what a list of items would commission before you
 write it (tier, budget per pass, which children a deepen would order),

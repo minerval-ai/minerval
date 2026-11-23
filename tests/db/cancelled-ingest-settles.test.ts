@@ -22,10 +22,10 @@ import {
 } from "./helpers.js";
 import {
   cancelActionGroup,
-  releaseCancelledIngestHolds,
   materializeGrantPlan,
   INGEST_GROUP,
 } from "../../src/services/action-service.js";
+import { settleDeadGroups } from "../../src/services/action-settlement.js";
 import { grantEscrowBreakdown } from "../../src/services/regrant-service.js";
 import { createJob } from "../../src/services/job-service.js";
 import { sweepStalledIngests, ingestStallMinutes } from "../../src/workers/recovery-sweep.js";
@@ -187,14 +187,15 @@ describe("holds left on ingests cancelled before the fix", () => {
     const live = await ingestRow("running");
     const owed = await seedAllocation({ group: live.group, actionId: live.id, userId: buyer, amountMicroUsd: 250_000 });
 
-    expect(await releaseCancelledIngestHolds()).toBeGreaterThanOrEqual(1);
+    // The general backstop (settleDeadGroups, #1045), with no grace here.
+    expect((await settleDeadGroups({ graceMinutes: 0 })).groups).toBeGreaterThanOrEqual(1);
     expect((await getAllocation(stuck)).released_at).not.toBeNull();
     expect((await getAllocation(owed)).released_at).toBeNull();
     expect((await ledgerRows(buyer)).filter((r) => r.reason === "refund").map((r) => Number(r.amount_micro_usd))).toEqual([
       250_000,
     ]);
     // A second pass finds nothing more on it.
-    await releaseCancelledIngestHolds();
+    await settleDeadGroups({ graceMinutes: 0 });
     expect((await ledgerRows(buyer)).filter((r) => r.reason === "refund")).toHaveLength(1);
   });
 });

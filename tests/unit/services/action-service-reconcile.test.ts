@@ -427,7 +427,9 @@ describe("attempt_proof rows from plan items", () => {
 describe("cancellation and the reopen rule", () => {
   it("cancels open attempt rows whose statement is no longer published, and formalize rows whose claim has one", async () => {
     await reconcileActions();
-    const cancels = queries.filter((x) => x.q.includes("SET status = 'cancelled'"));
+    // The rows to close are picked, then closed and settled group by group
+    // (cancelActionsWhere, action-settlement.ts, #1045).
+    const cancels = queries.filter((x) => x.q.includes("SELECT a.id, a.exclusion_group FROM actions a"));
     const attempt = cancels.find((x) => x.q.includes("a.kind = 'attempt_proof'"));
     expect(attempt).toBeDefined();
     expect(attempt!.q).toContain("split_part(a.exclusion_group, ':', 2)");

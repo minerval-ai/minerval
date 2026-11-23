@@ -31,7 +31,6 @@ import {
   currentLabel,
   runAtLabel,
   runWithUsageContext,
-  withCostMeter,
   withProgressListener,
 } from "../llm/usage-context.js";
 import type { HandlerContext } from "./poller.js";
@@ -148,9 +147,13 @@ export async function handleUrlExtraction(
     return;
   }
   const hold = holdJob(message.jobId, taken.attempt, ctx?.signal);
+  // The meter is held here, not inside withCostMeter, so what a failed
+  // extraction spent is still known when it fails: the ledger row's
+  // commission pays for it and returns the rest (#1045).
+  const meter = { billedMicroUsd: 0 };
   let billedMicroUsd: number;
   try {
-    ({ billedMicroUsd } = await runAtLabel(job?.sensitivityLabel, `job ${message.jobId}`, () =>
+    await runAtLabel(job?.sensitivityLabel, `job ${message.jobId}`, () =>
       runWithUsageContext(
         {
           userId: job?.userId ?? null,
@@ -160,9 +163,12 @@ export async function handleUrlExtraction(
           jobId: message.meterJobId ?? message.jobId,
         },
         () =>
-          withProgressListener(hold.heartbeat, () => withCostMeter(() => processUrlExtraction(message, hold)))
+          withProgressListener(hold.heartbeat, () =>
+            runWithUsageContext({ meter }, () => processUrlExtraction(message, hold))
+          )
       )
-    ));
+    );
+    billedMicroUsd = meter.billedMicroUsd;
   } catch (err) {
     if (err instanceof ExtractionAbandonedError) {
       // Not a failure of the source, nor this run's to record: whoever
@@ -213,8 +219,9 @@ export async function handleUrlExtraction(
     // left 'running' it would strand its funders' allocations, and a
     // reconcile reopen would re-submit (and re-charge) the same URL.
     // Cancelling retires the group; the plan cursor skips cancelled items.
-    // The row says why, and the money on it goes back to its payers (#1045).
-    await cancelIngestAction(group, ingestFailureReason(err, message.url));
+    // The row says why, what the attempt spent is paid from its commission,
+    // and the rest goes back to its payers (#1045).
+    await cancelIngestAction(group, ingestFailureReason(err, message.url), meter.billedMicroUsd, message.meterJobId);
     throw err;
   }
   // Escrow-funded ingestions were never cap-charged; nothing to settle.
@@ -294,10 +301,24 @@ async function holdIngestAction(group: string, err: unknown): Promise<boolean> {
   }
 }
 
-async function cancelIngestAction(group: string, reason: string): Promise<void> {
+async function cancelIngestAction(
+  group: string,
+  reason: string,
+  meteredMicroUsd: number,
+  meterJobId?: string
+): Promise<void> {
   try {
     const { cancelActionGroup } = await import("../services/action-service.js");
-    await cancelActionGroup(group, reason);
+    // The running row is the attempt that spent; an 'open' one was reopened
+    // by a sweep while it ran and closes with it.
+    const [ran] = await rawQuery<{ id: string }>(
+      `SELECT id FROM actions WHERE exclusion_group = $1 AND status IN ('running', 'open')
+        ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END LIMIT 1`,
+      [group]
+    );
+    await cancelActionGroup(group, reason, {
+      ran: ran ? { actionId: ran.id, meteredMicroUsd, meteredJobId: meterJobId ?? null } : undefined,
+    });
   } catch (err) {
     console.error(
       "[url-extraction] ingest action cancellation failed:",

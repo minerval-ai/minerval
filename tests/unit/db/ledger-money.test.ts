@@ -22,7 +22,7 @@ import { ALLOCATION_MONEY, REGRANT_MONEY } from "../../../src/db/money.js";
  * if it reads or changes money, it belongs on the view.
  */
 const ON_THE_TABLE: Record<string, string[]> = {
-  "src/services/action-service.ts": ["INTO action_allocations: the record of a shortfall met, added at the label of the row that ran."],
+  "src/services/action-settlement.ts": ["INTO action_allocations: the record of a shortfall met, added at the label of the row that ran."],
   "src/services/allocation-service.ts": ["INTO action_allocations: a mandate's money on its own row, added at the label of that row."],
   "src/services/bounty-service.ts": ["INTO action_allocations: a prize reserve's money on an audit, added at the label of the work in progress."],
   "src/services/commission-service.ts": [

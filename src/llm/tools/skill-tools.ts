@@ -179,6 +179,7 @@ const AGENT_INLINE_TOOL_NAMES = [
   "allocation_report",
   "adjust_plan",
   "amend_plan_items",
+  "amend_commissions",
   "regrant",
   "spawn_mandate",
   "extend_plan",

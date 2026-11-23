@@ -165,13 +165,17 @@ export interface EngineProcessResult {
   waitingOn?: PlatformFaultReason;
 }
 
-/** Cancel a group whose subject is gone; the ledger must not spin on it. */
-async function cancelGroup(exclusionGroup: string): Promise<void> {
-  await rawQuery(
-    `UPDATE actions SET status = 'cancelled', updated_at = now()
-      WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
-    [exclusionGroup]
-  );
+/**
+ * Cancel a group whose subject is gone, or whose run failed for good; the
+ * ledger must not spin on it. Its money goes back to whoever paid
+ * (action-settlement.ts, #1045), and the row says why. `ranId` is the row
+ * whose run failed: its settlement is recorded as an event like a finished
+ * run's. What the failed run spent was metered to the payer's job as it ran
+ * and is not known here, so it counts in the job's outside-ledger term.
+ */
+async function cancelGroup(exclusionGroup: string, reason: string, ranId?: string): Promise<void> {
+  const { cancelActions } = await import("../services/action-settlement.js");
+  await cancelActions({ group: exclusionGroup, reason, includeRunning: true, ranId: ranId ?? null });
 }
 
 /**
@@ -405,7 +409,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
     ? await liveCurationRequests(anchorClaimId)
     : [];
   if (!anchorClaimId || requests.length === 0) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the node it would curate is gone or has no request left to read");
     return { status: "empty" };
   }
   const funder = await funderContext(action);
@@ -493,7 +497,7 @@ async function runRequestCurateAction(action: RunnableAction): Promise<EnginePro
   const requestId = action.target_ref ?? "";
   const request = requestId ? await getRequest(requestId) : null;
   if (!request || request.keeper.kind !== "curator" || ["met", "declined", "withdrawn", "moot"].includes(request.state)) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the request is closed or no longer the Curator's to keep");
     return { status: "empty" };
   }
   const funder = await funderContext(action);
@@ -655,7 +659,7 @@ async function reopenReview(grantId: string): Promise<void> {
 async function runResumeAction(action: RunnableAction): Promise<EngineProcessResult> {
   const taken = action.target_ref ? await takeSessionForResume(action.target_ref) : null;
   if (!taken) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the paused session it would resume is no longer waiting to be resumed");
     return { status: "empty" };
   }
   const { session, replies } = taken;
@@ -748,7 +752,7 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
   const runId = action.target_ref ?? "";
   const run = runId ? await getResearchRun(runId) : null;
   if (!run) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the research run it would carry out no longer exists");
     return { status: "empty" };
   }
   const funder = await funderContext(action);
@@ -869,7 +873,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   const requestId = action.target_ref ?? "";
   const request = requestId ? await getRequest(requestId) : null;
   if (!request || ["met", "declined", "withdrawn", "moot"].includes(request.state)) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the request is closed");
     if (requestId) await closeRequestActions(requestId).catch(() => {});
     return { status: "empty" };
   }
@@ -1136,7 +1140,7 @@ async function runRedactAction(action: RunnableAction): Promise<EngineProcessRes
       )
     : [];
   if (!page || page.stage !== "to_redact") {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the page it would redact is no longer waiting to be redacted");
     return { status: "empty" };
   }
   const context = await funderContext(action);
@@ -1198,7 +1202,7 @@ async function runAuditAction(action: RunnableAction): Promise<EngineProcessResu
       )
     : [];
   if (!run || run.completed_at) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the audit it would run is finished or no longer exists");
     return { status: "empty" };
   }
   let context = await funderContext(action);
@@ -1287,7 +1291,7 @@ async function runFormalizeAction(
       )
     : [];
   if (!claimId || !claim || claim.state !== "active") {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the node it would work on is no longer active");
     return { status: "empty" };
   }
   const funder: { jobId?: string; userId?: string; grantId?: string } =
@@ -1420,7 +1424,7 @@ async function runLookoutAction(
     [lookoutId]
   );
   if (!lookout || lookout.status !== "active" || !lookout.owner_active) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the lookout is no longer active");
     return { status: "empty" };
   }
   const funder: { jobId?: string; userId?: string; grantId?: string } =
@@ -1488,7 +1492,7 @@ async function runLookoutAction(
       flagsRaised: 0,
       failed: true,
     }).catch(() => {});
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the lookout's run failed", action.id);
     return {
       status: "processed",
       actionId: action.id,
@@ -1526,7 +1530,7 @@ async function runCorrespondentAction(
     [correspondentId]
   );
   if (!row || row.status !== "active" || row.grant_status !== "active") {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the correspondent or its mandate is no longer active");
     return { status: "empty" };
   }
   const funder: { jobId?: string; userId?: string; grantId?: string } =
@@ -1564,7 +1568,7 @@ async function runCorrespondentAction(
       cursorTo: null,
       failed: true,
     }).catch(() => {});
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the correspondent's run failed", action.id);
     return {
       status: "processed",
       actionId: action.id,
@@ -1603,7 +1607,7 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
       )
     : [];
   if (!partition || !grant) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the partition it would sweep, or the mandate paying for it, is gone");
     return { status: "empty" };
   }
   const general = { grantId: grant.id, budgetJobId: grant.budget_job_id };
@@ -1655,7 +1659,7 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
         error: msg,
       };
     }
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the consistency sweep failed", action.id);
     return {
       status: "processed",
       actionId: action.id,
@@ -1699,7 +1703,7 @@ async function runGrantAgentAction(
   );
   const wantedStatus = action.kind === "grant_planning" ? "planning" : "active";
   if (!grant || grant.status !== wantedStatus) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the mandate is no longer in the state this pass is for");
     return { status: "empty" };
   }
 
@@ -1790,7 +1794,7 @@ async function runGrantAgentAction(
       `UPDATE budget_jobs SET error = $2, updated_at = now() WHERE id = $1`,
       [grant.budget_job_id, msg]
     ).catch(() => {});
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the mandate's pass failed", action.id);
     return {
       status: "processed",
       actionId: action.id,
@@ -1814,7 +1818,7 @@ async function runIngestAction(
 ): Promise<EngineProcessResult> {
   const url = action.target_ref ?? "";
   if (!url) {
-    await cancelGroup(action.exclusion_group);
+    await cancelGroup(action.exclusion_group, "the row names no source to ingest");
     return { status: "empty" };
   }
   const funder: { jobId?: string; userId?: string; grantId?: string } =
