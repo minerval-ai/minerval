@@ -46,7 +46,7 @@ async function Gate({ children }: { children: ReactNode }) {
         <PageHead
           tool
           title="Sign in"
-          lede="This is a private deployment of Minerval. Nothing in it is shown to anyone who is not signed in."
+          lede="This is a private deployment of Minerval."
         />
         {signInOptions({})}
       </GateCard>

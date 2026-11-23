@@ -306,7 +306,7 @@ describe("the gate", () => {
     const text = textOf(tree);
     expect(text).toContain("Sign in");
     expect(text).toContain(
-      "This is a private deployment of Minerval. Nothing in it is shown to anyone who is not signed in."
+      "This is a private deployment of Minerval."
     );
     expect(text).toContain("Continue with Halden single sign-on");
     expect(text).not.toContain("the page");
