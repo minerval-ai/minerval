@@ -161,12 +161,15 @@ describe("someone who is not signed in", () => {
       "GET /.well-known/oauth-protected-resource/mcp",
       "GET /health",
       "GET /oauth/authorize",
+      // Which version of Minerval the server runs, and nothing else (docs/releases.md).
+      "GET /setup/version",
       "POST /oauth/register",
       "POST /oauth/token",
     ]);
     expect(Object.keys(OWN_CREDENTIAL)).toEqual(["POST /billing/webhook"]);
     expect(Object.keys(SERVICE_WITHOUT_A_PERSON)).toEqual(["POST /users/provision"]);
-    expect(Object.keys(SIGNED_IN).sort()).toEqual(["GET /permissions/mine", "GET /users/me"]);
+    // The third is how the first person becomes the first administrator, before the deployment has a member.
+    expect(Object.keys(SIGNED_IN).sort()).toEqual(["GET /permissions/mine", "GET /users/me", "POST /setup/first-administrator"]);
 
     // Every name in the lists is a route this app mounts.
     const mounted = new Set(app.routeCatalog.map((r) => routeKey(r.method, r.url)));
@@ -531,6 +534,16 @@ describe("what a permission guards", () => {
       "POST /usage-reports/outgoing/send": ["administer"],
       // The setup checklist (tests/db/setup-checklist.test.ts).
       "GET /setup/checklist": ["administer"],
+      // The deployment's settings (tests/db/settings.test.ts).
+      "GET /settings": ["administer"],
+      "GET /settings/file": ["administer"],
+      "PUT /settings/:key": ["administer"],
+      "DELETE /settings/:key": ["administer"],
+      "POST /setup/restart": ["administer"],
+      "PATCH /parties/:id": ["administer"],
+      // A deployment's own copy of the list of Minerval's releases (tests/db/product-releases.test.ts).
+      "POST /setup/releases/upload": ["administer"],
+      "POST /setup/releases/steps": ["administer"],
     });
     // The routes that any one of several permissions opens: the reads of
     // the file sets, for a person who directs, who uploads sets, or an
@@ -840,7 +853,7 @@ describe("an MCP caller and the Assistant", () => {
     const mine = app.routeCatalog
       .map((r) => routeKey(r.method, r.url))
       .filter((key) => /^\S+ \/(permissions|parties|labels)(\/|$)|\/party$|^POST \/operator\/administrators$/.test(key));
-    expect(mine.length).toBe(21);
+    expect(mine.length).toBe(22);
     for (const key of mine) {
       const isRead = key.startsWith("GET ");
       expect(key in ROUTE_TOOLS, key).toBe(isRead);

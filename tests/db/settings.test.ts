@@ -426,6 +426,8 @@ describe("a key someone outside issued", () => {
 
 describe("rules that turn on what the deployment holds", () => {
   it("does not change whether owls are sold or created while any account holds owls", async () => {
+    // The scratch database is shared with every other file: start from no account holding any.
+    await rawQuery(`DELETE FROM owl_ledger`);
     await rawQuery(`INSERT INTO owl_ledger (user_id, amount_micro_usd, reason) VALUES ($1, 3000000, 'admin_adjust')`, [member.id]);
     const res = await put(admin, "pricing.owls", "created");
     expect(res.statusCode).toBe(409);
@@ -459,6 +461,17 @@ describe("rules that turn on what the deployment holds", () => {
     await readStoredSettings();
     expect(loadConfig().runLogMode).toBe("best_effort");
     await rawQuery(`DELETE FROM deployment_settings WHERE key = 'run_log.mode'`);
+  });
+
+  it("keeps the settings table from every connection held to a clearance: it is the owner's alone", async () => {
+    const { runAtLabel } = await import("../../src/llm/usage-context.js");
+    for (const table of ["deployment_settings", "first_administrator_codes"]) {
+      await expect(runAtLabel(LABEL, "a settings test", () => rawQuery(`SELECT 1 FROM ${table} LIMIT 1`)), table).rejects.toThrow(/permission denied/);
+      await expect(
+        runAtLabel("public", "a settings test", () => rawQuery(`DELETE FROM ${table}`)),
+        table
+      ).rejects.toThrow(/permission denied/);
+    }
   });
 
   it("still reads and writes the settings where the database holds every connection to a clearance", async () => {

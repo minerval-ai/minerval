@@ -198,11 +198,16 @@ describe("the label column, in the catalog", () => {
       "deployment_faults",
       "deployment_request_nonces",
       "deployment_requests",
+      // The settings the administrators set in the app, a key sealed (docs/settings.md): the deployment's own, the
+      // same whoever asks, and the owner's alone where reads are held to a clearance (owner_only in the enforcement step).
+      "deployment_settings",
       "deployments",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
       // Where the subscription router has read the event log to: a number.
       "event_router_state",
+      // The hash of the one-time code that makes the first administrator (docs/accounts.md). The owner's alone.
+      "first_administrator_codes",
       // Hosting tokens for deployments Minerval provisions, kept as hashes (docs/organizations.md, "Hosted by Minerval").
       // A guest's pass on /ask: an account, what it was given, an address hashed with its day (docs/accounts.md, "Guests").
       "guest_passes",
@@ -245,18 +250,24 @@ describe("the label column, in the catalog", () => {
       // Switches and marks the platform keeps for itself.
       "platform_flags",
       "prize_payouts",
+      // The signed list of Minerval's own releases, as this deployment holds it (docs/releases.md): public facts about the software.
+      "product_release_entries",
       // Which providers the administrators cleared for each label: names, part of the wall.
       "provider_clearances",
       // This deployment's key for its connection to the public graph: the owner's alone (docs/organizations.md).
       "public_graph_connection",
       // Counts of what waits, with no content.
       "queue_depth_snapshots",
+      // The operator steps of an upgrade that an administrator marked done: a version, the step's sentence from the release's notes, who and when.
+      "release_steps_done",
       // Database time used by query_sql, per account and day.
       "sql_usage",
       // The usage reports a deployment prepares and the ones a public graph is sent: a day, counts and
       // totals across every label, naming none, and no text (docs/usage-report.md).
       "usage_reports",
       "usage_reports_received",
+      // Which versions of the software the API has started as, and when (docs/releases.md).
+      "versions_run",
     ]);
   });
 });
