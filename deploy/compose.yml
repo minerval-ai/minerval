@@ -62,17 +62,17 @@ services:
         condition: service_healthy
       sandbox:
         condition: service_started
-    # Any other setting the API reads (.env.example at the repository's
-    # root lists them: budgets, intervals, limits) goes in api.env beside
-    # this file. It is optional.
+    # Any setting whoever runs the machine wants fixed, and does not leave
+    # to the administrators in the app, goes in api.env beside this file
+    # (docs/settings.md lists every setting). It is optional.
     env_file:
       - path: ./api.env
         required: false
     environment:
       # --- fixed by this package ---
       # Production: migrations and the enforcement step run at every start,
-      # errors carry no stack, and every load-bearing role's model must be
-      # named.
+      # errors carry no stack, and agent work is held while a load-bearing
+      # role's model is nobody's choice.
       - ENVIRONMENT=production
       - PORT=3000
       - HOST=0.0.0.0
@@ -97,9 +97,13 @@ services:
       - FILE_SET_DIRECTORY_ROOT=/registered
       - SANDBOX_URL=http://sandbox:8080
       - SANDBOX_TOKEN=${SANDBOX_TOKEN:?Set SANDBOX_TOKEN in .env}
-      # --- given by the deployment: passed through from .env as they are.
-      # One that is not set there is not set here, and the API's own
-      # starting value holds. env.example says what each is.
+      # --- passed through from .env as they are. One that is not set there
+      # is not set here. The first few stay on the machine and env.example
+      # says what each is. The rest are the administrators' to set in the
+      # app (docs/settings.md): one that is set in .env all the same is
+      # fixed there, which is how an install that is scripted keeps working.
+      # No model is required here any more: a role whose model nobody has
+      # chosen is named by the preflight's `models_chosen` check.
       - FIRST_ADMINISTRATOR
       - SIGN_IN_VALID_HOURS
       - CLEARED_ROLE_PASSWORD
@@ -120,17 +124,17 @@ services:
       - OPENROUTER_API_KEY
       - MODEL_ENDPOINTS
       - PROVIDER_LABELS
-      - STEWARD_MODEL=${STEWARD_MODEL:?Set STEWARD_MODEL in .env, the model the Steward runs on}
-      - STEWARD_STRONG_MODEL=${STEWARD_STRONG_MODEL:?Set STEWARD_STRONG_MODEL in .env, the model the Steward's strong tier runs on}
-      - CURATOR_MODEL=${CURATOR_MODEL:?Set CURATOR_MODEL in .env, the model the Curator runs on}
-      - EXTRACTOR_MODEL=${EXTRACTOR_MODEL:?Set EXTRACTOR_MODEL in .env, the model the Extractor runs on}
+      - STEWARD_MODEL
+      - STEWARD_STRONG_MODEL
+      - CURATOR_MODEL
+      - EXTRACTOR_MODEL
       - EXTRACTOR_FALLBACK_MODEL
       - MATCHER_MODEL
       - TAGGER_MODEL
       - GOVERNANCE_MODEL
-      - AUDIT_MODEL=${AUDIT_MODEL:?Set AUDIT_MODEL in .env, the model Audit runs on}
+      - AUDIT_MODEL
       - REDACTOR_MODEL
-      - ARBITRATION_MODEL=${ARBITRATION_MODEL:?Set ARBITRATION_MODEL in .env, the model the Dispute Arbitrator runs on}
+      - ARBITRATION_MODEL
       - GRANTMAKER_MODEL
       - PROGRAM_OFFICER_MODEL
       - LOOKOUT_MODEL
@@ -144,8 +148,7 @@ services:
       - RESEARCHER_STRONG_MODEL
       - RESEARCHER_STANDARD_MODEL
       - RESEARCHER_CHEAP_MODEL
-      # Empty where mathematics is off (FEATURES_OFF): the API asks for it only where the feature is on.
-      - SOLVER_MODEL=${SOLVER_MODEL:-}
+      - SOLVER_MODEL
       - FILE_SET_UPLOAD_MAX_BYTES
       - SANDBOX_HOUR_COST_MICRO_USD
       - MIRROR_FEED_URL

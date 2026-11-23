@@ -59,7 +59,7 @@ import {
   settingGroup,
   type Setting,
 } from "../settings-registry.js";
-import { CREDENTIAL_KEY_ENV, openCredential, sealCredential } from "./connection-credential.js";
+import { CREDENTIAL_KEY_ENV, credentialKeys, openCredential, sealCredential } from "./connection-credential.js";
 import { logAdministrativeEvent } from "./permission-service.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { endpointKeysMissing, evaluatePreflight, gatherPreflightFacts, type PreflightCheckResult } from "../preflight.js";
@@ -792,6 +792,48 @@ export function storedSettingsForFile(): Record<string, ConfigFileValue> {
     if (text !== undefined) settings[row.key] = fromEnvironmentText(row, text);
   }
   return settings;
+}
+
+/**
+ * Move every key given in the app onto the current sealing key
+ * (scripts/reseal-connection-credentials.ts, which does the same for the
+ * connections' credentials). A key that does not open is left as it is and
+ * named: it is given again on the settings page. Running it twice changes
+ * nothing the second time.
+ */
+export async function resealStoredSettings(): Promise<
+  { ok: true; resealed: number; already_current: number; not_opened: string[] } | { ok: false; message: string }
+> {
+  const keys = credentialKeys();
+  if (!keys.current) {
+    return { ok: false, message: keys.problem ?? `${CREDENTIAL_KEY_ENV} is not set, so there is no key to seal with.` };
+  }
+  const current = keys.current.id;
+  return asOwner(() =>
+    withTransaction(async (tx) => {
+      const rows = await tx.query<{ key: string; sealed_value: string }>(
+        `SELECT key, sealed_value FROM deployment_settings WHERE sealed_value IS NOT NULL ORDER BY key FOR UPDATE`
+      );
+      let resealed = 0;
+      let already = 0;
+      const notOpened: string[] = [];
+      for (const row of rows) {
+        if (row.sealed_value.startsWith(`${current}:`)) {
+          already += 1;
+          continue;
+        }
+        const opened = open(row.key, row.sealed_value);
+        const again = opened === null ? null : seal(row.key, opened);
+        if (!again || !again.ok) {
+          notOpened.push(row.key);
+          continue;
+        }
+        await tx.query(`UPDATE deployment_settings SET sealed_value = $2 WHERE key = $1`, [row.key, again.sealed]);
+        resealed += 1;
+      }
+      return { ok: true as const, resealed, already_current: already, not_opened: notOpened };
+    })
+  );
 }
 
 /** Record that an administrator asked for the API to be started again, with the settings that were waiting on it. */

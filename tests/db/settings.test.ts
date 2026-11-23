@@ -38,6 +38,7 @@ import { ensureEnforcement } from "../../src/db/enforcement.js";
 import { MCP_EXCLUDED_ROUTES, ROUTE_TOOLS } from "../../src/mcp/route-tools.js";
 import {
   readStoredSettings,
+  resealStoredSettings,
   setSetting,
   type SettingsListing,
   type SettingView,
@@ -380,6 +381,20 @@ describe("a key someone outside issued", () => {
     expect(loadConfig().anthropicApiKey).toBe("");
     expect(await setting(admin, "model_providers.anthropic_api_key")).toMatchObject({ is_set: false, unopened: true });
     process.env.CREDENTIAL_ENCRYPTION_KEY = sealedWith;
+    await readStoredSettings();
+    expect(loadConfig().anthropicApiKey).toBe(KEY);
+  });
+
+  it("is moved onto a new sealing key by the reseal script's step, and opens under it alone afterwards", async () => {
+    const old = process.env.CREDENTIAL_ENCRYPTION_KEY!;
+    process.env.CREDENTIAL_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+    process.env.CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS = old;
+    await readStoredSettings();
+    // Still opens, under the previous key.
+    expect(loadConfig().anthropicApiKey).toBe(KEY);
+    expect(await resealStoredSettings()).toEqual({ ok: true, resealed: 1, already_current: 0, not_opened: [] });
+    expect(await resealStoredSettings()).toEqual({ ok: true, resealed: 0, already_current: 1, not_opened: [] });
+    delete process.env.CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS;
     await readStoredSettings();
     expect(loadConfig().anthropicApiKey).toBe(KEY);
   });
