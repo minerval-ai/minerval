@@ -3,8 +3,10 @@
  * (src/connections.ts; the tables are in db/schema.ts).
  *
  * The administrator's side: add a connection, change it, look at the tools
- * its server lists, and pick which of them agents are offered. Every change
- * to what agents may read writes a row to administrative_events in the same
+ * its server lists, and pick which of them agents are offered: as tools
+ * that read, or, under a write grant the administrator acknowledges and
+ * gives a reason for, as tools that write. Every change to what agents may
+ * read or write writes a row to administrative_events in the same
  * transaction, as a label or a party does (permission-service.ts).
  *
  * The run's side: connectionsOfferedAt answers which connections a run at a
@@ -13,7 +15,10 @@
  * definition is still the one an administrator picked. A tool that differs
  * is withdrawn then and there, and stays withdrawn until an administrator
  * looks again: the pick was a person's judgment of one definition, and
- * nothing here may extend it to another.
+ * nothing here may extend it to another. A tool granted to write is offered
+ * only to a run at the connection's own label, and never to the Assistant
+ * (connectionsOfferedAt says why); a run that would otherwise have had it
+ * is told that it does not, and the reason.
  *
  * Nothing in this file reads a credential in the clear once it is kept. A
  * connection either names the environment variable that holds its
@@ -28,6 +33,7 @@ import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import {
+  CALL_PRICE_MAX_MICRO_USD,
   CONNECTION_NAME_MAX_CHARS,
   CONNECTION_STAKE_MAX_CHARS,
   CONNECTION_TIMEOUT_SECONDS,
@@ -43,6 +49,8 @@ import {
   readOnlyHint,
   toolDefinitionHash,
   toolPrefixFromName,
+  WRITE_ACKNOWLEDGEMENT,
+  WRITE_REASON_MAX_CHARS,
   CONNECTION_TRANSPORTS,
   CONNECTION_ROLES,
   DEFAULT_CONNECTION_ROLES,
@@ -65,6 +73,8 @@ import {
   sealCredential,
   type SealedCredential,
 } from "./connection-credential.js";
+import { mayOpenRawSources, withheldCallResult, type WithheldSourceText } from "../raw-sources.js";
+import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { labelsReadableFrom, logAdministrativeEvent } from "./permission-service.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -125,8 +135,18 @@ interface ToolRow {
   offered_at: Date | null;
   withdrawn_at: Date | null;
   withdrawn_reason: string | null;
+  writes: boolean;
+  write_reason: string | null;
+  write_acknowledgement: string | null;
+  write_granted_by: string | null;
+  write_granted_by_name: string | null;
+  write_granted_at: Date | null;
+  write_held: boolean;
+  call_price_micro_usd: number;
   calls: number;
   readings_kept: number;
+  writes_made: number;
+  writes_held: number;
 }
 
 const CONNECTION_SELECT = `
@@ -141,10 +161,17 @@ const CONNECTION_SELECT = `
 const TOOL_SELECT = `
   SELECT t.connection_id, t.name, t.description, t.input_schema, t.annotations, t.definition_hash,
          t.listed, t.seen_at, t.offered, t.offered_at, t.withdrawn_at, t.withdrawn_reason,
+         t.writes, t.write_reason, t.write_acknowledgement, t.write_granted_by, t.write_granted_at,
+         t.write_held, t.call_price_micro_usd,
+         (SELECT g.display_name FROM contributors g WHERE g.id = t.write_granted_by) AS write_granted_by_name,
          (SELECT count(*)::int FROM connection_calls k
            WHERE k.connection_id = t.connection_id AND k.tool = t.name) AS calls,
          (SELECT count(*)::int FROM connection_calls k
-           WHERE k.connection_id = t.connection_id AND k.tool = t.name AND k.source_id IS NOT NULL) AS readings_kept
+           WHERE k.connection_id = t.connection_id AND k.tool = t.name AND k.source_id IS NOT NULL) AS readings_kept,
+         (SELECT count(*)::int FROM connection_calls k
+           WHERE k.connection_id = t.connection_id AND k.tool = t.name AND k.writes) AS writes_made,
+         (SELECT count(*)::int FROM connection_calls k
+           WHERE k.connection_id = t.connection_id AND k.tool = t.name AND k.outcome = 'held') AS writes_held
     FROM connection_tools t`;
 
 export interface ConnectionToolView {
@@ -158,7 +185,7 @@ export interface ConnectionToolView {
   annotations: Record<string, unknown> | null;
   /** The server's word that the tool only reads: true, false, or null when it does not say. A hint. */
   read_only_hint: boolean | null;
-  /** The server itself marks the tool as one that changes things, so it cannot be picked. */
+  /** The server itself marks the tool as one that changes things, so it can be picked only under a write grant. */
   marked_as_writing: boolean;
   /** What a pick of this tool must name: the hash of the definition shown here. */
   definition_hash: string;
@@ -169,8 +196,27 @@ export interface ConnectionToolView {
   offered_at: string | null;
   /** Set when a tool that was offered stopped being offered without an administrator's act. */
   withdrawn: { at: string; reason: string } | null;
+  /**
+   * The write grant the tool was picked under: the administrator's reason,
+   * the words they acknowledged, who and when, and whether its calls wait
+   * for an administrator before they are sent. Null for a tool picked as
+   * one that reads, and for a tool not picked. On a withdrawn tool it is
+   * what was granted, and offers nothing until the tool is picked again.
+   */
+  write_grant: {
+    reason: string;
+    acknowledgement: string;
+    granted_by: { id: string; name: string } | null;
+    granted_at: string;
+    held: boolean;
+  } | null;
+  /** What one answered call is charged to the run's budget, in owls; 0 for a tool whose calls are not charged. */
+  owls_per_call: number;
   calls: number;
   readings_kept: number;
+  /** Calls made while the tool was granted to write, and how many of them wait for an administrator now. */
+  writes_made: number;
+  writes_held: number;
 }
 
 export interface ConnectionView {
@@ -236,8 +282,22 @@ function toolView(prefix: string, t: ToolRow): ConnectionToolView {
     offered: t.offered,
     offered_at: iso(t.offered_at),
     withdrawn: t.withdrawn_at ? { at: iso(t.withdrawn_at)!, reason: t.withdrawn_reason ?? "changed" } : null,
+    write_grant:
+      t.writes && t.write_reason !== null && t.write_acknowledgement !== null
+        ? {
+            reason: t.write_reason,
+            acknowledgement: t.write_acknowledgement,
+            granted_by:
+              t.write_granted_by !== null ? { id: t.write_granted_by, name: t.write_granted_by_name ?? "" } : null,
+            granted_at: iso(t.write_granted_at)!,
+            held: t.write_held,
+          }
+        : null,
+    owls_per_call: microUsdToOwls(t.call_price_micro_usd),
     calls: t.calls,
     readings_kept: t.readings_kept,
+    writes_made: t.writes_made,
+    writes_held: t.writes_held,
   };
 }
 
@@ -1127,24 +1187,53 @@ export type OfferFailureCode =
   | "TOOL_CHANGED"
   | "TOOL_NOT_LISTED"
   | "MARKED_AS_WRITING"
+  | "WRITE_NOT_ACKNOWLEDGED"
+  | "WRITE_REASON_NEEDED"
+  | "HELD_NEEDS_WRITE_GRANT"
+  | "INVALID_PRICE"
   | "NAME_NOT_OFFERABLE"
   | "SCHEMA_NOT_OFFERABLE";
 
+/** One tool in a pick: the definition the administrator read, and the terms it is offered on. */
+export interface ToolPick {
+  name: string;
+  definitionHash: string;
+  /**
+   * Present to pick the tool as one that writes: the administrator
+   * acknowledges WRITE_ACKNOWLEDGEMENT and gives their reason. Absent, the
+   * tool is picked as one that reads.
+   */
+  writes?: { acknowledged: boolean; reason: string };
+  /** A write call waits for an administrator before it is sent. Only with `writes`. */
+  held?: boolean;
+  /** What one answered call is charged to the run's budget, in owls. Absent or 0: not charged. */
+  owlsPerCall?: number;
+}
+
 /**
  * Set which of a connection's tools agents are offered: the whole set, each
- * tool named with the hash of the definition the administrator looked at.
- * A pick is refused when the tool stored is not that definition (it changed
- * between looking and picking), when the server no longer lists it, when
- * the server itself marks it as writing, or when its name or its schema
- * could not be given to a model. Either every pick in the request stands or
- * none does.
+ * tool named with the hash of the definition the administrator looked at,
+ * and with the terms it is offered on. A pick is refused when the tool
+ * stored is not that definition (it changed between looking and picking),
+ * when the server no longer lists it, when the server itself marks it as
+ * writing and the pick carries no write grant, when a write grant is not
+ * acknowledged or gives no reason, or when the tool's name or schema could
+ * not be given to a model. Either every pick in the request stands or none
+ * does.
+ *
+ * The request is the whole of what is offered and on what terms. A tool
+ * left out is no longer offered and loses its write grant and its price; a
+ * tool named without `writes` is picked as one that reads, so a write grant
+ * it had is revoked. A write grant restated with the reason it already has,
+ * on a tool still offered, is the same grant, by whoever made it; a new
+ * reason, or a pick of a tool that was not offered, is a new one.
  */
 export async function offerTools(
   id: string,
-  picks: ReadonlyArray<{ name: string; definitionHash: string }>,
+  picks: ReadonlyArray<ToolPick>,
   actorId: string
 ): Promise<
-  | { ok: true; offered: string[]; noLongerOffered: string[] }
+  | { ok: true; offered: string[]; noLongerOffered: string[]; writeGranted: string[]; writeRevoked: string[] }
   | { ok: false; code: OfferFailureCode; message: string }
 > {
   const no = (code: OfferFailureCode, message: string) => ({ ok: false as const, code, message });
@@ -1162,14 +1251,26 @@ export async function offerTools(
       offered: boolean;
       annotations: Record<string, unknown> | null;
       input_schema: unknown;
+      writes: boolean;
+      write_reason: string | null;
+      write_held: boolean;
+      call_price_micro_usd: number;
     }>(
-      `SELECT name, definition_hash, listed, offered, annotations, input_schema
+      `SELECT name, definition_hash, listed, offered, annotations, input_schema,
+              writes, write_reason, write_held, call_price_micro_usd
          FROM connection_tools WHERE connection_id = $1 FOR UPDATE`,
       [id]
     );
     const byName = new Map(stored.map((t) => [t.name, t]));
-    const wanted = new Map(picks.map((p) => [p.name, p.definitionHash]));
-    for (const [name, hash] of wanted) {
+    interface Terms {
+      hash: string;
+      writeReason: string | null;
+      held: boolean;
+      priceMicroUsd: number;
+    }
+    const wanted = new Map<string, Terms>();
+    for (const pick of picks) {
+      const name = pick.name;
       const tool = byName.get(name);
       if (!tool) {
         return no("UNKNOWN_TOOL", `The connection has no tool named "${name}" on record. Look at the connection again to see what its server lists.`);
@@ -1177,16 +1278,48 @@ export async function offerTools(
       if (!tool.listed) {
         return no("TOOL_NOT_LISTED", `The server no longer listed "${name}" when the connection was last looked at, so it cannot be offered.`);
       }
-      if (tool.definition_hash !== hash) {
+      if (tool.definition_hash !== pick.definitionHash) {
         return no(
           "TOOL_CHANGED",
           `"${name}" is not the definition this pick was made on: it has changed since. Read the connection again and pick the tool as it now is.`
         );
       }
-      if (markedAsWriting(tool.annotations)) {
+      let writeReason: string | null = null;
+      if (pick.writes !== undefined) {
+        if (pick.writes.acknowledged !== true) {
+          return no(
+            "WRITE_NOT_ACKNOWLEDGED",
+            `"${name}" can be granted to write only when you acknowledge what that means: ${WRITE_ACKNOWLEDGEMENT}`
+          );
+        }
+        writeReason = pick.writes.reason.trim();
+        if (!writeReason || writeReason.length > WRITE_REASON_MAX_CHARS) {
+          return no(
+            "WRITE_REASON_NEEDED",
+            `A write grant for "${name}" needs your reason, in a sentence or two (at most ${WRITE_REASON_MAX_CHARS} ` +
+              `characters): why agents should be able to write to this system through it. Every agent offered the tool is told it.`
+          );
+        }
+      } else if (markedAsWriting(tool.annotations)) {
         return no(
           "MARKED_AS_WRITING",
-          `The server itself marks "${name}" as a tool that changes things, so it is not offered to agents. A connection is for reading.`
+          `The server itself marks "${name}" as a tool that changes things, so it is offered to agents only under a ` +
+            `write grant: pick it with \`writes\`, acknowledging what that means and giving your reason.`
+        );
+      }
+      if (pick.held === true && writeReason === null) {
+        return no(
+          "HELD_NEEDS_WRITE_GRANT",
+          `Only calls to a tool granted to write wait for an administrator, and "${name}" is picked as one that reads.`
+        );
+      }
+      const owls = pick.owlsPerCall ?? 0;
+      const priceMicroUsd = Number.isFinite(owls) ? owlsToMicroUsd(owls) : -1;
+      if (priceMicroUsd < 0 || priceMicroUsd > CALL_PRICE_MAX_MICRO_USD) {
+        return no(
+          "INVALID_PRICE",
+          `owls_per_call for "${name}" is what one call is charged to the run's budget: 0 for no charge, ` +
+            `and at most ${microUsdToOwls(CALL_PRICE_MAX_MICRO_USD)} owls.`
         );
       }
       const nameProblem = offeredNameProblem(connection.tool_prefix, name);
@@ -1201,14 +1334,73 @@ export async function offerTools(
           `"${name}" cannot be offered: its input schema is not a JSON Schema of type "object", which is what a model takes for a tool.`
         );
       }
+      wanted.set(name, { hash: pick.definitionHash, writeReason, held: pick.held === true, priceMicroUsd });
     }
 
     const offered: string[] = [];
     const noLongerOffered: string[] = [];
+    const writeGranted: string[] = [];
+    const writeRevoked: string[] = [];
     for (const tool of stored) {
-      const pick = wanted.has(tool.name);
-      if (pick && !tool.offered) offered.push(tool.name);
-      if (!pick && tool.offered) noLongerOffered.push(tool.name);
+      const terms = wanted.get(tool.name);
+      if (terms && !tool.offered) offered.push(tool.name);
+      if (!terms && tool.offered) noLongerOffered.push(tool.name);
+      // The tool as it stood for agents before this request: a grant on a
+      // tool that was not offered granted nothing.
+      const wrote = tool.offered && tool.writes;
+      const sameGrant = wrote && terms !== undefined && terms.writeReason === tool.write_reason;
+      if (!terms || terms.writeReason === null) {
+        // Left out, or picked as one that reads: no grant, and for a tool
+        // left out, no price either.
+        if (wrote) {
+          writeRevoked.push(tool.name);
+          await logAdministrativeEvent(tx, "connection_tool_write_revoked", actorId, { connection_id: id, tool: tool.name });
+        }
+        await tx.query(
+          `UPDATE connection_tools
+              SET writes = false, write_reason = NULL, write_acknowledgement = NULL, write_granted_by = NULL,
+                  write_granted_at = NULL, write_held = false, call_price_micro_usd = $3
+            WHERE connection_id = $1 AND name = $2`,
+          [id, tool.name, terms?.priceMicroUsd ?? 0]
+        );
+      } else if (sameGrant) {
+        await tx.query(
+          `UPDATE connection_tools SET write_held = $3, call_price_micro_usd = $4 WHERE connection_id = $1 AND name = $2`,
+          [id, tool.name, terms.held, terms.priceMicroUsd]
+        );
+      } else {
+        writeGranted.push(tool.name);
+        await tx.query(
+          `UPDATE connection_tools
+              SET writes = true, write_reason = $3, write_acknowledgement = $4, write_granted_by = $5,
+                  write_granted_at = now(), write_held = $6, call_price_micro_usd = $7
+            WHERE connection_id = $1 AND name = $2`,
+          [id, tool.name, terms.writeReason, WRITE_ACKNOWLEDGEMENT, actorId, terms.held, terms.priceMicroUsd]
+        );
+        await logAdministrativeEvent(tx, "connection_tool_write_granted", actorId, {
+          connection_id: id,
+          tool: tool.name,
+          write_reason: terms.writeReason,
+          held: String(terms.held),
+        });
+      }
+      // The terms of a tool that stays as it was, changed: whether its
+      // write calls wait, and what a call costs a run.
+      if (terms && tool.offered) {
+        const changed = [
+          ...(sameGrant && terms.held !== tool.write_held ? ["held"] : []),
+          ...(terms.priceMicroUsd !== tool.call_price_micro_usd ? ["owls_per_call"] : []),
+        ];
+        if (changed.length > 0) {
+          await logAdministrativeEvent(tx, "connection_tool_terms_changed", actorId, {
+            connection_id: id,
+            tool: tool.name,
+            changed: changed.join("\n"),
+            held: String(terms.held),
+            price_micro_usd: String(terms.priceMicroUsd),
+          });
+        }
+      }
     }
     // A pick, and a tool left out, each settle the tool's state: a
     // withdrawal recorded against an earlier pick no longer describes it.
@@ -1228,7 +1420,13 @@ export async function offerTools(
         no_longer_offered: noLongerOffered.sort().join("\n"),
       });
     }
-    return { ok: true as const, offered: offered.sort(), noLongerOffered: noLongerOffered.sort() };
+    return {
+      ok: true as const,
+      offered: offered.sort(),
+      noLongerOffered: noLongerOffered.sort(),
+      writeGranted: writeGranted.sort(),
+      writeRevoked: writeRevoked.sort(),
+    };
   });
 }
 
@@ -1242,7 +1440,24 @@ export interface OfferedTool {
   offeredAs: string;
   description: string;
   inputSchema: unknown;
+  /** The hash of the definition the tool was picked on, which is the one the run is offered. */
+  definitionHash: string;
+  /**
+   * Set for a tool granted to write: the administrator's reason, and
+   * whether a call waits for an administrator before it is sent. Null for a
+   * tool picked as one that reads.
+   */
+  writes: { reason: string; held: boolean } | null;
+  /** What one answered call is charged to the run's budget; 0 when calls are not charged. */
+  priceMicroUsd: number;
 }
+
+/**
+ * Why a run is not offered a tool granted to write that its connection has.
+ * `label`: the run works at a label that reads the connection's and is not
+ * it. `assistant`: the run is the Assistant's.
+ */
+export type WriteWithheldReason = "label" | "assistant";
 
 /** A connection as a run has it. */
 export interface RunConnection {
@@ -1262,6 +1477,8 @@ export interface RunConnection {
   unavailable: ConnectionFailure | null;
   /** Tools an administrator picked that the run is not offered, each with why. */
   withdrawn: Array<{ name: string; reason: WithdrawnReason }>;
+  /** Tools granted to write that this run is not offered because of where or for whom it works, each with why. */
+  writesWithheld: Array<{ name: string; reason: WriteWithheldReason }>;
 }
 
 /**
@@ -1277,6 +1494,26 @@ export interface RunConnection {
  * A connection with a withdrawn tool and none offered is still returned, so
  * the run can be told the reading it might have made is not available and
  * why.
+ *
+ * A tool granted to write is offered more narrowly than one that reads, and
+ * a run that is not offered it for one of these reasons is told so:
+ *
+ *  - Only to a run that works at the connection's own label. A run adds
+ *    rows only at its own label (db/clearance.ts), and a write through a
+ *    connection is the same act somewhere else: its arguments are the
+ *    content, and they land in a system whose readers are those of the
+ *    connection's label. A run at a label that reads the connection's knows
+ *    more than those readers may, so a write from it would be a write down.
+ *    For a read the same run is told that its arguments leave
+ *    (argumentsLeaveNote), because a query says little; a write is all
+ *    arguments. The system's own work at that label can make the write.
+ *  - Never to the Assistant. It works for whichever member is in the
+ *    conversation, on text it reads while it works, and what stands between
+ *    injected text and an act there is its person's press of a card. A
+ *    write grant is an administrator's judgment about agents doing the
+ *    deployment's own work, and a held call is an administrator's to
+ *    release, not a member's. Giving the Assistant a way to write to an
+ *    organization's system is its own decision, not made here.
  */
 export async function connectionsOfferedAt(
   label: string,
@@ -1301,7 +1538,11 @@ export async function connectionsOfferedAt(
       ORDER BY lower(c.name)`,
     [labels, role]
   );
-  return Promise.all(rows.map((c) => runConnection(c)));
+  return Promise.all(
+    rows.map((c) =>
+      runConnection(c, false, role === "assistant" ? "assistant" : c.sensitivity_label !== label ? "label" : null)
+    )
+  );
 }
 
 /**
@@ -1309,7 +1550,12 @@ export async function connectionsOfferedAt(
  * its tools even when none is offered, for a check that wants to know
  * whether it answers.
  */
-async function runConnection(c: ConnectionRow, askAnyway = false): Promise<RunConnection> {
+async function runConnection(
+  c: ConnectionRow,
+  askAnyway = false,
+  /** Why this run is not offered the connection's tools that write; null when it is. */
+  writesWithheld: WriteWithheldReason | null = null
+): Promise<RunConnection> {
   const target = targetOf(c);
   const picked = await rawQuery<{
     name: string;
@@ -1318,8 +1564,13 @@ async function runConnection(c: ConnectionRow, askAnyway = false): Promise<RunCo
     definition_hash: string;
     offered: boolean;
     withdrawn_reason: string | null;
+    writes: boolean;
+    write_reason: string | null;
+    write_held: boolean;
+    call_price_micro_usd: number;
   }>(
-    `SELECT name, description, input_schema, definition_hash, offered, withdrawn_reason
+    `SELECT name, description, input_schema, definition_hash, offered, withdrawn_reason,
+            writes, write_reason, write_held, call_price_micro_usd
        FROM connection_tools
       WHERE connection_id = $1 AND (offered OR withdrawn_at IS NOT NULL)
       ORDER BY name`,
@@ -1341,6 +1592,7 @@ async function runConnection(c: ConnectionRow, askAnyway = false): Promise<RunCo
     withdrawn: picked
       .filter((t) => !t.offered)
       .map((t) => ({ name: t.name, reason: (t.withdrawn_reason ?? "changed") as WithdrawnReason })),
+    writesWithheld: [],
   };
   const offered = picked.filter((t) => t.offered);
   if (offered.length === 0 && !askAnyway) return out;
@@ -1364,11 +1616,18 @@ async function runConnection(c: ConnectionRow, askAnyway = false): Promise<RunCo
   for (const tool of offered) {
     const now = liveHash.get(tool.name);
     if (now === tool.definition_hash) {
+      if (tool.writes && writesWithheld !== null) {
+        out.writesWithheld.push({ name: tool.name, reason: writesWithheld });
+        continue;
+      }
       out.tools.push({
         name: tool.name,
         offeredAs: offeredToolName(c.tool_prefix, tool.name),
         description: tool.description,
         inputSchema: tool.input_schema,
+        definitionHash: tool.definition_hash,
+        writes: tool.writes ? { reason: tool.write_reason ?? "", held: tool.write_held } : null,
+        priceMicroUsd: tool.call_price_micro_usd,
       });
       continue;
     }
@@ -1382,6 +1641,38 @@ async function runConnection(c: ConnectionRow, askAnyway = false): Promise<RunCo
   return out;
 }
 
+/**
+ * A connection and one of its tools as they stand now, for a call that
+ * waited for an administrator and is about to be sent: whether the
+ * connection is on, where to send, and whether the tool is still what the
+ * agent was offered. Read inside the transaction that takes the decision.
+ */
+export async function connectionForHeldCall(
+  tx: TxQuery,
+  connectionId: string,
+  toolName: string
+): Promise<{
+  enabled: boolean;
+  label: string;
+  toolPrefix: string;
+  target: ConnectionTarget;
+  tool: { offered: boolean; writes: boolean; definitionHash: string } | null;
+} | null> {
+  const [c] = await tx.query<ConnectionRow>(`${CONNECTION_SELECT} WHERE c.id = $1`, [connectionId]);
+  if (!c) return null;
+  const [t] = await tx.query<{ offered: boolean; writes: boolean; definition_hash: string }>(
+    `SELECT offered, writes, definition_hash FROM connection_tools WHERE connection_id = $1 AND name = $2`,
+    [connectionId, toolName]
+  );
+  return {
+    enabled: c.enabled,
+    label: c.sensitivity_label,
+    toolPrefix: c.tool_prefix,
+    target: targetOf(c),
+    tool: t ? { offered: t.offered, writes: t.writes, definitionHash: t.definition_hash } : null,
+  };
+}
+
 // ---- the calls an administrator sees ---------------------------------------
 
 export interface ConnectionCallView {
@@ -1390,8 +1681,12 @@ export interface ConnectionCallView {
   tool: string;
   called_at: string;
   duration_ms: number | null;
-  /** in_flight | answered | tool_error | failed */
+  /** in_flight | answered | tool_error | failed | held | declined | not_sent */
   outcome: string;
+  /** Whether the call was to a tool granted to write when it was made. */
+  writes: boolean;
+  /** What the call was charged to its run's budget, in owls. */
+  charged_owls: number;
   /** Why a failed call failed: the deployment's own account of it, never the system's words. */
   error: string | null;
   result_chars: number | null;
@@ -1431,6 +1726,8 @@ export async function listConnectionCalls(
     called_at: Date;
     duration_ms: number | null;
     outcome: string | null;
+    writes: boolean;
+    charged_micro_usd: number;
     error: string | null;
     result_chars: number | null;
     result_hash: string | null;
@@ -1442,8 +1739,8 @@ export async function listConnectionCalls(
     arguments: unknown;
     sensitivity_label: string;
   }>(
-    `SELECT id, tool, called_at, duration_ms, outcome, error, result_chars, result_hash, run_id, agent,
-            claim_id, source_id, kept_at, arguments, sensitivity_label
+    `SELECT id, tool, called_at, duration_ms, outcome, writes, charged_micro_usd, error, result_chars, result_hash,
+            run_id, agent, claim_id, source_id, kept_at, arguments, sensitivity_label
        FROM connection_calls
       WHERE connection_id = $1
         AND ($2::timestamptz IS NULL OR called_at < $2::timestamptz)
@@ -1463,7 +1760,9 @@ export async function listConnectionCalls(
     called_at: iso(r.called_at)!,
     duration_ms: r.duration_ms,
     outcome: r.outcome ?? "in_flight",
-    error: r.outcome === "failed" ? r.error : null,
+    writes: r.writes,
+    charged_owls: microUsdToOwls(r.charged_micro_usd),
+    error: r.outcome === "failed" || r.outcome === "not_sent" ? r.error : null,
     result_chars: r.result_chars,
     result_sha256: r.result_hash,
     run_id: r.run_id,
@@ -1474,6 +1773,154 @@ export async function listConnectionCalls(
     arguments: r.arguments,
   }));
   return { calls, notShown: Math.max(0, all - (visible?.n ?? 0)) };
+}
+
+// ---- the writes an administrator watches -----------------------------------
+
+/** How much of what came back a list of writes shows for each call. The whole result is on the call's run log. */
+export const WRITE_RESULT_SHOWN_CHARS = 4000;
+
+export interface ConnectionWriteView {
+  /** The call's id: the reading's id, as the agent that made the call was given it. */
+  id: string;
+  tool: string;
+  called_at: string;
+  /** held | in_flight | answered | tool_error | failed | declined | not_sent */
+  outcome: string;
+  /** Why a call failed or was not sent: the deployment's own account of it. */
+  error: string | null;
+  duration_ms: number | null;
+  run_id: string | null;
+  agent: string | null;
+  claim_id: string | null;
+  /** The label of the run that made the call, which is the connection's: a tool that writes is offered at no other. */
+  label: string;
+  /** What was sent, or for a held call what would be: the call's arguments, as the agent wrote them. */
+  sent: unknown;
+  /**
+   * What came back: the first part of the stored result, with its size and
+   * SHA-256. Null while nothing has (held, in flight, failed, declined). A
+   * notice in place of the text for a reader who may not open raw sources
+   * at the call's label (src/raw-sources.ts).
+   */
+  came_back:
+    | { content: string; total_chars: number; truncated: boolean; sha256: string; system_error: boolean }
+    | { withheld: WithheldSourceText; total_chars: number; sha256: string; system_error: boolean }
+    | null;
+  /** Set for a call that waited for an administrator: since when, and how it was decided once it was. */
+  held: {
+    at: string;
+    decided: { at: string; by: { id: string; name: string } | null; decision: "approved" | "declined"; note: string | null } | null;
+  } | null;
+  charged_owls: number;
+  /** What the call would be charged when it is sent, for one still held. */
+  owls_per_call: number;
+}
+
+/**
+ * The calls made through a connection to tools granted to write, newest
+ * first, each with what was sent and what came back. This is what an
+ * administrator watches a write grant by. Like the list of all calls it
+ * holds the rows the caller's clearance reads, and `notShown` counts the
+ * rest. Unlike it, it shows what the system answered: an administrator who
+ * granted a tool to write has to be able to see what the write did. That is
+ * a system's own text returned to a person, so it is shown to a reader who
+ * may open raw sources at the call's label and marked as withheld to one
+ * who may not, like the document of a kept reading.
+ */
+export async function listConnectionWrites(
+  id: string,
+  opts: { limit?: number; before?: string; heldOnly?: boolean; rawSourceLabels: readonly string[] | null }
+): Promise<{ writes: ConnectionWriteView[]; waiting: number; notShown: number } | null> {
+  if (!UUID_RE.test(id)) return null;
+  const [exists] = await rawQuery(`SELECT 1 FROM connections WHERE id = $1`, [id]);
+  if (!exists) return null;
+  const limit = Math.min(Math.max(1, Math.trunc(opts.limit ?? 100)), 500);
+  const before = opts.before && !Number.isNaN(Date.parse(opts.before)) ? opts.before : null;
+  const rows = await rawQuery<{
+    id: string;
+    tool: string;
+    called_at: Date;
+    outcome: string | null;
+    error: string | null;
+    duration_ms: number | null;
+    run_id: string | null;
+    agent: string | null;
+    claim_id: string | null;
+    sensitivity_label: string;
+    arguments: unknown;
+    shown: string | null;
+    result_chars: number | null;
+    result_hash: string | null;
+    held_at: Date | null;
+    decided_at: Date | null;
+    decided_by: string | null;
+    decided_by_name: string | null;
+    decision_note: string | null;
+    charged_micro_usd: number;
+    price_micro_usd: number;
+  }>(
+    `SELECT k.id, k.tool, k.called_at, k.outcome, k.error, k.duration_ms, k.run_id, k.agent, k.claim_id,
+            k.sensitivity_label, k.arguments, left(k.result, $5) AS shown, k.result_chars, k.result_hash,
+            k.held_at, k.decided_at, k.decided_by, k.decision_note, k.charged_micro_usd, k.price_micro_usd,
+            (SELECT g.display_name FROM contributors g WHERE g.id = k.decided_by) AS decided_by_name
+       FROM connection_calls k
+      WHERE k.connection_id = $1 AND k.writes
+        AND ($2::timestamptz IS NULL OR k.called_at < $2::timestamptz)
+        AND (NOT $3::boolean OR k.outcome = 'held')
+      ORDER BY k.called_at DESC, k.id DESC
+      LIMIT $4`,
+    [id, before, opts.heldOnly === true, limit, WRITE_RESULT_SHOWN_CHARS]
+  );
+  const [visible] = await rawQuery<{ n: number; waiting: number }>(
+    `SELECT count(*)::int AS n, (count(*) FILTER (WHERE outcome = 'held'))::int AS waiting
+       FROM connection_calls WHERE connection_id = $1 AND writes`,
+    [id]
+  );
+  const all = await countAtEveryLabel(
+    `SELECT count(*)::int AS n FROM connection_calls WHERE connection_id = $1 AND writes`,
+    [id]
+  );
+  const writes = rows.map((r): ConnectionWriteView => {
+    const answered = r.shown !== null && r.result_hash !== null;
+    const about = { total_chars: r.result_chars ?? 0, sha256: r.result_hash ?? "", system_error: r.outcome === "tool_error" };
+    return {
+      id: r.id,
+      tool: r.tool,
+      called_at: iso(r.called_at)!,
+      outcome: r.outcome ?? "in_flight",
+      error: r.outcome === "failed" || r.outcome === "not_sent" ? r.error : null,
+      duration_ms: r.duration_ms,
+      run_id: r.run_id,
+      agent: r.agent,
+      claim_id: r.claim_id,
+      label: r.sensitivity_label,
+      sent: r.arguments,
+      came_back: !answered
+        ? null
+        : mayOpenRawSources(opts.rawSourceLabels, r.sensitivity_label)
+          ? { content: r.shown!, truncated: (r.result_chars ?? 0) > r.shown!.length, ...about }
+          : { withheld: withheldCallResult(r.sensitivity_label), ...about },
+      held:
+        r.held_at === null
+          ? null
+          : {
+              at: iso(r.held_at)!,
+              decided:
+                r.decided_at === null
+                  ? null
+                  : {
+                      at: iso(r.decided_at)!,
+                      by: r.decided_by !== null ? { id: r.decided_by, name: r.decided_by_name ?? "" } : null,
+                      decision: r.outcome === "declined" ? "declined" : "approved",
+                      note: r.decision_note,
+                    },
+            },
+      charged_owls: microUsdToOwls(r.charged_micro_usd),
+      owls_per_call: microUsdToOwls(r.price_micro_usd),
+    };
+  });
+  return { writes, waiting: visible?.waiting ?? 0, notShown: Math.max(0, all - (visible?.n ?? 0)) };
 }
 
 // ---- for the preflight ------------------------------------------------------
@@ -1493,8 +1940,10 @@ export interface ConnectionCheck {
   failure: ConnectionFailure | null;
   /** The tools offered to agents, after this check. */
   offered: string[];
-  /** Offered tools whose server does not mark them read-only: offered on the administrator's judgment alone. */
+  /** Tools offered as ones that read whose server does not mark them read-only: offered so on the administrator's judgment alone. */
   offered_without_read_only_marking: string[];
+  /** Offered tools granted to write, each with whether its calls wait for an administrator. */
+  granted_to_write: Array<{ name: string; held: boolean }>;
   /** Tools an administrator picked that are withdrawn, each with why. */
   withdrawn: Array<{ name: string; reason: WithdrawnReason }>;
 }
@@ -1515,8 +1964,13 @@ export async function checkConnections(): Promise<ConnectionCheck[]> {
   const checks: ConnectionCheck[] = [];
   for (const c of rows) {
     const run = await runConnection(c, true);
-    const annotations = await rawQuery<{ name: string; annotations: Record<string, unknown> | null }>(
-      `SELECT name, annotations FROM connection_tools WHERE connection_id = $1 AND offered ORDER BY name`,
+    const annotations = await rawQuery<{
+      name: string;
+      annotations: Record<string, unknown> | null;
+      writes: boolean;
+      write_held: boolean;
+    }>(
+      `SELECT name, annotations, writes, write_held FROM connection_tools WHERE connection_id = $1 AND offered ORDER BY name`,
       [c.id]
     );
     checks.push({
@@ -1527,8 +1981,9 @@ export async function checkConnections(): Promise<ConnectionCheck[]> {
       failure: run.unavailable,
       offered: annotations.map((t) => t.name),
       offered_without_read_only_marking: annotations
-        .filter((t) => readOnlyHint(t.annotations) !== true)
+        .filter((t) => !t.writes && readOnlyHint(t.annotations) !== true)
         .map((t) => t.name),
+      granted_to_write: annotations.filter((t) => t.writes).map((t) => ({ name: t.name, held: t.write_held })),
       withdrawn: run.withdrawn,
     });
   }

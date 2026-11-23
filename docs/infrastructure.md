@@ -464,7 +464,26 @@ consumed when it completes, so its funders are not charged twice; what the
 stopped run spent stays metered to its own job. After the sweep has given up
 on a row's extraction three times it cancels the row instead: a source that
 hangs every time would otherwise be resubmitted forever, and a hang spends
-nothing. With SQS a job that was never taken up is left alone, since the
+nothing.
+
+Whichever path cancels an ingest row (an extraction that failed for a reason
+other than a platform fault, or the sweep giving up), it goes through
+`cancelActionGroup` (`src/services/action-service.ts`, #1045): the row records
+why in `actions.closed_reason`, in the platform's words
+(`ingestFailureReason` in `src/workers/url-extraction.ts`: a site that refused
+the fetch, a page that is not there, a document too long to read, or a failure
+on the platform's side, never the error's own text), which the public ledger
+and the plan item that asked for it both read; and every allocation still live
+on the group is released, a person's unspent owls refunded, so a mandate's
+escrow and pace stop holding money for work that will not run. What the
+stopped extraction had metered is paid from its commission, like a finished
+run's (the worker keeps its meter through the failure), and the rest comes
+back. `cancelActionGroup` is `cancelActions` in
+`src/services/action-settlement.ts`, which every path that closes a ledger
+row goes through; the reconcile pass (`settleDeadGroups`) returns money still
+held on a closed row or group, which covers rows cancelled before this and
+any path that closes without settling (docs/allocation.md, "A commission ends
+with its row"). With SQS a job that was never taken up is left alone, since the
 queue keeps its message for four days; the ledger's reconcile
 (`INGEST_JOB_LOST_DAYS` in `src/services/action-service.ts`) reopens such a
 row after that.

@@ -1,3 +1,4 @@
+import { isOwnLabel, layersOf } from "@/lib/label-layers";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { can, viewer } from "@/components/admin/access";
@@ -287,6 +288,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   };
   const closeDrawer = here({ q: params.q, perm: params.perm });
 
+  const layers = layersOf(who.mine);
   const choices: GrantChoices = {
     permissions: definitions.map((d) => ({
       name: d.name,
@@ -300,7 +302,8 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
       email: a.email,
       holds: [...directGrants(a), ...throughGroups(a)].map(grantWords).join(", "),
     })),
-    labels: labels.filter((l) => l.name !== "public").map((l) => l.name),
+    // The labels a person is granted: not the ones every member reads without a grant.
+    labels: labels.filter((l) => isOwnLabel(l.name, layers)).map((l) => l.name),
     parties: parties.map((p) => ({ id: p.id, name: p.name })),
   };
 

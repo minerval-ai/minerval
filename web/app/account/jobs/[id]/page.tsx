@@ -106,6 +106,23 @@ export default async function JobPage({
                 </>
               )}
             </div>
+            {cp.outcomes && (
+              <p>
+                Of those passes: {cp.outcomes.recorded ?? 0} recorded an assessment,{" "}
+                {cp.outcomes.stood ?? 0} concluded the assessment in force stands,{" "}
+                {cp.outcomes.waiting ?? 0} paused waiting on what they asked for, and{" "}
+                {cp.outcomes.unconcluded ?? 0} ended without a conclusion.
+              </p>
+            )}
+            {cp.unconcluded && cp.unconcluded.length > 0 && (
+              <ul>
+                {cp.unconcluded.slice(0, 10).map((u) => (
+                  <li key={u.claim_id + u.outcome}>
+                    <Link href={`/claims/${u.claim_id}`}>{u.claim_id.slice(0, 8)}</Link>: {u.outcome}
+                  </li>
+                ))}
+              </ul>
+            )}
             {cp.note && <p>{cp.note}</p>}
             {cp.last_claim_id && (
               <p>

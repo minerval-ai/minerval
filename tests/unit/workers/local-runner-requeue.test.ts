@@ -40,6 +40,7 @@ vi.mock("../../../src/workers/budget-job-pipeline.js", () => ({
   processNextBudgetJobTask: vi.fn(async () => ({ status: "empty" })),
 }));
 vi.mock("../../../src/workers/engine-executor.js", () => ({
+  ledgerHousekeeping: vi.fn(async () => {}),
   processNextEngineAction: vi.fn(async () => ({ status: "empty" })),
 }));
 vi.mock("../../../src/workers/steward-pipeline.js", () => ({

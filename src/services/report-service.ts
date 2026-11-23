@@ -41,7 +41,7 @@ import { createHash } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import {
   reportKindEnum,
   reportOriginEnum,
@@ -1339,8 +1339,10 @@ export const ISSUE_FILING_GRACE_SECONDS = 300;
  * tracker carries the record, but after the open ones. A report raised in
  * the last ISSUE_FILING_GRACE_SECONDS is still its raise-time filing's.
  *
- * Only reports at `public` are ever selected, whoever asks: a tracker is
- * outside the deployment, and a report a private run filed stays inside it.
+ * Only reports at the published label are ever selected, whoever asks: a
+ * tracker is outside the deployment, and a report a run filed at any other
+ * label stays inside it until the gate lets it out (src/labels.ts,
+ * publishedLabel; on the public graph that label is `public`).
  * The condition is in the statement so that it holds on any connection,
  * the owner's included.
  */
@@ -1357,7 +1359,7 @@ export async function listReportsAwaitingIssue(
         AND first_seen_at < now() - make_interval(secs => $4)
       ORDER BY (status IN ('new', 'triaged')) DESC, first_seen_at ASC
       LIMIT $1`,
-    [Math.max(1, limit), opts.includeExternal, PUBLIC_LABEL, ISSUE_FILING_GRACE_SECONDS]
+    [Math.max(1, limit), opts.includeExternal, publishedLabel(), ISSUE_FILING_GRACE_SECONDS]
   );
 }
 

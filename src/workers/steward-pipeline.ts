@@ -46,6 +46,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
+import { reportUnconcludedPass } from "../services/pass-outcome-service.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
@@ -360,7 +361,7 @@ async function runStewardOnClaim(
   const slot = input.slot ?? (await stewardSlot(task.id));
 
   try {
-    const { billedMicroUsd } = await withStewardLease(
+    const { value: outcome, billedMicroUsd } = await withStewardLease(
       { claimId: task.id, slot, ...(action ? { actionId: action.id } : {}) },
       () =>
         runWithUsageContext(input.usageCtx ?? {}, () =>
@@ -378,9 +379,13 @@ async function runStewardOnClaim(
     // Close the ledger group: winner done, siblings superseded, losing
     // pinned allocations released, metered cost consumed pro rata — each
     // funder pays their share, never another's.
+    // What the pass concluded goes on the row with what it spent (#1027);
+    // a pass that ended without a conclusion is reported to its payer, not
+    // retried: paying for it again is theirs to decide.
     if (action) {
       await completeAction(action.id, billedMicroUsd, {
         meteredJobId: input.usageCtx?.jobId ?? null,
+        outcome,
       }).catch((err) =>
         console.error(
           `[steward] completeAction failed for ${action.id} (allocation ` +
@@ -388,6 +393,11 @@ async function runStewardOnClaim(
               err instanceof Error ? err.message : err
             }`
         )
+      );
+    }
+    if (action && outcome.kind === "unconcluded") {
+      await reportUnconcludedPass(action.id, task.id, outcome).catch((err) =>
+        console.warn(`[steward] reporting ${action.id}'s outcome failed: ${err instanceof Error ? err.message : err}`)
       );
     }
     // A follow-up granted to this run's petitions is commissioned now that

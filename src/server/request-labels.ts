@@ -123,20 +123,23 @@ const RELEASE =
   "Writes on both sides of a boundary, the label a page was written at and the label it is released to. The two may share no label, so the request cannot work at one. The route checks the person's permission, and the service writes each row on the database owner's connection, naming its label (services/release-service.ts).";
 
 const OUTBOUND =
-  "What a release outside has released is kept at `public`, and so is the record of its leaving: packages, " +
-  "proposals and sends. The route checks the person's permission and the service writes those rows at `public` " +
+  "What a release outside has released is kept at the published label (src/labels.ts, publishedLabel), and so is the record of its " +
+  "leaving: packages, proposals and sends. The route checks the person's permission and the service writes those rows there " +
   "as the tables' owner (services/outbound-service.ts). It reads nothing at the person's other labels.";
 const OUTWARD =
   "An act on the public graph in the organization's name, or a record of one. The log of such acts is kept at " +
-  "`public` and written as the tables' owner once the route has checked the person; a row that belongs at another label (an adopted " +
+  "the published label and written as the tables' owner once the route has checked the person; a row that belongs at another label (an adopted " +
   "request, a request declined) is written by work at that label, which the service names after checking that the " +
   "person reads it (services/outward-acts-service.ts, services/report-sending-service.ts).";
 const PASSED =
   "This deployment's own note that it passed on a public request, one for the whole deployment. The request is the mirror's row at `public`, " +
-  "which every member reads, and the note is kept there beside it: the route checks that the person directs the graph and the service writes " +
-  "the row at `public` as the tables' owner (services/outward-acts-service.ts, passOnRequest). It reads nothing at the person's other labels.";
+  "which every member reads, and the note is the deployment's own, kept at its base label where every member reads it: the route checks that " +
+  "the person directs the graph and the service writes the row as the tables' owner (services/outward-acts-service.ts, passOnRequest). It " +
+  "reads nothing at the person's other labels.";
 const OPERATOR =
-  "Guarded by the operator key, which names no person and carries no clearance: the request reads and writes `public` alone.";
+  "Guarded by the operator key, which names no person and carries no clearance: the request works at the deployment's base label " +
+  "(`public`, or the members' own label where that is a label of its own), which the wrapper gives it once the key has been checked " +
+  "(server/plugins/request-label.ts).";
 const ADMINISTRATION =
   "Changes who may read or do what. The route checks the administrator and the change is written on the database owner's connection, to tables that carry no label.";
 const ACCOUNT = "Writes only to the account's own tables, which carry no label.";
@@ -413,7 +416,12 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "PUT /connections/:connection_id/tools": from(
     "connection",
     "connection_id",
-    "Changes which of the connection's tools are offered: rows at the connection's label."
+    "Changes which of the connection's tools are offered, and under what terms, a write grant among them: rows at the connection's label."
+  ),
+  "POST /connections/:connection_id/writes/:call_id/decision": from(
+    "connection",
+    "connection_id",
+    "Decides a call that waited for an administrator, on the call's own row, and sends it. A write through a connection is a write at the connection's label: a tool granted to write is offered only to a run that works at that label (connectionsOfferedAt in services/connection-service.ts), so the call's row is at the connection's label and the request works there. An administrator who does not read it is told the connection does not exist."
   ),
   "PUT /connections/:connection_id/credential": from(
     "connection",

@@ -19,7 +19,7 @@
  */
 import { enforcementLastKnown } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { baseLabel, layerRank } from "../labels.js";
 import { currentLabel } from "../llm/usage-context.js";
 import type { LeftStanding } from "./left-standing-service.js";
 
@@ -171,9 +171,9 @@ export function madeAgainstEarlier(entry: { beside: MadeBeside[]; since_added: s
   return !!entry && (entry.beside.some((b) => b.replaced) || entry.since_added.length > 0);
 }
 
-/** Labels in the order a reader is shown them: the given one first, `public` last, the rest by name. */
+/** Labels in the order a reader is shown them: the given one first, then by name, with the bottom layers last (the base, what was published, the public graph). */
 export function labelOrder(first?: string): (a: string, b: string) => number {
-  const rank = (l: string) => (l === first ? 0 : l === PUBLIC_LABEL ? 2 : 1);
+  const rank = (l: string) => (l === first ? 0 : 4 - layerRank(l));
   return (a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0);
 }
 
@@ -306,7 +306,7 @@ async function perJudgment(nodeId: string, labels: readonly string[]): Promise<M
         import("./permission-service.js"),
         import("../llm/usage-context.js"),
       ]);
-    const asker = (await currentReadClearance()) ?? [PUBLIC_LABEL];
+    const asker = (await currentReadClearance()) ?? [baseLabel()];
     const id = nodeId.toLowerCase();
     for (const label of new Set(labels)) {
       const reads = await labelsReadableFrom([label]);

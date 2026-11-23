@@ -31,9 +31,11 @@ import pg from "pg";
 import {
   DB_TEST_WORKERS,
   MIRROR_DATABASE_SIDES,
+  OWN_DATABASES,
   TEST_DATABASE_ADMIN_URL,
   TEST_DATABASE_TEMPLATE_URL as TEST_DATABASE_URL,
   mirrorDatabaseUrl,
+  ownDatabaseUrl,
   workerDatabaseUrl,
 } from "./urls.js";
 
@@ -206,6 +208,7 @@ export default async function globalSetup(project: {
     const url = workerDatabaseUrl(worker, TEST_DATABASE_URL);
     copies.push({ name: databaseName(url), owner: separateOwner ? ownerRole : null });
     for (const side of MIRROR_DATABASE_SIDES) copies.push({ name: databaseName(mirrorDatabaseUrl(side, url)), owner: null });
+    for (const which of OWN_DATABASES) copies.push({ name: databaseName(ownDatabaseUrl(which, url)), owner: separateOwner ? ownerRole : null });
   }
   await Promise.all(
     Array.from({ length: 4 }, async (_, lane) => {

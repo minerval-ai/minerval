@@ -10,6 +10,7 @@ import {
   addLabelRead,
   addParty,
   changeConnection,
+  decideConnectionWrite,
   createOwls,
   defineLabel,
   fetchConnection,
@@ -25,6 +26,7 @@ import {
   setSourceParty,
   setUpStandingMandate,
   type ConnectionSettings,
+  type ConnectionToolPick,
 } from "../../lib/admin-api";
 import { count, listed, withdrawnWords } from "../../lib/admin-words";
 
@@ -431,15 +433,28 @@ export async function lookAction(_previous: FormState, form: FormData): Promise<
 export async function offerToolsAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
-  // Each ticked box carries the tool's name and the hash of the definition
-  // that was on the page when it was ticked, which is what a pick is of.
-  const picks: Array<{ name: string; definition_hash: string }> = [];
+  // Each switched-on tool carries its name, the hash of the definition that
+  // was on the page, which is what a pick is of, and the terms it is offered
+  // on: a write grant with its acknowledgement and reason, whether its calls
+  // are held, and what a call costs.
+  const picks: ConnectionToolPick[] = [];
   for (const value of form.getAll("offer")) {
     try {
-      const pick = JSON.parse(String(value)) as { name?: unknown; definition_hash?: unknown };
-      if (typeof pick.name === "string" && typeof pick.definition_hash === "string") {
-        picks.push({ name: pick.name, definition_hash: pick.definition_hash });
+      const pick = JSON.parse(String(value)) as Partial<ConnectionToolPick>;
+      if (typeof pick.name !== "string" || typeof pick.definition_hash !== "string") continue;
+      const writes = pick.writes;
+      if (writes !== undefined && !String(writes.reason ?? "").trim()) {
+        return { error: `Give your reason for granting ${pick.name} to write: every agent offered it is told it.` };
       }
+      if (writes !== undefined && writes.acknowledged !== true) {
+        return { error: `Tick the acknowledgement to grant ${pick.name} to write.` };
+      }
+      picks.push({
+        name: pick.name,
+        definition_hash: pick.definition_hash,
+        ...(writes !== undefined ? { writes: { acknowledged: true, reason: String(writes.reason).trim() }, held: pick.held === true } : {}),
+        ...(typeof pick.owls_per_call === "number" && pick.owls_per_call > 0 ? { owls_per_call: pick.owls_per_call } : {}),
+      });
     } catch {
       return { error: "The form was not read correctly. Load the page again and pick once more." };
     }
@@ -450,8 +465,32 @@ export async function offerToolsAction(_previous: FormState, form: FormData): Pr
     const parts = [
       ...(result.offered.length > 0 ? [`Now offered: ${listed(result.offered)}.`] : []),
       ...(result.no_longer_offered.length > 0 ? [`No longer offered: ${listed(result.no_longer_offered)}.`] : []),
+      ...(result.write_granted.length > 0 ? [`Granted to write: ${listed(result.write_granted)}.`] : []),
+      ...(result.write_revoked.length > 0 ? [`No longer granted to write: ${listed(result.write_revoked)}.`] : []),
     ];
-    return { notice: parts.length > 0 ? parts.join(" ") : "Nothing changed: agents are offered the same tools as before." };
+    return { notice: parts.length > 0 ? parts.join(" ") : "Saved. Agents are offered the same tools as before." };
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+export async function decideWriteAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  const decision = text(form, "decision") === "approve" ? "approve" : "decline";
+  const note = text(form, "note").trim();
+  try {
+    const result = await decideConnectionWrite(user, text(form, "connection_id"), text(form, "call_id"), {
+      decision,
+      ...(note ? { note } : {}),
+    });
+    revalidatePath("/admin", "layout");
+    if (result.outcome === "declined") return { notice: "Declined. Nothing was sent." };
+    if (result.outcome === "not_sent") return { error: `Not sent: ${result.problem ?? "the call could no longer be sent"}.` };
+    if (result.outcome === "failed") return { error: `Sent once, and it failed: ${result.problem ?? "no answer came"}. It was not sent again.` };
+    return {
+      notice: result.outcome === "tool_error" ? "Sent. The system answered with an error, shown below." : "Sent. What came back is shown below.",
+    };
   } catch (err) {
     return refused(err);
   }

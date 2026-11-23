@@ -27,6 +27,7 @@ const { state } = vi.hoisted(() => ({
     grantSources: [] as unknown[][],
     livePlans: [] as string[],
     fundCalls: 0,
+    routed: 0,
     lookout: null as null | Record<string, unknown>,
     lookoutRuns: 0,
     lookoutFail: null as null | Error,
@@ -126,6 +127,13 @@ vi.mock("../../../src/services/allocation-service.js", () => ({
   }),
 }));
 
+vi.mock("../../../src/services/subscription-router.js", () => ({
+  routeEvents: vi.fn(async () => {
+    state.routed++;
+    return 0;
+  }),
+}));
+
 vi.mock("../../../src/llm/agents/grantor.js", () => ({
   runGrantor: vi.fn(async () => {
     await noteLabel("grantor");
@@ -192,7 +200,7 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({ owlCostMicroUsd: 1_000_000 }),
 }));
 
-import { processNextEngineAction } from "../../../src/workers/engine-executor.js";
+import { ledgerHousekeeping, processNextEngineAction } from "../../../src/workers/engine-executor.js";
 
 const action = (over: Record<string, unknown>) => ({
   id: "act-1",
@@ -236,6 +244,7 @@ beforeEach(() => {
   state.grantSources = [];
   state.livePlans = [];
   state.fundCalls = 0;
+  state.routed = 0;
   state.lookout = {
     id: "l-1",
     status: "active",
@@ -279,6 +288,18 @@ describe("the label a ledger row is run at", () => {
     expect(state.labelsInside).toEqual([]);
     expect(state.grantorRuns).toBe(0);
     expect(state.completed).toEqual([]);
+  });
+});
+
+// The housekeeping runs on the runner's own clock as well as in the lane
+// (#1028), so it must do its work without picking or running a row.
+describe("ledgerHousekeeping", () => {
+  it("routes subscriptions and funds the mandates' own rows, and runs no row", async () => {
+    state.action = action({ kind: "grant_planning" });
+    await ledgerHousekeeping();
+    expect(state.routed).toBe(1);
+    expect(state.fundCalls).toBe(1);
+    expect(state.grantorRuns).toBe(0);
   });
 });
 

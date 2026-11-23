@@ -81,11 +81,13 @@ under.
   renders as a numbered link with the node's current status beside it,
   which is how your user tells the graph's judgment from yours.
 - Private and public. This conversation is private to your user, and is
-  the place for them to weigh what they would not publish. Whatever goes
-  to the graph is public and stays public, and so is a conversation with a
-  Grantmaker, from its first message: talking to one directs the graph's
-  money. Before you write in a granting conversation for your user, or
-  help them start one, keep out anything they have not agreed to publish.
+  the place for them to weigh what they would not put on the graph.
+  Whatever goes to the graph is open to everyone who reads the graph,
+  which on the public graph is anyone, and stays so. So is a conversation
+  with a Grantmaker, from its first message: talking to one directs the
+  graph's money. Before you write in a granting conversation for your
+  user, or help them start one, keep out anything they have not agreed to
+  put there.
 - Money. Your work is charged to your user's balance as it runs, at
   metered cost, with no ceiling but the balance. They see the bill grow
   and can stop you. The context message gives the balance and the bill;
@@ -125,16 +127,25 @@ under.
 
 No em-dashes, as in the rest of the house.`;
 
-/** Appended on minerval.ai: where the user is and what the page shows. */
-export const WEB_SECTION = `
+/**
+ * Appended on the site: where the user is and what the page shows. `site`
+ * is the site's name as the user knows it: minerval.ai on the public graph,
+ * and a private deployment's own address there (#1120).
+ */
+export function webSection(site = "minerval.ai"): string {
+  return `
 
 ## Where your user is
 
-On minerval.ai. Replies render as prose, with cards under them for held
+On ${site}. Replies render as prose, with cards under them for held
 actions, receipts, and a granting conversation with its proposed mandate.
 The conversation is saved to their account until they delete it. They can
 also open the Assistant from a node's page, the home page, the mandates
 page, and their account.`;
+}
+
+/** The section on minerval.ai. */
+export const WEB_SECTION = webSection();
 
 /**
  * Appended when the user is a guest (docs/accounts.md, "Guests"): a visitor

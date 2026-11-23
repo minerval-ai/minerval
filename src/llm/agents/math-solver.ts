@@ -4,7 +4,7 @@
  *
  * It runs one bounded attempt on one published statement through the
  * long-run seam (client.ts longRunToolLoop): the strong model at the
- * variant's effort, fallbacks off, tools declared at run start and never
+ * variant's effort, no refusal fallback, tools declared at run start and never
  * changed, a dollar ceiling read from the usage meter each turn, the
  * operator's kill switches polled each turn, and a terminal `report` tool
  * whose claims the harness verifies against the `lean_checks` rows the
@@ -888,7 +888,6 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
       system: getMathSolverSystemPromptBlocks(),
       model,
       effort: input.effort,
-      fallbacks: "none",
       maxIterations: SOLVER_MAX_TURNS_GUARD,
       executeTool,
       onFinalTool: (name, toolInput) => {

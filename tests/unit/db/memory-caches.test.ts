@@ -40,6 +40,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/sql-service.ts:cache": KEYED,
 
   // ---- the wall's own bookkeeping --------------------------------------------
+  "src/labels.ts:layers": "Which label is which of the bottom layers (labels.layer), read with the check on enforcement. Names of labels, the same for every reader; no labelled row.",
   "src/db/clearance.ts:contextReader": "The function that reads the context, set once at startup. No rows.",
   "src/db/clearance.ts:enforcement": "Whether enforcement is on, and when that was asked. The same for every reader.",
   "src/db/clearance.ts:enforcementCheck": "The one check of enforcement in flight. The same for every reader.",

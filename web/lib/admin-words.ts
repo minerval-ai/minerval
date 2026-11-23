@@ -835,6 +835,11 @@ export function logSentence(entry: LogEntry): string {
       return isWithheld(entry.label)
         ? `${who} defined ${labelWords(entry.label)}.`
         : `${who} defined the label ${labelWords(entry.label)}.`;
+    case "labels_split":
+      return (
+        `This deployment's "public" was split into three labels when it started on a version that has them: "public" keeps the public graph's own material, ` +
+        `"${entry.published ?? "published"}" took what the organization released outside, and ${labelWords(entry.label)} took the organization's own material that every member reads.`
+      );
     case "label_read_added":
       return `${who} recorded that ${labelWords(entry.label)} reads ${labelWords(entry.reads)}.`;
     case "label_read_removed":
@@ -883,6 +888,28 @@ export function logSentence(entry: LogEntry): string {
         `${entry.tool ? `The tool ${entry.tool}` : "A tool"} on ${connectionWords(entry.connection)} was withdrawn from agents` +
         (entry.reason ? `, because ${WITHDRAWN_WORDS[entry.reason] ?? entry.reason.replace(/_/g, " ")}.` : ".")
       );
+    case "connection_tool_write_granted":
+      return (
+        `${who} granted ${entry.tool ? `the tool ${entry.tool}` : "a tool"} on ${connectionWords(entry.connection)} to write` +
+        (entry.held ? ", each call to wait for an administrator" : "") +
+        (entry.write_reason ? `. Reason: ${entry.write_reason}` : ".")
+      );
+    case "connection_tool_write_revoked":
+      return `${who} revoked the write grant of ${entry.tool ? `the tool ${entry.tool}` : "a tool"} on ${connectionWords(entry.connection)}.`;
+    case "connection_tool_terms_changed": {
+      const parts = [
+        ...(entry.changed?.includes("held")
+          ? [entry.held ? "its calls now wait for an administrator" : "its calls no longer wait for an administrator"]
+          : []),
+        ...(entry.changed?.includes("owls_per_call")
+          ? [entry.owls_per_call ? `a call now costs a run ${owlsText(entry.owls_per_call)}` : "a call is no longer charged to a run"]
+          : []),
+      ];
+      return (
+        `${who} changed how ${entry.tool ? `the tool ${entry.tool}` : "a tool"} on ${connectionWords(entry.connection)} is offered` +
+        (parts.length > 0 ? `: ${parts.join(", and ")}.` : ".")
+      );
+    }
     case "owls_created": {
       const into = entry.account
         ? `${entry.account}'s balance`
@@ -920,7 +947,7 @@ export const CONNECTION_STATE_WORDS: Record<string, string> = {
 
 /** The server's own marking of a tool, as the hint it is. */
 export function toolMarking(tool: { read_only_hint: boolean | null; marked_as_writing: boolean }): string {
-  if (tool.marked_as_writing) return "The server marks this tool as one that changes things, so it cannot be picked.";
+  if (tool.marked_as_writing) return "The server marks this tool as one that changes things, so it can be picked only under a write grant.";
   if (tool.read_only_hint === true) return "The server marks this tool as read-only. That is the server's own word, a hint.";
   return "The server gives no marking for this tool. Whether it only reads is your judgment of the system.";
 }
@@ -934,6 +961,9 @@ const CALL_OUTCOME_WORDS: Record<string, string> = {
   tool_error: "The system answered with an error",
   failed: "Failed",
   in_flight: "Not yet answered",
+  held: "Waiting for an administrator",
+  declined: "Declined, not sent",
+  not_sent: "Approved, not sent",
 };
 
 export function callOutcome(outcome: string): string {

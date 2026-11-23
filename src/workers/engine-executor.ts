@@ -178,24 +178,30 @@ async function cancelGroup(exclusionGroup: string, reason: string, ranId?: strin
 }
 
 /**
- * Run one covered engine action, if any. Calls the self-funding pass
- * first so a freshly opened planning/review/ingest row doesn't wait for
- * the scheduler's sweep to be covered.
+ * The ledger's housekeeping: database work, no model call, that keeps the
+ * ledger moving between runs. Mandate reviews woken by what their work
+ * produced, subscriptions routed (events, and check-ins that have come
+ * due), petition holds released, deployment faults that are over closed,
+ * and mandates' and lookouts' own rows funded.
+ *
+ * It runs on two clocks. The engine lane runs it before it picks a row, so a
+ * row opened a moment ago is funded at once. And the local runner runs it on
+ * a timer of its own (LEDGER_HOUSEKEEPING_MS in local-runner.ts), because
+ * the lane is reached only when a runner slot loops back to it: while every
+ * slot is inside a long unit (eight long research runs, or a unit that has
+ * hung), nothing routed, released or funded. On 2026-11-13 a check-in due
+ * at 04:06 was delivered at about 21:30 that way (#1028). Running it beside
+ * itself is nothing new: every runner slot's engine lane already did, up to
+ * STEWARD_CONCURRENCY at once, and the router keeps one pass in flight per
+ * process.
  */
-export async function processNextEngineAction(
-  opts: { model?: string } = {}
-): Promise<EngineProcessResult> {
-  // No checkBudget() pre-check: every engine action runs as the allocations'
-  // funder, which the process-wide breaker exempts; checked out here,
-  // outside that context, it would read the unattributed lane's counters
-  // and stall funded work. A run with no funder behind it still meets the
-  // breaker on its first model call, which requeues it.
+export async function ledgerHousekeeping(): Promise<void> {
   // A mandate whose work produced something since its last review gets its
   // review reopened here, then funded just below like its other own rows.
   await mandateEventsTick().catch(() => ({ recorded: 0, woken: 0 }));
   // Subscriptions (subscription-router.ts): events not yet delivered, and
-  // check-ins and thresholds that have come due. The router runs here, on
-  // the tick, and nowhere else.
+  // check-ins and thresholds that have come due. The router is run from
+  // here and nowhere else.
   await routeEvents().catch(() => 0);
   // Holds whose time has come, or whose runs have settled, go back to be
   // decided; the officers' sittings and the Grantmaker's session take them.
@@ -206,6 +212,23 @@ export async function processNextEngineAction(
   await fundGrantSelfActions().catch(() => 0);
   // A Steward's lookouts are paid from their own funds (lookout-fund.ts).
   await fundStewardLookoutRuns().catch(() => 0);
+}
+
+/**
+ * Run one covered engine action, if any. Runs the ledger's housekeeping
+ * first, the self-funding pass among it, so a freshly opened
+ * planning/review/ingest row doesn't wait for the scheduler's sweep to be
+ * covered.
+ */
+export async function processNextEngineAction(
+  opts: { model?: string } = {}
+): Promise<EngineProcessResult> {
+  // No checkBudget() pre-check: every engine action runs as the allocations'
+  // funder, which the process-wide breaker exempts; checked out here,
+  // outside that context, it would read the unattributed lane's counters
+  // and stall funded work. A run with no funder behind it still meets the
+  // breaker on its first model call, which requeues it.
+  await ledgerHousekeeping();
 
   // Request rows wait, funded, while the operator has the researcher off
   // or paused: the run that would take them up is the Researcher's.

@@ -14,16 +14,21 @@
  *   POST  /connections/:connection_id/look: ask its server for its tools
  *     as they are now.
  *   PUT   /connections/:connection_id/tools: say which tools agents are
- *     offered.
+ *     offered, and on what terms: as tools that read, or under a write
+ *     grant; whether a write waits for an administrator; what a call costs.
+ *   GET   /connections/:connection_id/writes: the calls made to tools
+ *     granted to write, with what was sent and what came back.
+ *   POST  /connections/:connection_id/writes/:call_id/decision: approve or
+ *     decline a write that waits for an administrator.
  *   PUT   /connections/:connection_id/credential: give the connection its
  *     credential, or replace it; kept sealed.
  *   DELETE /connections/:connection_id/credential: remove the credential
  *     given that way.
  *
  * Who may call what. All of them need the permission to administer. The
- * six that change anything also need a signed-in session, as every other
+ * seven that change anything also need a signed-in session, as every other
  * administrative write does (routes/permissions.ts says why), so they are
- * not MCP tools; the three reads are (mcp/route-tools.ts).
+ * not MCP tools; the four reads are (mcp/route-tools.ts).
  *
  * A credential is taken in, never returned. A connection either names the
  * environment variable that holds its credential, or is given the
@@ -42,6 +47,9 @@ import {
   CONNECTION_ROLES,
   CONNECTION_ROLE_INFO,
   CONNECTION_TRANSPORTS,
+  CALL_PRICE_MAX_MICRO_USD,
+  WRITE_ACKNOWLEDGEMENT,
+  WRITE_REASON_MAX_CHARS,
   CREDENTIAL_ENV_PATTERN,
   CREDENTIAL_HEADER_PATTERN,
   TOOL_PREFIX_PATTERN,
@@ -63,6 +71,9 @@ const ROLES = CONNECTION_ROLES.map((role) => ({
 /** Whether this deployment can keep a credential given to a connection itself: its key is set, and is a key. */
 const canKeepCredentials = (): boolean => credentialKeys().current !== null;
 import { currentLabel } from "../llm/usage-context.js";
+import { rawSourceLabelsOf } from "../raw-sources.js";
+import { microUsdToOwls } from "../services/owl.js";
+import { decideHeldCall } from "../services/reading-service.js";
 import { requirePermission } from "../server/require-permission.js";
 import {
   addConnection,
@@ -71,6 +82,7 @@ import {
   connectionsNotShown,
   getConnection,
   listConnectionCalls,
+  listConnectionWrites,
   listConnections,
   lookAtConnection,
   notShownNote,
@@ -202,7 +214,8 @@ const CREDENTIAL = {
   maxLength: CREDENTIAL_MAX_CHARS,
   writeOnly: true,
   description:
-    "The credential itself, such as a read-only API token, to be kept sealed: encrypted under a key that " +
+    "The credential itself, such as an API token (the narrowest that allows what the connection's tools are " +
+    "granted to do, and a read-only one where none is granted to write), to be kept sealed: encrypted under a key that " +
     "is only in the deployment's environment, and bound to this connection's address, so that a change of " +
     "address removes it. Sent in credential_header (in Authorization as a bearer token: give the token " +
     "without \"Bearer \"). Never returned or logged. Refused where the deployment has no key to keep it with.",
@@ -236,8 +249,11 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
         "A connection points the deployment at an MCP server over a system where an organization's " +
         "data lives. Each is returned with whose system it is, its label, whether its server last " +
         "answered, and every tool the server listed when an administrator last looked: the server's " +
-        "own marking of the tool as read-only (a hint), whether agents are offered it, and whether it " +
-        "was withdrawn because it changed. The list holds the connections at labels the caller reads: " +
+        "own marking of the tool as read-only (a hint), whether agents are offered it, whether it " +
+        "was withdrawn because it changed, the write grant it is offered under where it has one " +
+        "(`write_grant`: the administrator's reason, the words they acknowledged, who and when, and " +
+        "whether its calls wait for an administrator), and what a call to it is charged to a run's " +
+        "budget (`owls_per_call`). `write_acknowledgement` is what a write grant acknowledges now. The list holds the connections at labels the caller reads: " +
         "administering does not by that alone let a person read at a label. `not_shown` counts the " +
         "rest, and `not_shown_note` says so in a sentence when there are any. A tool's `calls` and " +
         "`readings_kept` count the calls the caller reads. `can_keep_credentials` says whether a " +
@@ -254,6 +270,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
       const note = notShownNote(notShown, "connections");
       return reply.send({
         notice: CONNECTION_NOTICE,
+        write_acknowledgement: WRITE_ACKNOWLEDGEMENT,
         can_keep_credentials: canKeepCredentials(),
         roles: ROLES,
         connections,
@@ -273,7 +290,13 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const connection = await getConnection(request.params.connection_id);
       if (!connection) return reply.code(404).send({ error: "Connection not found", code: "NOT_FOUND" });
-      return reply.send({ notice: CONNECTION_NOTICE, can_keep_credentials: canKeepCredentials(), roles: ROLES, connection });
+      return reply.send({
+        notice: CONNECTION_NOTICE,
+        write_acknowledgement: WRITE_ACKNOWLEDGEMENT,
+        can_keep_credentials: canKeepCredentials(),
+        roles: ROLES,
+        connection,
+      });
     },
   });
 
@@ -288,7 +311,9 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
       description:
         "Each call: the tool, when, how it ended, the size and SHA-256 of what came back, the run " +
         "and node it was made for, and the source it became if an agent's work rested on it. What " +
-        "the system answered is never here; a kept reading is read as its source. A call is a row at " +
+        "the system answered is never here; a kept reading is read as its source, and a call to a tool " +
+        "granted to write (`writes`) is read with what came back at GET /connections/:connection_id/writes. " +
+        "A call is a row at " +
         "the label of the run that made it, so the list holds the calls made at labels the caller " +
         "reads, and `not_shown` counts the rest. Page back with before=<the last call's called_at>.",
       params: CONNECTION_PARAMS,
@@ -428,17 +453,33 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
 
   app.put<{
     Params: { connection_id: string };
-    Body: { offered: Array<{ name: string; definition_hash: string }> };
+    Body: {
+      offered: Array<{
+        name: string;
+        definition_hash: string;
+        writes?: { acknowledged: boolean; reason: string };
+        held?: boolean;
+        owls_per_call?: number;
+      }>;
+    };
   }>("/connections/:connection_id/tools", {
     schema: {
       tags: ["connections"],
       summary:
-        "Say which of a connection's tools agents are offered (administrators, from a signed-in session)",
+        "Say which of a connection's tools agents are offered, and on what terms (administrators, from a signed-in session)",
       description:
-        `${CONNECTION_NOTICE} \`offered\` is the whole set: a tool left out is no longer offered. ` +
-        "Each tool is named with the definition_hash shown for it, so a pick is of the definition " +
-        "the administrator read: if the tool has changed since, the request is refused and nothing " +
-        "changes. The change is logged with the tools added and removed.",
+        `${CONNECTION_NOTICE} \`offered\` is the whole set, with the terms each tool is offered on: a tool ` +
+        "left out is no longer offered, and a tool named without `writes` is picked as one that reads, so " +
+        "a write grant it had is revoked. Each tool is named with the definition_hash shown for it, so a " +
+        "pick is of the definition the administrator read: if the tool has changed since, the request is " +
+        "refused and nothing changes. `writes` grants the tool to write: `acknowledged` true says the " +
+        `administrator agrees to this (${JSON.stringify(WRITE_ACKNOWLEDGEMENT)}), and \`reason\` is theirs; ` +
+        "both are kept on the tool and every agent offered it is told the reason. A tool the server itself " +
+        "marks as writing is refused without it. A tool granted to write is offered only to a run that " +
+        "works at the connection's own label, and never to the Assistant. `held` true makes each call to " +
+        "it wait for an administrator (POST /connections/:connection_id/writes/:call_id/decision). " +
+        "`owls_per_call` is what one call the system answers is charged to the run's budget. The change " +
+        "is logged: the tools added and removed, each write grant with its reason, and each revocation.",
       params: CONNECTION_PARAMS,
       body: {
         type: "object",
@@ -459,6 +500,38 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
                   minLength: 1,
                   description: "The definition_hash the connection's read showed for the tool",
                 },
+                writes: {
+                  type: "object",
+                  required: ["acknowledged", "reason"],
+                  additionalProperties: false,
+                  description:
+                    "Present to grant the tool to write; absent, the tool is picked as one that reads.",
+                  properties: {
+                    acknowledged: {
+                      type: "boolean",
+                      description: `True to acknowledge: ${WRITE_ACKNOWLEDGEMENT}`,
+                    },
+                    reason: {
+                      type: "string",
+                      minLength: 1,
+                      maxLength: WRITE_REASON_MAX_CHARS,
+                      description:
+                        "Why agents should be able to write to this system through the tool, in a sentence or two. Kept, shown, and told to every agent offered the tool.",
+                    },
+                  },
+                },
+                held: {
+                  type: "boolean",
+                  description:
+                    "True to have each call to the tool wait for an administrator before it is sent. Only with `writes`.",
+                },
+                owls_per_call: {
+                  type: "number",
+                  minimum: 0,
+                  maximum: microUsdToOwls(CALL_PRICE_MAX_MICRO_USD),
+                  description:
+                    "What one call the system answers is charged to the run's budget, in owls; 0 or left out for a tool whose calls cost the organization's system and no money. Agents are told the price, and a call the rest of a run's budget cannot cover is not sent.",
+                },
               },
             },
           },
@@ -469,11 +542,25 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const result = await offerTools(
         request.params.connection_id,
-        request.body.offered.map((t) => ({ name: t.name, definitionHash: t.definition_hash })),
+        request.body.offered.map((t) => ({
+          name: t.name,
+          definitionHash: t.definition_hash,
+          ...(t.writes !== undefined ? { writes: t.writes } : {}),
+          held: t.held,
+          owlsPerCall: t.owls_per_call,
+        })),
         request.auth!.userId!
       );
       if (!result.ok) {
-        const status = result.code === "NOT_FOUND" || result.code === "UNKNOWN_TOOL" ? 404 : 409;
+        const status =
+          result.code === "NOT_FOUND" || result.code === "UNKNOWN_TOOL"
+            ? 404
+            : result.code === "WRITE_NOT_ACKNOWLEDGED" ||
+                result.code === "WRITE_REASON_NEEDED" ||
+                result.code === "HELD_NEEDS_WRITE_GRANT" ||
+                result.code === "INVALID_PRICE"
+              ? 400
+              : 409;
         return reply.code(status).send({ error: result.message, code: result.code });
       }
       return reply.send({
@@ -481,7 +568,110 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
         connection: await getConnection(request.params.connection_id),
         offered: result.offered,
         no_longer_offered: result.noLongerOffered,
+        write_granted: result.writeGranted,
+        write_revoked: result.writeRevoked,
       });
+    },
+  });
+
+  app.get<{
+    Params: { connection_id: string };
+    Querystring: { limit?: number; before?: string; held?: boolean };
+  }>("/connections/:connection_id/writes", {
+    schema: {
+      tags: ["connections"],
+      summary:
+        "The calls agents made to a connection's tools granted to write, newest first, with what was sent and what came back (administrators)",
+      description:
+        "What an administrator watches a write grant by. Each call: the tool, when, which agent and run " +
+        "made it and for which node, what was sent (`sent`, the arguments as the agent wrote them), how " +
+        "it ended, what it was charged, and what came back (`came_back`: the first part of the stored " +
+        "result with its size and SHA-256). What came back is the system's own text, so it is shown to a " +
+        "caller who may open raw sources at the call's label and replaced by a notice saying so for one " +
+        "who may not. A call that waited for an administrator says since when and how it was decided " +
+        "(`held`); `waiting` counts those not yet decided, and held=true lists only them. A call is a row " +
+        "at the label of the run that made it, so the list holds the calls the caller reads, and " +
+        "`not_shown` counts the rest. To stop writes at once, switch the connection off (PATCH with " +
+        "enabled false): no run is offered its tools, and a call that was waiting is not sent. Page back " +
+        "with before=<the last call's called_at>.",
+      params: CONNECTION_PARAMS,
+      querystring: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 500, description: "Calls to return (default 100)" },
+          before: { type: "string", format: "date-time", description: "Only calls earlier than this time" },
+          held: { type: "boolean", description: "True for only the calls waiting for an administrator" },
+        },
+      },
+    },
+    preHandler: administrator,
+    handler: async (request, reply) => {
+      const listed = await listConnectionWrites(request.params.connection_id, {
+        limit: request.query.limit,
+        before: request.query.before,
+        heldOnly: request.query.held === true,
+        rawSourceLabels: rawSourceLabelsOf(request.auth),
+      });
+      if (listed === null) return reply.code(404).send({ error: "Connection not found", code: "NOT_FOUND" });
+      const note = notShownNote(listed.notShown, "calls");
+      return reply.send({
+        writes: listed.writes,
+        waiting: listed.waiting,
+        not_shown: listed.notShown,
+        ...(note ? { not_shown_note: note } : {}),
+      });
+    },
+  });
+
+  app.post<{
+    Params: { connection_id: string; call_id: string };
+    Body: { decision: "approve" | "decline"; note?: string };
+  }>("/connections/:connection_id/writes/:call_id/decision", {
+    schema: {
+      tags: ["connections"],
+      summary:
+        "Approve or decline a write that waits for an administrator (administrators, from a signed-in session)",
+      description:
+        "A call to a tool whose write grant holds its calls is recorded and not sent. Approved, it is sent " +
+        "now, once, with the arguments the agent wrote, and the response says how it ended. Declined, " +
+        "nothing is sent. The agent that made the call reads what became of it through the reading's id. " +
+        "An approved call is sent only if the connection is on and the tool is still offered under a write " +
+        "grant on the definition the agent wrote its arguments against; otherwise it is marked `not_sent` " +
+        "with why. The decision, who made it, when, and the note are kept on the call. A call already " +
+        "decided is refused (409).",
+      params: {
+        type: "object",
+        required: ["connection_id", "call_id"],
+        properties: { connection_id: UUID, call_id: { ...UUID, description: "The call's id, from the list of writes" } },
+      },
+      body: {
+        type: "object",
+        required: ["decision"],
+        additionalProperties: false,
+        properties: {
+          decision: { type: "string", enum: ["approve", "decline"] },
+          note: {
+            type: "string",
+            maxLength: 1000,
+            description:
+              "Optional. Why, in a sentence. Kept on the call, and told to the agent that made it when it asks what became of the call.",
+          },
+        },
+      },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const decided = await decideHeldCall(
+        request.params.connection_id,
+        request.params.call_id,
+        request.body.decision,
+        request.body.note ?? null,
+        request.auth!.userId!
+      );
+      if (!decided.ok) {
+        return reply.code(decided.code === "NOT_FOUND" ? 404 : 409).send({ error: decided.message, code: decided.code });
+      }
+      return reply.send({ call_id: decided.id, outcome: decided.outcome, ...(decided.problem ? { problem: decided.problem } : {}) });
     },
   });
 

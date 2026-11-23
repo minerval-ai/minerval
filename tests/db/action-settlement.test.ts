@@ -58,8 +58,8 @@ describe("cancelActions", () => {
     const a = await getAction(row);
     expect(a!.status).toBe("cancelled");
     expect(Number(a!.metered_cost_micro_usd)).toBe(120_000);
-    const [why] = await rawQuery<{ end_reason: string }>(`SELECT end_reason FROM actions WHERE id = $1`, [row]);
-    expect(why!.end_reason).toBe("the source could not be fetched: the site answered 403");
+    const [why] = await rawQuery<{ closed_reason: string }>(`SELECT closed_reason FROM actions WHERE id = $1`, [row]);
+    expect(why!.closed_reason).toBe("the source could not be fetched: the site answered 403");
 
     const settled = await getAllocation(al);
     expect(Number(settled.spent_micro_usd)).toBe(120_000);
@@ -101,8 +101,8 @@ describe("cancelActions", () => {
     const row = await seedAction({ group, kind: "curate", costMicroUsd: 100_000 });
     await cancelActions({ group, reason: "nothing is left for the Curator to read there" });
     await rawQuery(`UPDATE actions SET status = 'open' WHERE id = $1`, [row]);
-    const [r] = await rawQuery<{ end_reason: string | null }>(`SELECT end_reason FROM actions WHERE id = $1`, [row]);
-    expect(r!.end_reason).toBeNull();
+    const [r] = await rawQuery<{ closed_reason: string | null }>(`SELECT closed_reason FROM actions WHERE id = $1`, [row]);
+    expect(r!.closed_reason).toBeNull();
   });
 });
 

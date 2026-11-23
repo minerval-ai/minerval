@@ -67,7 +67,8 @@ const stage = vi.hoisted(() => {
 
 vi.mock("../../src/llm/agents/claim-steward.js", async (orig) => ({
   ...(await orig<typeof import("../../src/llm/agents/claim-steward.js")>()),
-  runClaimSteward: vi.fn((input: unknown) => stage.standIn("steward", input)),
+  // The stand-in concludes as a real pass may: the assessment stands (pass-outcome.ts).
+  runClaimSteward: vi.fn((input: unknown) => stage.standIn("steward", input).then(() => ({ kind: "stood" as const, logged: "no_action_needed", audit_log_id: null, before: null }))),
 }));
 vi.mock("../../src/llm/agents/tagger.js", async (orig) => ({
   ...(await orig<typeof import("../../src/llm/agents/tagger.js")>()),

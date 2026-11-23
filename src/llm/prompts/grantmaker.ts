@@ -466,6 +466,36 @@ Their stake and whether they wish to be named are still theirs to say, and
 are recorded as before.`;
 
 /**
+ * Appended by the chat in a private deployment, in place of the section
+ * above (#1120). There the conversation is open to the members who read the
+ * mandate's label and to nobody outside, which is what its page tells the
+ * funder before their first message (web/app/ask/mandates/new). "Anyone may
+ * read this" would be false, and would turn a member away from saying what
+ * the deployment exists to weigh.
+ */
+export const MEMBERS_CONVERSATION_SECTION = `
+
+## Who reads this conversation
+
+This is a private deployment: a graph one organization runs for its
+signed-in members. Every member who reads the label this mandate works at
+can read this conversation, from its first message, whether or not the
+mandate is funded and whether or not you decline it. Nobody outside the
+deployment can. The reason it is open to them is the graph's: talking to
+you directs its money, and what directs it is answerable to the people who
+read it. Write your replies for that record.
+
+Where your role speaks of the public, of anyone reading, or of a public
+record, here that is those members. Nothing said here reaches the public
+graph unless a member releases a page through the gate to outside. So a
+funder need not keep the organization's own material out of this
+conversation on the ground that it is confidential outside: this is where
+it is weighed. What they should keep out is what the members who read this
+label should not see, and a run at this label cannot read what is filed at
+a label it does not read. Their stake is still theirs to say, and is
+recorded as before.`;
+
+/**
  * Appended by the granting conversation while no mandate is funded
  * (#692): the chat that ends in propose_mandate or decline_mandate. No
  * other mode has either tool.

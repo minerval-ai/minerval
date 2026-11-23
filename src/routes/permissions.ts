@@ -79,6 +79,7 @@ import {
   permissionLog,
   removeGrant,
 } from "../services/permission-service.js";
+import { PUBLIC_LABEL, baseLabel, publishedLabel, layersAreSplit } from "../labels.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
 
@@ -145,6 +146,15 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
         clearance: standing.clearance,
         raw_source_labels: standing.rawSourceLabels,
         groups: standing.groups,
+        // Which labels are the bottom layers here (src/labels.ts), so that a
+        // page can say "the public graph", "published" and "members" of
+        // whatever this deployment calls them.
+        label_layers: {
+          public_graph: PUBLIC_LABEL,
+          published: publishedLabel(),
+          base: baseLabel(),
+          split: layersAreSplit(),
+        },
       });
     },
   });
@@ -407,7 +417,9 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
         "instead when the request was made with an API key or an access token, or by the " +
         "Assistant: that credential works at one label, fixed when it was made, and names none. " +
         "For each label: what else its readers read, who reads it (who_reads, in words), and the " +
-        "labels that read it, of which only those you may read are named.",
+        "labels that read it, of which only those you may read are named. On a deployment whose " +
+        "bottom layers are labels of their own, the public graph's label and the published one are " +
+        "not listed: nothing is filed at either.",
     },
     preHandler: signedIn,
     handler: async (request, reply) => {
@@ -476,7 +488,9 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
       description:
         "providers lists every model provider and outside service this deployment knows, with what it would " +
         "be sent and whether it is set up here. labels gives each label besides public the providers cleared " +
-        "for it now; every provider is cleared for public. fixed_by_settings is true where the deployment's " +
+        "for it now. public_graph says what is in force for public, the public graph's own text: every " +
+        "provider, unless the settings narrow it, and whether any run of this deployment works there. " +
+        "fixed_by_settings is true where the deployment's " +
         "settings (PROVIDER_LABELS, or [provider_labels] in its config file) fix the clearance, and then " +
         "nothing can be changed through PUT /labels/:label/providers.",
     },

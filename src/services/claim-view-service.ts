@@ -14,6 +14,7 @@
  * the graph (arguments, subclaims, instances, dependents, related links,
  * findings, check records) come only when asked for.
  */
+import { lastPassOutcome } from "./pass-outcome-service.js";
 import { waitingMessages } from "./inbox-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
@@ -100,7 +101,8 @@ export const CLAIM_VIEW_DESCRIPTION =
   "it. Every read returns: `claim` (its `kind`, canonical form, type, " +
   "state, importance, contestation, tags, page_url, and Steward state: " +
   "`stewarded_at` null means no Steward has worked it yet, whatever " +
-  "decomposition_status says); `assessment`, the current verdict with its " +
+  "decomposition_status says; it moves when a pass starts, and `last_pass` says what the " +
+  "last finished pass concluded); `assessment`, the current verdict with its " +
   "reasoning (its `id`, which a finding cites; a status, a confidence that the status is the right reading " +
   "of the evidence, and a credence that the claim is true where one number " +
   "is honest, else null, and `marginal_yield`, how much another pass " +
@@ -289,6 +291,7 @@ export async function getClaimView(
     covered,
     labelled,
     mirrored,
+    lastPass,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -330,6 +333,9 @@ export async function getClaimView(
     // Where the deployment mirrors the public graph and this node is one
     // of the public graph's: that it is, and as of when (null elsewhere).
     mirroredFacts(claimId),
+    // What the last finished pass concluded (#1027), beside stewarded_at.
+    // A failed read loses the line, never the view.
+    lastPassOutcome(claimId).catch(() => null),
   ]);
   const since = sinceAssessed(changes?.get(claimId));
   const examination = coverage(covered?.get(claimId.toLowerCase()));
@@ -381,6 +387,11 @@ export async function getClaimView(
       // until a Steward run has started; 'done' once one has finished.
       steward_state: claim.stewardState ?? null,
       stewarded_at: iso(claim.stewardedAt),
+      // stewarded_at moves when a pass starts, and says nothing of how it
+      // ended (#1027): this is what the last finished pass concluded (a new
+      // assessment, a logged decision that the one in force stands, a pause,
+      // or no conclusion). Null when no pass has reported one.
+      last_pass: lastPass,
       // Why the canonical form runs in the direction it does (#360), so a
       // Steward improving the wording keeps the polarity every stance is
       // read against. Null for claims minted before the note existed.

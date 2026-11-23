@@ -47,7 +47,6 @@ import {
   UnsafeUrlError,
   fetchPublicUrl,
 } from "../services/url-guard.js";
-import { STEWARD_ERROR_REASON_LABELS, classifyStewardFailure } from "../services/steward-park-reason.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { normalizeFocus, recordExtraction, type UndecidedProposal } from "../services/ingest-focus-service.js";
@@ -219,10 +218,10 @@ export async function handleUrlExtraction(
     // A failed extraction must still terminate the ledger ingest action —
     // left 'running' it would strand its funders' allocations, and a
     // reconcile reopen would re-submit (and re-charge) the same URL.
-    // Cancelling retires the group (the plan cursor skips cancelled items)
-    // and settles it: what the attempt spent is paid from the commission,
-    // the rest goes back, and the row says why it ended (#1045).
-    await cancelIngestAction(group, ingestEndReason(err), meter.billedMicroUsd, message.meterJobId);
+    // Cancelling retires the group; the plan cursor skips cancelled items.
+    // The row says why, what the attempt spent is paid from its commission,
+    // and the rest goes back to its payers (#1045).
+    await cancelIngestAction(group, ingestFailureReason(err, message.url), meter.billedMicroUsd, message.meterJobId);
     throw err;
   }
   // Escrow-funded ingestions were never cap-charged; nothing to settle.
@@ -309,7 +308,7 @@ async function cancelIngestAction(
   meterJobId?: string
 ): Promise<void> {
   try {
-    const { cancelActions } = await import("../services/action-settlement.js");
+    const { cancelActionGroup } = await import("../services/action-service.js");
     // The running row is the attempt that spent; an 'open' one was reopened
     // by a sweep while it ran and closes with it.
     const [ran] = await rawQuery<{ id: string }>(
@@ -317,13 +316,8 @@ async function cancelIngestAction(
         ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END LIMIT 1`,
       [group]
     );
-    await cancelActions({
-      group,
-      reason,
-      includeRunning: true,
-      ranId: ran?.id ?? null,
-      meteredMicroUsd,
-      meteredJobId: meterJobId ?? null,
+    await cancelActionGroup(group, reason, {
+      ran: ran ? { actionId: ran.id, meteredMicroUsd, meteredJobId: meterJobId ?? null } : undefined,
     });
   } catch (err) {
     console.error(
@@ -331,27 +325,6 @@ async function cancelIngestAction(
       err instanceof Error ? err.message : err
     );
   }
-}
-
-/**
- * Why an extraction that failed ended, in the platform's words: what the
- * mandate that paid for it reads on the row and its plan item. A site's
- * status code is safe to say; a provider's or a database's text is not
- * (steward-park-reason.ts), so those are named by class.
- */
-export function ingestEndReason(err: unknown): string {
-  if (err instanceof HttpStatusError) return `the source could not be fetched: the site answered ${err.status}`;
-  if (err instanceof UnsafeUrlError) {
-    return "the source's address is not one the platform fetches (not a public address, or it does not resolve)";
-  }
-  if ((err as { sourceTooLarge?: unknown } | null)?.sourceTooLarge) {
-    return `the source is larger than the ${DOCUMENT_MAX_DOWNLOAD_MB} MB a document may be`;
-  }
-  const text = (err instanceof Error ? err.message : String(err ?? "")).toLowerCase();
-  if (["prompt is too long", "context window", "request_too_large"].some((p) => text.includes(p))) {
-    return "the source is too long for the extraction model to read at once";
-  }
-  return `the extraction failed because of ${STEWARD_ERROR_REASON_LABELS[classifyStewardFailure(err)]}`;
 }
 
 /**
@@ -905,11 +878,55 @@ async function fetchUrlContent(url: string): Promise<string> {
   try {
     return await fetchPublicUrl(url, { maxBytes: DOCUMENT_MAX_DOWNLOAD_BYTES });
   } catch (err) {
-    if (err instanceof ResponseTooLargeError) {
-      throw Object.assign(new Error(tooLargeToIngest(err.url)), { sourceTooLarge: true });
-    }
+    if (err instanceof ResponseTooLargeError) throw new Error(tooLargeToIngest(err.url));
     throw err;
   }
+}
+
+/**
+ * Why an ingest failed, for its ledger row and the plan item that asked for
+ * it (#1045): what a Grantmaker needs to decide whether to plan another URL
+ * for the same text. The row is on the public ledger, so this is the
+ * platform's own words, never a provider's or the database's text; a failure
+ * this does not recognize says only that it was the platform's, and the
+ * job's record keeps the error for maintainers.
+ */
+export function ingestFailureReason(err: unknown, url: string): string {
+  if (err instanceof HttpStatusError) {
+    const { status } = err;
+    if (status === 401 || status === 403 || status === 451) {
+      return (
+        `the site refused to serve ${url} (HTTP ${status}): it may block automated readers, sit behind a ` +
+        `paywall or need a sign-in. An archived copy, or another publication of the same text, can be ingested instead.`
+      );
+    }
+    if (status === 404 || status === 410) {
+      return `${url} is not there (HTTP ${status}). An archived copy, or the text's new address, can be ingested instead.`;
+    }
+    if (status === 429 || status >= 500) {
+      return (
+        `the site did not serve ${url} when it was fetched (HTTP ${status}: rate-limited or unavailable). ` +
+        `Planning it again later may succeed.`
+      );
+    }
+    return `the site answered the fetch of ${url} with HTTP ${status}, so there was nothing to read.`;
+  }
+  if (err instanceof UnsafeUrlError) {
+    return `${url} is not an address the platform fetches (${err.message}).`;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  // Already the platform's words, naming the address it was refused at.
+  if (message.includes(`over ${DOCUMENT_MAX_DOWNLOAD_MB} MB and was not ingested`)) return message;
+  if (/prompt is too long|maximum context length|context window/i.test(message)) {
+    return (
+      `the document at ${url} is too long for the Extractor to read in one pass. Its parts, ingested ` +
+      `separately, or a focused ingest of the part that matters, can be read instead.`
+    );
+  }
+  return (
+    `the extraction of ${url} failed on the platform's side, not because of anything about the source; ` +
+    `the error is kept on the extraction job for the platform's maintainers. Planning it again may succeed.`
+  );
 }
 
 /** Why an ingest of a document over the limit failed, and what to ingest instead. */

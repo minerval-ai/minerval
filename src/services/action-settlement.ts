@@ -192,7 +192,7 @@ export async function settleGroupMoney(
  * comes back.
  *
  * `reason` is the platform's own sentence for why, stored on each row
- * closed (actions.end_reason) where the payer reads it beside the money it
+ * closed (actions.closed_reason, public on the ledger) where the payer reads it beside the money it
  * got back. Never a provider's or a site's text.
  *
  * Settles even when no row is left to close: a group whose rows another
@@ -204,6 +204,8 @@ export async function cancelActions(input: {
   reason: string;
   ids?: string[];
   includeRunning?: boolean;
+  /** Which live statuses to close; overrides includeRunning. */
+  statuses?: readonly ("open" | "running")[];
   /** 'superseded' where another variant of the group has taken the row's place; 'cancelled' by default. */
   status?: "cancelled" | "superseded";
   ranId?: string | null;
@@ -217,7 +219,7 @@ export async function cancelActions(input: {
       `SELECT id, status FROM actions WHERE exclusion_group = $1 ORDER BY id FOR UPDATE`,
       [input.group]
     );
-    const closable = new Set(input.includeRunning ? ["open", "running"] : ["open"]);
+    const closable = new Set<string>(input.statuses ?? (input.includeRunning ? ["open", "running"] : ["open"]));
     const targets = rows
       .filter((r) => closable.has(r.status) && (!input.ids || input.ids.includes(r.id)))
       .map((r) => r.id);
@@ -226,11 +228,11 @@ export async function cancelActions(input: {
     if (targets.length > 0) {
       await tx.query(
         `UPDATE actions
-            SET status = $6, end_reason = $2, updated_at = now(),
+            SET status = $6, closed_reason = $2, updated_at = now(),
                 metered_cost_micro_usd = CASE WHEN id = $3 THEN $4 ELSE metered_cost_micro_usd END,
                 metered_job_id = CASE WHEN id = $3 THEN $5 ELSE metered_job_id END
           WHERE id = ANY($1::uuid[])`,
-        [targets, input.reason, ranId, metered, input.meteredJobId ?? null, input.status ?? "cancelled"]
+        [targets, input.reason.slice(0, 1000), ranId, metered, input.meteredJobId ?? null, input.status ?? "cancelled"]
       );
     }
     const stillLive = rows.some((r) => (r.status === "open" || r.status === "running") && !targets.includes(r.id));
@@ -241,7 +243,15 @@ export async function cancelActions(input: {
       closedIds: targets,
       groupClosed: !stillLive,
     });
-    if (ranId) await recordRunEnded(tx, ranId, metered, input.reason, releasedMicroUsd);
+    // A subscriber waiting on a run (a session that commissioned it,
+    // spend-tools.ts) hears that it closed, and why, as it would hear that
+    // it settled.
+    for (const id of targets) {
+      await recordRunClosed(tx, id, input.reason, input.status ?? "cancelled", {
+        spent: id === ranId ? metered : 0,
+        returned: id === ranId || targets.length === 1 ? releasedMicroUsd : null,
+      });
+    }
     return { cancelled: targets, releasedMicroUsd };
   };
   return input.tx ? run(input.tx) : withTransaction(run);
@@ -312,7 +322,11 @@ export const DEAD_GROUP_GRACE_MINUTES = 15;
  * rows at all is a fund (a lookout's), not a commission, and is left alone.
  * Also the back-fill for commissions stranded before #1045.
  */
-export async function settleDeadGroups(limit = 200): Promise<{ groups: number; releasedMicroUsd: number }> {
+export async function settleDeadGroups(
+  opts: { limit?: number; graceMinutes?: number } = {}
+): Promise<{ groups: number; releasedMicroUsd: number }> {
+  const limit = opts.limit ?? 200;
+  const grace = Math.max(0, Math.round(opts.graceMinutes ?? DEAD_GROUP_GRACE_MINUTES));
   // Two kinds of leftover, both past the grace on both sides: money pinned
   // to a row that is closed, and money placed on a group as a whole whose
   // rows are all closed.
@@ -322,20 +336,20 @@ export async function settleDeadGroups(limit = 200): Promise<{ groups: number; r
        FROM minerval_whole.allocation_money al
        LEFT JOIN actions a ON a.id = al.action_id
                           AND a.status NOT IN ('open', 'running')
-                          AND a.updated_at < now() - make_interval(mins => ${DEAD_GROUP_GRACE_MINUTES})
+                          AND a.updated_at < now() - make_interval(mins => $2::int)
       WHERE al.released_at IS NULL
-        AND al.created_at < now() - make_interval(mins => ${DEAD_GROUP_GRACE_MINUTES})
+        AND al.created_at < now() - make_interval(mins => $2::int)
         AND (a.id IS NOT NULL
              OR (al.action_id IS NULL
                  AND EXISTS (SELECT 1 FROM actions g WHERE g.exclusion_group = al.exclusion_group)
                  AND NOT EXISTS (SELECT 1 FROM actions g
                                   WHERE g.exclusion_group = al.exclusion_group
                                     AND (g.status IN ('open', 'running')
-                                         OR g.updated_at >= now() - make_interval(mins => ${DEAD_GROUP_GRACE_MINUTES})))))
+                                         OR g.updated_at >= now() - make_interval(mins => $2::int)))))
       GROUP BY al.exclusion_group
       ORDER BY al.exclusion_group
       LIMIT $1`,
-    [limit]
+    [limit, grace]
   );
   let releasedMicroUsd = 0;
   let groups = 0;
@@ -378,13 +392,13 @@ export async function settleDeadGroups(limit = 200): Promise<{ groups: number; r
   return { groups, releasedMicroUsd };
 }
 
-/** The settlement event for a run that stopped short, as completeAction records one for a run that finished. */
-async function recordRunEnded(
+/** The event for a row closed without finishing (run_closed), as completeAction records run_settled for one that did. */
+async function recordRunClosed(
   tx: TxQuery,
   actionId: string,
-  meteredMicroUsd: number,
   reason: string,
-  releasedMicroUsd: number
+  status: "cancelled" | "superseded",
+  money: { spent: number; returned: number | null }
 ): Promise<void> {
   const [row] = await tx.query<{ kind: string; claim_id: string | null; target_ref: string | null; label: string; grants: string[] }>(
     `SELECT a.kind, a.claim_id, a.target_ref, a.label,
@@ -397,15 +411,20 @@ async function recordRunEnded(
   const { recordEvent } = await import("./event-service.js");
   await recordEvent(
     {
-      kind: "run_settled",
+      kind: "run_closed",
       actionId,
       nodeId: row.claim_id,
       grantId: row.grants[0] ?? null,
-      refs: { work_kind: row.kind, target_ref: row.target_ref, grants: row.grants, ended: "stopped" },
+      refs: { work_kind: row.kind, target_ref: row.target_ref, grants: row.grants },
       summary:
-        `${row.label} stopped without finishing (${reason}), spending ${microUsdToOwls(meteredMicroUsd)} owls; ` +
-        `${microUsdToOwls(releasedMicroUsd)} owls went back to whoever paid.`,
-      payload: { spent_micro_usd: meteredMicroUsd, returned_micro_usd: releasedMicroUsd, end_reason: reason },
+        `${row.label} was ${status}: ${reason}` +
+        (money.spent > 0 ? `. It spent ${microUsdToOwls(money.spent)} owls` : "") +
+        (money.returned ? `; ${microUsdToOwls(money.returned)} owls went back to whoever paid.` : ""),
+      payload: {
+        reason,
+        spent_micro_usd: money.spent,
+        ...(money.returned !== null ? { returned_micro_usd: money.returned } : {}),
+      },
     },
     tx
   );

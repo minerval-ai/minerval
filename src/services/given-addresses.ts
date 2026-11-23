@@ -69,7 +69,7 @@
 import { rawQuery, currentReadClearance } from "../db/client.js";
 import { enforcementLastKnown, labelOfWorkInProgress } from "../db/clearance.js";
 import { postureAt } from "../label-posture.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { isMemberLabel } from "../labels.js";
 import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { normalizePageUrl, pageUrlHash } from "./page-url.js";
 
@@ -125,7 +125,7 @@ async function readsMoreThanPublic(): Promise<boolean> {
     if (known === true) throw err;
     return false;
   }
-  return reads !== null && reads.some((label) => label !== PUBLIC_LABEL);
+  return reads !== null && reads.some((label) => !isMemberLabel(label));
 }
 
 /**

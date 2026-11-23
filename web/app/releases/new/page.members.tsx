@@ -1,3 +1,4 @@
+import { isOpenLabel, layersOf } from "@/lib/label-layers";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { NeedsPermission, can, viewer } from "@/components/admin/access";
@@ -25,6 +26,7 @@ export default async function NewReleasePage({ searchParams }: { searchParams: P
   const who = await viewer();
   if (!who) return null;
   if (!can(who, "direct")) return <NeedsPermission title="New release" permission="direct" />;
+  const layers = layersOf(who.mine);
   const { node, at, q } = await searchParams;
   // A node's address or id pasted into the search is taken as that node.
   const nodeId = node ?? q?.match(UUID)?.[0];
@@ -73,10 +75,10 @@ export default async function NewReleasePage({ searchParams }: { searchParams: P
       </>
     );
   } else {
-    // One page per label, the one in force first; public is read by every member already.
+    // One page per label, the one in force first; what anyone may read is in front of everyone already.
     const byLabel = new Map<string, { label: string; assessedAt: string }>();
     for (const v of [...(detail.versions ?? [])].sort((a, b) => Number(b.in_force) - Number(a.in_force))) {
-      if (v.label !== "public" && !byLabel.has(v.label)) byLabel.set(v.label, { label: v.label, assessedAt: v.assessed_at });
+      if (!isOpenLabel(v.label, layers) && !byLabel.has(v.label)) byLabel.set(v.label, { label: v.label, assessedAt: v.assessed_at });
     }
     const [mine, gates] = await Promise.all([fetchMyLabels(who.externalId).catch(() => null), loadGates(who.externalId)]);
     body = (
@@ -102,7 +104,7 @@ export default async function NewReleasePage({ searchParams }: { searchParams: P
             nodeId={detail.claim.id}
             pages={[...byLabel.values()]}
             at={at ?? null}
-            labels={(mine?.labels ?? []).map((l: MyLabel & { reads?: string[] }) => ({ name: l.name, whoReads: l.who_reads, reads: l.reads ?? [] }))}
+            labels={(mine?.labels ?? []).map((l: MyLabel & { reads?: string[] }) => ({ name: l.name, whoReads: l.who_reads, reads: l.reads ?? [], everyMember: l.read_by_everyone ?? l.name === layers.base }))}
             gates={(gates ?? []).map((g) => ({ id: g.gate_id, from: g.from, to: g.to_outside ? "outside" : g.to }))}
           />
         )}

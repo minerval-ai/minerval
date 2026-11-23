@@ -13,6 +13,7 @@
  * Discovery (/mandates) gives pride of place to the largest mandates and
  * to the platform's own (Mathematics, AI Economics to start).
  */
+import { outcomeClause, type PassOutcome } from "../llm/agents/pass-outcome.js";
 import { correspondentPublic, listCorrespondents, type CorrespondentPublic } from "./correspondent-service.js";
 import { rawQuery } from "../db/client.js";
 import { microUsdToOwls } from "./owl.js";
@@ -999,6 +1000,14 @@ export interface OperationsCommissionRow {
    * minutes (settleDeadGroups, #1045).
    */
   state: "waiting" | "running" | "settled" | "stranded";
+  /**
+   * What the run concluded, once settled, in a reader's words (#1027): a new
+   * assessment, a logged decision that the one in force stands, a pause, or
+   * no conclusion. Null for kinds that do not report one, and while it runs.
+   */
+  outcome: string | null;
+  /** The outcome's kind (llm/agents/pass-outcome.ts), for sorting and display. */
+  outcome_kind: string | null;
   reason: string | null;
   /** Why the row closed without finishing, when it was cancelled. */
   ended_because: string | null;
@@ -1089,9 +1098,10 @@ export interface MandateSubscriptionRow {
 /**
  * What a mandate's Grantmaker waits on: its session's state, its next
  * scheduled check-in, and every standing interest its session and the
- * mandate's inbox hold. Only subscriptions at the public label are shown, as
- * the mandate itself is public; one made by a run at another label is left
- * out, and so is the check-in it sets.
+ * mandate's inbox hold. Only subscriptions at a label every reader of the
+ * page reads are shown (memberLabels in src/labels.ts: `public` on the public
+ * graph, where the mandate itself is public); one made by a run at another
+ * label is left out, and so is the check-in it sets.
  */
 export interface MandateWatching {
   grantmaker_session: { id: string; status: string } | null;
@@ -1101,7 +1111,7 @@ export interface MandateWatching {
 
 async function mandateWatching(grantId: string): Promise<MandateWatching> {
   const { describeSubscription } = await import("./subscription-service.js");
-  const { PUBLIC_LABEL } = await import("../labels.js");
+  const { memberLabels } = await import("../labels.js");
   const [session] = await rawQuery<{ id: string; status: string }>(
     `SELECT s.id, s.status FROM grants g JOIN agent_sessions s ON s.id = g.grantmaker_session_id
       WHERE g.id = $1`,
@@ -1124,11 +1134,11 @@ async function mandateWatching(grantId: string): Promise<MandateWatching> {
     `SELECT id, subscriber_kind, filter, condition, due_at::text AS due_at, delivery, once, reason,
             created_by, deliveries, last_delivered_at::text AS last_delivered_at, created_at::text AS created_at
        FROM subscriptions
-      WHERE active AND sensitivity_label = $3
+      WHERE active AND sensitivity_label = ANY($3::text[])
         AND ((subscriber_kind = 'session' AND subscriber_ref = $2)
              OR (subscriber_kind = 'mandate_inbox' AND subscriber_ref = $1))
       ORDER BY due_at NULLS LAST, created_at`,
-    [grantId, session?.id ?? "", PUBLIC_LABEL]
+    [grantId, session?.id ?? "", memberLabels()]
   );
   const subscriptions = rows.map((r) => ({
     id: r.id,
@@ -1253,15 +1263,16 @@ export async function getMandateAllocationView(
       spent: string;
       released: boolean;
       status: string;
+      outcome: PassOutcome | null;
       reason: string | null;
-      end_reason: string | null;
+      closed_reason: string | null;
       created_at: string;
       total: number;
     }>(
-      `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by,
+      `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by, a.outcome,
               al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
               (al.released_at IS NOT NULL OR al.spent_micro_usd >= al.amount_micro_usd) AS released, a.status, al.reason,
-              a.end_reason,
+              a.closed_reason,
               al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
          FROM action_allocations al JOIN actions a ON a.id = al.action_id
         WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate'
@@ -1353,8 +1364,10 @@ export async function getMandateAllocationView(
           : c.status === "open"
             ? "waiting"
             : "stranded",
+      outcome: c.outcome ? outcomeClause(c.outcome) : null,
+      outcome_kind: c.outcome?.kind ?? null,
       reason: c.reason,
-      ended_because: c.status === "cancelled" ? c.end_reason : null,
+      ended_because: c.status === "cancelled" ? c.closed_reason : null,
       created_at: c.created_at,
     })),
     more: Math.max(0, total - offset - commissions.length),

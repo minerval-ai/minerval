@@ -19,6 +19,7 @@
  *    metered cost is consumed pro rata from the winner's covering
  *    allocations.
  */
+import { outcomeClause, type PassOutcome } from "../llm/agents/pass-outcome.js";
 import { oneSourceForAddressSql } from "./layer-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -526,6 +527,37 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
  */
 export async function closeRequestActions(requestId: string): Promise<void> {
   await cancelActions({ group: REQUEST_GROUP(requestId), reason: "the request was closed" });
+}
+
+/**
+ * Cancel a group's live rows with the reason, and settle the money on it
+ * (#1045): cancelActions (action-settlement.ts) under the name the ingest
+ * paths and their tests know. `only` narrows the cancel to one row of the
+ * group; with it, money on the group as a whole is settled only once no
+ * other row of the group is live. `ran`, with what it metered, is the row
+ * whose run stopped: its spend is paid from its commission and the rest
+ * comes back. Returns the ids of the rows it cancelled.
+ */
+export async function cancelActionGroup(
+  group: string,
+  reason: string,
+  opts: {
+    only?: string;
+    statuses?: readonly ("open" | "running")[];
+    ran?: { actionId: string; meteredMicroUsd: number; meteredJobId?: string | null };
+  } = {}
+): Promise<string[]> {
+  const statuses = opts.statuses ?? ["open", "running"];
+  const res = await cancelActions({
+    group,
+    reason,
+    ids: opts.only ? [opts.only] : undefined,
+    statuses,
+    ranId: opts.ran?.actionId ?? null,
+    meteredMicroUsd: opts.ran?.meteredMicroUsd,
+    meteredJobId: opts.ran?.meteredJobId ?? null,
+  });
+  return res.cancelled;
 }
 
 /**
@@ -1576,14 +1608,14 @@ async function groupLedger(
   exclusion_group: string;
   /** The row's wait on a platform fault, when it is open and has one. */
   fault?: FaultWait;
-  /** Why a cancelled row was closed (actions.end_reason, #1045). */
-  end_reason?: string;
+  /** Why the row was cancelled, when it was and the cancel gave a reason (#1045). */
+  closed_reason?: string;
 } | null> {
-  type Row = { id: string; status: string; exclusion_group: string; end_reason: string | null } & FaultWaitRow;
+  type Row = { id: string; status: string; exclusion_group: string; closed_reason: string | null } & FaultWaitRow;
   const rows =
     "group" in where
       ? await rawQuery<Row>(
-          `SELECT id, status, exclusion_group, end_reason, fault_reason, fault_since, fault_attempts, retry_after FROM actions
+          `SELECT id, status, exclusion_group, closed_reason, fault_reason, fault_since, fault_attempts, retry_after FROM actions
             WHERE exclusion_group = $1
             ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'open' THEN 1
                                  WHEN 'done' THEN 2 WHEN 'superseded' THEN 3
@@ -1592,7 +1624,7 @@ async function groupLedger(
           [where.group]
         )
       : await rawQuery<Row>(
-          `SELECT id, status, exclusion_group, end_reason, fault_reason, fault_since, fault_attempts, retry_after
+          `SELECT id, status, exclusion_group, closed_reason, fault_reason, fault_since, fault_attempts, retry_after
              FROM actions WHERE id = $1`,
           [where.actionId]
         );
@@ -1603,12 +1635,13 @@ async function groupLedger(
       ? row.status
       : "done";
   const fault = status === "open" ? faultWait(row) : null;
+  const closed = status === "cancelled" && row.closed_reason ? row.closed_reason : null;
   return {
     status,
     action_id: row.id,
     exclusion_group: row.exclusion_group,
     ...(fault ? { fault } : {}),
-    ...(status === "cancelled" && row.end_reason ? { end_reason: row.end_reason } : {}),
+    ...(closed ? { closed_reason: closed } : {}),
   };
 }
 
@@ -1659,18 +1692,22 @@ const nowIso = () => new Date().toISOString();
 const waiting = (reason: string): PlanItemLedger => ({ status: "waiting", reason, checked_at: nowIso() });
 const blocked = (reason: string): PlanItemLedger => ({ status: "blocked", reason, checked_at: nowIso() });
 const fromRow = (
-  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string; fault?: FaultWait; end_reason?: string },
+  row: {
+    status: PlanItemLedgerStatus;
+    action_id: string;
+    exclusion_group: string;
+    fault?: FaultWait;
+    closed_reason?: string;
+  },
   reason?: string
 ): PlanItemLedger => {
   // An open row a platform fault is holding says so (#971): the item reads
-  // open, with the reason a payer would otherwise have to guess. A row that
-  // was cancelled says why, and that its money went back (#1045).
+  // open, with the reason a payer would otherwise have to guess. A cancelled
+  // row says why it was cancelled, when its cancel gave a reason (#1045).
   const why =
     reason ??
     (row.status === "open" && row.fault ? faultWaitSentence(row.fault) : undefined) ??
-    (row.status === "cancelled" && row.end_reason
-      ? `cancelled: ${row.end_reason}; what it did not spend went back to whoever paid`
-      : undefined);
+    (row.status === "cancelled" ? row.closed_reason : undefined);
   return {
     status: row.status,
     action_id: row.action_id,
@@ -3089,7 +3126,15 @@ async function endFaultWaits(actionId: string, waitedOn: string | null): Promise
 export async function completeAction(
   actionId: string,
   meteredMicroUsd: number,
-  opts: { meteredJobId?: string | null } = {}
+  opts: {
+    meteredJobId?: string | null;
+    /**
+     * What came of the run (§19, #1027): for a Steward pass, what it
+     * concluded (llm/agents/pass-outcome.ts). Stored on the row and told in
+     * run_settled; left out by kinds that do not report one yet.
+     */
+    outcome?: PassOutcome | null;
+  } = {}
 ): Promise<number> {
   // A row that runs ends the wait its kind and tier were in (endFaultWaits),
   // whether or not it had been waiting itself; `waitedOn` is the platform
@@ -3106,11 +3151,11 @@ export async function completeAction(
       waited_on: string | null;
     }>(
       `UPDATE actions a SET status = 'done', metered_cost_micro_usd = $2,
-              metered_job_id = $3, updated_at = now()
+              metered_job_id = $3, outcome = $4::jsonb, updated_at = now()
          FROM (SELECT id, fault_reason FROM actions WHERE id = $1 FOR UPDATE) prior
         WHERE a.id = prior.id AND a.status IN ('running', 'open')
         RETURNING a.id, a.exclusion_group, prior.fault_reason AS waited_on`,
-      [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null]
+      [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null, opts.outcome ? JSON.stringify(opts.outcome) : null]
     );
     if (!action) return 0;
     closed = true;
@@ -3151,8 +3196,10 @@ export async function completeAction(
           nodeId: done.claim_id,
           grantId: done.grants[0] ?? null,
           refs: { work_kind: done.kind, target_ref: done.target_ref, grants: done.grants },
-          summary: `${done.label} finished, spending ${Math.round(meteredMicroUsd / 10_000) / 100} owls.`,
-          payload: { spent_micro_usd: Math.round(meteredMicroUsd) },
+          summary:
+            `${done.label} finished, spending ${Math.round(meteredMicroUsd / 10_000) / 100} owls` +
+            (opts.outcome ? `: ${outcomeClause(opts.outcome)}` : "."),
+          payload: { spent_micro_usd: Math.round(meteredMicroUsd), ...(opts.outcome ? { outcome: opts.outcome } : {}) },
         },
         tx
       );

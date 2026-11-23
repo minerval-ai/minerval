@@ -99,7 +99,7 @@ export function ConnectionFields({
           <label htmlFor="c-credential" className="w-row" style={{ gap: 6 }}>
             Credential {optional}
             <Tip>
-              A read-only token for the system. It is encrypted as it arrives, under a key only the deployment&rsquo;s environment holds, and is never shown again. It is tied to this address: changing the address removes it. Or leave this empty and name an environment variable below.
+              A token for the system: the narrowest that allows what you grant, and a read-only one unless you mean to grant a tool to write. It is encrypted as it arrives, under a key only the deployment&rsquo;s environment holds, and is never shown again. It is tied to this address: changing the address removes it. Or leave this empty and name an environment variable below.
             </Tip>
           </label>
           <input

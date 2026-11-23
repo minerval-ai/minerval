@@ -72,7 +72,7 @@ export function ClaimMargins({
     <>
       <VersionTabs claimId={detail.claim.id} inside={inside} />
       {open?.kind === "version" && <VersionNote claimId={detail.claim.id} detail={detail} inside={inside} version={open.version} />}
-      {open?.kind === "version" && inside.mayAsk && <AskToShow claimId={detail.claim.id} version={open.version} />}
+      {open?.kind === "version" && inside.mayAsk && <AskToShow claimId={detail.claim.id} version={open.version} layers={inside.layers} />}
       {open && open.kind !== "version" && <ExaminedNote inside={inside} />}
     </>
   );
@@ -124,6 +124,13 @@ export function ClaimMargins({
             />
           )}
           <MapCard claimId={detail.claim.id} tree={detail.tree} />
+          {shownDetail.claim.last_pass && (
+            // What the last finished pass concluded (#1027), so that a pass
+            // having run is not read as a pass having judged.
+            <p className={styles.stateNote} style={{ marginTop: "0.55rem" }}>
+              Last pass, {shownDetail.claim.last_pass.ended_at.slice(0, 10)}: {shownDetail.claim.last_pass.summary}
+            </p>
+          )}
           <p style={{ marginTop: "0.55rem" }}>
             <Link className={styles.railLink} href={`/claims/${detail.claim.id}/history`}>
               view history →
@@ -147,6 +154,7 @@ export function ClaimMargins({
                   claimId={detail.claim.id}
                   detail={detail}
                   versions={open.kind === "version" ? [open.version] : open.kind === "several" ? open.versions : []}
+                  layers={inside.layers}
                 />
               )}
               <QuestionView detail={detail} fixture={source === "fixture"} />
@@ -159,7 +167,7 @@ export function ClaimMargins({
               publishedPages={publishedPages}
               judgedAbove={open?.kind === "several"}
               versionsAbove={
-                open?.kind === "several" ? <SeveralInForce claimId={detail.claim.id} detail={detail} versions={open.versions} /> : undefined
+                open?.kind === "several" ? <SeveralInForce claimId={detail.claim.id} detail={detail} versions={open.versions} layers={inside?.layers} /> : undefined
               }
             />
           )}
