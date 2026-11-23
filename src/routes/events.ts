@@ -155,8 +155,8 @@ export async function eventRoutes(app: FastifyInstance): Promise<void> {
         '{"challenge":"<the same>"}. A subscription ends at refresh_before unless refreshed: ' +
         `${hours(DEFAULT_TTL_MS)} hours by default, ${hours(MIN_TTL_MS) * 60} minutes at least, ` +
         `${hours(MAX_TTL_MS) / 24} days at most. An account holds at most ${max} at once: each is matched ` +
-        "against every event and nothing prices that, so the number is fixed. A webhook carries what is " +
-        "public here; to follow more, poll. Holding one is free",
+        "against every event and nothing prices that, so the number is fixed. A webhook carries what " +
+        "anyone may read here; to follow what only you may read, poll. Holding one is free",
       body: {
         type: "object",
         properties: {

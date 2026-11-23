@@ -305,7 +305,19 @@ the rules and settings beside it.
 ## Outside
 
 The boundary to outside is the same gate: the same kinds, settings, acts
-and payment. Two things truly differ. The public graph is another
+and payment. Its destination side has a label of its own, `published`
+([architecture.md](architecture.md), "The three layers at the bottom"): what
+the gate lets through, its settings and policy, and the record of what was
+sent and what came back are kept there, where anyone may read them and only
+the gate and the outbound work write. A thing is at `published` once it has
+passed the gate, whether or not it has been sent: passing the gate is the
+decision that the world may read it, and sending only carries it there. A
+release to every member is a different destination, the label `members`,
+and a release that names `public` or `published` as its destination is
+refused (`NOT_A_DESTINATION`): nothing here writes at the public graph's
+label, and what is published gets there by going `outside`.
+
+Two things truly differ from a gate between two labels. The public graph is another
 deployment, so arrival there is a signed package or a call to one of its
 ordinary routes under the organization's own account, never a row this
 deployment writes (`src/services/gate-outside.ts`). And owls do not

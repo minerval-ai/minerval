@@ -22,7 +22,6 @@ vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({
     anthropicApiKey: "test-key",
     extractorModel: "claude-opus-5-5",
-    extractorFallbackModel: "claude-sonnet-5-5",
     extractionMaxTokens: 16384,
   }),
 }));

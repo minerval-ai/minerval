@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { isWorkableLabel, layersOf } from "@/lib/label-layers";
 import type { ReactNode } from "react";
 import { can, viewer } from "@/components/admin/access";
 import { WorkForm } from "@/components/work/WorkForm";
@@ -83,11 +84,11 @@ interface GeneralRow {
   shown: boolean;
 }
 
-function generalRows(standing: StandingMandate[], labels: LabelView[]): GeneralRow[] {
+function generalRows(standing: StandingMandate[], labels: LabelView[], base: string): GeneralRow[] {
   const rows: GeneralRow[] = [];
   for (const s of standing) {
     if (!s.by_label) {
-      rows.push({ standing: s, label: "public", namesLabel: false, mandate: s.mandate, shown: true });
+      rows.push({ standing: s, label: base, namesLabel: false, mandate: s.mandate, shown: true });
       continue;
     }
     for (const at of s.by_label) rows.push({ standing: s, label: at.label, namesLabel: true, mandate: at.mandate, shown: true });
@@ -98,7 +99,8 @@ function generalRows(standing: StandingMandate[], labels: LabelView[]): GeneralR
       }
     }
   }
-  const order = (r: GeneralRow) => (r.label === "public" ? "" : r.label);
+  // The label every member reads first, then the rest by name.
+  const order = (r: GeneralRow) => (r.label === base ? "" : r.label);
   return rows.sort((a, b) => order(a).localeCompare(order(b)));
 }
 
@@ -142,7 +144,9 @@ export default async function BudgetPage({
   ]);
   const creates = administers && createdHere;
   const byId = new Map(mandates.map((m) => [m.id, m]));
-  const rows = generalRows(standing, labels);
+  const layers = layersOf(who.mine);
+  // No work is done at the public graph's label once it is a label of its own, so no General mandate is set up there.
+  const rows = generalRows(standing, labels, layers.base).filter((r) => isWorkableLabel(r.label, layers) || r.label !== layers.public_graph);
 
   const tabs: Array<{ key: TabKey; label: string; count?: number }> = [
     { key: "overview", label: "Overview" },
@@ -285,7 +289,7 @@ export default async function BudgetPage({
       )}
 
       {params.drawer === "general" && administers && (
-        <SetUpDrawer row={rows.find((r) => r.label === (params.label ?? "public")) ?? null} createdHere={createdHere} close={here} />
+        <SetUpDrawer row={rows.find((r) => r.label === (params.label ?? layers.base)) ?? null} createdHere={createdHere} close={here} />
       )}
     </WorkPage>
   );

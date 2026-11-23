@@ -38,7 +38,7 @@ const okResponse = {
 
 const messages = [{ role: "user" as const, content: "hi" }];
 
-/** A model on the plain Messages endpoint (no classifier fallback): Sonnet 5, not the Sonnet 5.5 default. */
+/** A model with no thinking-only quirks of the 5.5 tiers: Sonnet 5. */
 const PLAIN = "claude-sonnet-5";
 
 beforeEach(() => {
@@ -47,30 +47,22 @@ beforeEach(() => {
 });
 
 describe("complete() model routing", () => {
-  it("routes Fable through the beta endpoint with the Opus refusal fallback", async () => {
-    const result = await complete({ messages, model: MODELS.strong });
+  // No model is sent a refusal fallback (#1044): a decline is shown as one,
+  // never re-served on another, weaker model.
+  it.each([
+    ["Opus 5.5", MODELS.strong],
+    ["Fable", MODELS.frontier],
+    ["Sonnet 5.5", MODELS.sonnet],
+  ])("sends %s a plain request with no refusal fallback", async (_name, model) => {
+    const result = await complete({ messages, model, temperature: 0 });
 
     expect(result.content).toBe("hello");
-    expect(createMock).not.toHaveBeenCalled();
-    const params = betaCreateMock.mock.calls[0]![0];
-    expect(params.model).toBe(MODELS.strong);
-    expect(params.betas).toEqual(["server-side-fallback-2026-06-01"]);
-    expect(params.fallbacks).toEqual([{ model: MODELS.opus }]);
-    // Fable rejects sampling params and any thinking config with a 400.
-    expect(params).not.toHaveProperty("temperature");
-    expect(params).not.toHaveProperty("thinking");
-  });
-
-  it("routes Sonnet 5.5 through the beta endpoint with the default-form fallback", async () => {
-    await complete({ messages, model: MODELS.sonnet, temperature: 0 });
-
-    expect(createMock).not.toHaveBeenCalled();
-    const params = betaCreateMock.mock.calls[0]![0];
-    expect(params.model).toBe("claude-sonnet-5-5");
-    // The scalar form takes its own header; pairing it with -06-01 is a 400.
-    expect(params.betas).toEqual(["server-side-fallback-2026-07-01"]);
-    expect(params.fallbacks).toBe("default");
-    // Sonnet 5.5 400s on non-default sampling params and on disabled thinking.
+    expect(betaCreateMock).not.toHaveBeenCalled();
+    const params = createMock.mock.calls[0]![0];
+    expect(params.model).toBe(model);
+    expect(params).not.toHaveProperty("fallbacks");
+    expect(params).not.toHaveProperty("betas");
+    // These reject sampling params and any thinking config with a 400.
     expect(params).not.toHaveProperty("temperature");
     expect(params).not.toHaveProperty("thinking");
     expect(params).not.toHaveProperty("tool_choice");
@@ -243,16 +235,18 @@ describe("complete() refusal handling", () => {
     );
   });
 
-  it("throws when the whole Fable fallback chain refused", async () => {
-    betaCreateMock.mockResolvedValue({
+  it("throws on an Opus 5.5 refusal, which nothing retries on another model", async () => {
+    createMock.mockResolvedValue({
       ...okResponse,
       content: [],
       stop_reason: "refusal",
-      stop_details: { type: "refusal", category: null },
+      stop_details: { type: "refusal", category: "bio" },
     });
 
     await expect(complete({ messages, model: MODELS.strong })).rejects.toThrow(
       LlmRefusalError
     );
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(betaCreateMock).not.toHaveBeenCalled();
   });
 });

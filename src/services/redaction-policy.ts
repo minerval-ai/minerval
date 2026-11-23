@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, publishedLabel, isWorkableLabel } from "../labels.js";
 
 export interface PolicyCategory {
   /** The words used in the mark: "[redacted: <name>]". */
@@ -281,8 +281,28 @@ export interface Boundary {
   to: string | null;
 }
 
-/** The label the destination side's rows are kept at: the destination label, or `public` for outside. */
-export const destinationLabel = (boundary: Boundary): string => boundary.to ?? PUBLIC_LABEL;
+/**
+ * Why a label may not be named as where a release goes, or null when it
+ * may. On a deployment split into its bottom layers nothing here writes at
+ * the public graph's label, and what is published gets there by going
+ * outside, through that gate and no other: a release to either by name
+ * would put the organization's own text where anyone reads it without the
+ * gate to outside having let it out. A release to every member names the
+ * base label.
+ */
+export function destinationProblem(to: string | null): string | null {
+  if (to === null || isWorkableLabel(to)) return null;
+  return (
+    `Nothing in this deployment is released to "${to}": ` +
+    (to === PUBLIC_LABEL
+      ? `it holds the public graph's own material, and nothing here writes at it. `
+      : `it holds what has gone through the gate to outside, and nothing reaches it any other way. `) +
+    `To release to every member, name "${baseLabel()}". To release outside the deployment, say \`outside\`.`
+  );
+}
+
+/** The label the destination side's rows are kept at: the destination label, or the published label for outside. */
+export const destinationLabel = (boundary: Boundary): string => boundary.to ?? publishedLabel();
 
 export interface PolicyView {
   id: string;

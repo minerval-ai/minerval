@@ -258,7 +258,7 @@ beforeEach(() => {
 });
 
 describe("runMathSolver: the run shape", () => {
-  it("declares the fixed toolset, the effort, the task budget from the ceiling, and fallbacks off, on the one block", async () => {
+  it("declares the fixed toolset, the effort, the task budget from the ceiling, and no refusal fallback, on the one block", async () => {
     script.turns = [{ tools: [report()] }];
     const { value } = await run();
     expect(value.status).toBe("completed");
@@ -275,7 +275,7 @@ describe("runMathSolver: the run shape", () => {
     ]);
     expect((o.tools as unknown[])[3]).toBe(CODE_EXECUTION_TOOL);
     expect((o.tools as unknown[])[7]).toBe(REPORT_TOOL);
-    expect(o.fallbacks).toBe("none");
+    expect(o).not.toHaveProperty("fallbacks");
     expect(o.effort).toBe("max");
     // The dollar ceiling is the only budget: no provider token countdown (#897).
     expect(o.taskBudgetTokens).toBeUndefined();

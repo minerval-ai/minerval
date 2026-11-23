@@ -154,17 +154,24 @@ and the address is sent a signed `{"type":"terminated","error":{…}}`.
 
 ### What a webhook carries
 
-A delivery is read at the label `public`, whatever the account may read. A
-callback address is outside the deployment, and what leaves a label for
-outside goes through that label's gate ([the-gate.md](the-gate.md)), not
-through a subscription. A judgment at a private label does not wake a
-subscription, is not sent, and nothing is said of it
-(`tests/db/event-webhooks-labels.test.ts`). A subscriber at a private label
-polls, which is a read at its own clearance. This is the rule the router
-already keeps for inboxes and lookouts.
+A delivery carries what anyone may read, whatever the account may read. It
+is read at the published label ([architecture.md](architecture.md), "The
+three layers at the bottom"): the public graph's rows and what the
+deployment released outside. On the public graph, and on a deployment that
+has not been split, that is everything at `public`. On a members-only
+deployment that has been split it is the mirror and the published layer,
+and nothing of the members' own work, not even at the base label every
+member reads.
 
-In a members-only deployment `public` means every member and nobody else,
-so the account's standing is checked at each delivery.
+The reason is that a callback address is outside the deployment, and what
+leaves a label for outside goes through that label's gate
+([the-gate.md](the-gate.md)), not through a subscription. A judgment at a
+label not everyone reads does not wake a subscription, is not sent, and
+nothing is said of it (`tests/db/event-webhooks-labels.test.ts`). A
+subscriber that may read more polls, which is a read at its own clearance.
+
+In a members-only deployment a request reads nothing without membership,
+and neither does a delivery: the account's standing is checked each time.
 
 ### What it costs
 
@@ -239,6 +246,10 @@ administrator's.
 - `tests/db/event-webhooks.test.ts`: subscribing, the challenge, delivery
   through the router, retries, giving up, suspension, rotation, expiry, a
   revoked key, a Correspondent's update.
-- `tests/db/event-webhooks-labels.test.ts`: nothing above `public` is sent.
+- `tests/db/event-webhooks-labels.test.ts`: nothing but what anyone may
+  read is sent.
+- `tests/db/event-webhooks-split.test.ts`: on a split members-only
+  deployment, the members' own work is not sent and a former member is
+  sent the ending.
 - `tests/db/events-over-mcp.test.ts`: the extension's methods and the tools
   against the real app.

@@ -1,4 +1,5 @@
 import "server-only";
+import { isMemberLabel, isOpenLabel, layersOf, type LabelLayers } from "./label-layers";
 import { fetchRelease, fetchReleases, fetchReleasedPage, type ReceivedPage, type ReceivedRelease } from "./inside-api";
 import { membersOnly } from "./members";
 import type { PublishedPageView } from "./published";
@@ -26,7 +27,7 @@ export interface ReleasedTab {
   release_id: string;
   page_id: string;
   outside: boolean;
-  /** The label it was released to, as the API words it: readers at "public". */
+  /** The label it was released to, as the API words it: "readers at <label>". */
   released_to: string;
   version_of: string;
   /** The label the page was written at, where this reader reads it; absent where they do not, and the API then does not name it. */
@@ -52,6 +53,8 @@ export interface InsideNode {
     | { kind: "none" };
   /** Whether the reader may release this node's page (holds the permission to direct). */
   mayAsk: boolean;
+  /** Which labels are the deployment's bottom layers (lib/label-layers.ts), for what each assessment is called. */
+  layers: LabelLayers;
 }
 
 /** A released page in the shape the claim page's second tab takes, built from what the API serves of it. */
@@ -159,7 +162,10 @@ export async function loadInsideNode(
       from_label: listed.asked.find((a) => a.release_id === row.release_id)?.page_label,
     });
   }
-  const multiLabel = standing.mine.clearance.some((l) => l !== "public") || versions.some((v) => v.label !== "public") || versions.length > 1;
+  const layers = layersOf(standing.mine);
+  // One judgment, at the label every member reads, for a reader who reads nothing above it: the ordinary page.
+  const multiLabel =
+    standing.mine.clearance.some((l) => !isMemberLabel(l, layers)) || versions.some((v) => v.label !== layers.base) || versions.length > 1;
   if (versions.length <= 1 && tabs.length === 0 && !multiLabel) return null;
 
   const base = {
@@ -168,7 +174,9 @@ export async function loadInsideNode(
     leftStanding: detail.left_standing ?? [],
     notExaminedAt: detail.not_examined_at ?? [],
     released: tabs,
-    mayAsk: standing.mine.permissions.includes("direct") && versions.some((v) => v.label !== "public"),
+    // A page is released from a label not everyone reads: any but the two anyone may read.
+    mayAsk: standing.mine.permissions.includes("direct") && versions.some((v) => !isOpenLabel(v.label, layers)),
+    layers,
   };
   const wantedReleased = query.released ? tabs.find((t) => t.page_id === query.released) : undefined;
   if (wantedReleased) {
@@ -176,5 +184,5 @@ export async function loadInsideNode(
     const release = releases.get(wantedReleased.release_id);
     if (page && release) return { ...base, open: { kind: "released", tab: wantedReleased, view: viewOfReleasedPage(wantedReleased, release, page) } };
   }
-  return { ...base, open: whichToOpen(versions, query.at) };
+  return { ...base, open: whichToOpen(versions, query.at, layers) };
 }

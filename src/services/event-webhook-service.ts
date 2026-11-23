@@ -21,12 +21,15 @@
  *    each one the address accepts. So the log is only the signal: what is
  *    sent is what a poll from the same position would return.
  *
- * What is read for a delivery is read at the label `public`, whatever the
- * account may read, and the account's standing is checked each time. A
- * callback address is outside the deployment, and what leaves a label for
- * outside goes through its gate (docs/the-gate.md), not through here. A
- * subscriber at a private label polls, which is a read at its own
- * clearance.
+ * What is read for a delivery is what anyone may read, whatever the account
+ * may read: the read is made at the published label (src/labels.ts, "The
+ * layers at the bottom"), which reads the public graph's rows and what the
+ * deployment released outside, and nothing of its members' own. On the
+ * public graph and on a deployment that has not been split that is all
+ * there is. The account's standing is checked each time. A callback address
+ * is outside the deployment, and what leaves a label for outside goes
+ * through its gate (docs/the-gate.md), not through here. A subscriber that
+ * may read more polls, which is a read at its own clearance.
  *
  * A delivery that fails is tried again, five times over about a quarter
  * hour, and then given up: the cursor moves on and the stream continues. An
@@ -38,7 +41,7 @@ import { randomBytes } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { membersOnly } from "../permissions.js";
 import { credentialKeys, openCredential, sealCredential } from "./connection-credential.js";
@@ -152,7 +155,7 @@ const SUBSCRIBE_REASON =
 const UNSUBSCRIBE_REASON = "Ending a webhook subscription removes the account's own record and its row for the router, found by id.";
 const LIST_REASON = "An account's webhook subscriptions are its own records and carry no label.";
 const TICK_REASON =
-  "The delivery tick finds every due webhook subscription, whoever holds it, and checks each account's standing; what it sends is read at public.";
+  "The delivery tick finds every due webhook subscription, whoever holds it, and checks each account's standing; what it sends is read at the published label.";
 
 /** Whether this deployment can keep a caller's signing secret, and so offer webhooks at all. */
 export function webhooksAvailable(): boolean {
@@ -215,7 +218,7 @@ async function removeRow(row: Pick<WebhookRow, "id" | "router_subscription_id">)
   await endRouterSubscription(row.router_subscription_id);
 }
 
-/** Whether the account may still be sent what `public` reads here. */
+/** Whether the account may still be sent what anyone may read here. */
 async function mayStillReceive(row: Pick<WebhookRow, "user_id" | "api_key_id">): Promise<boolean> {
   if (row.api_key_id) {
     const [key] = await rawQuery<{ revoked: boolean }>(`SELECT revoked_at IS NOT NULL AS revoked FROM api_keys WHERE id = $1`, [
@@ -223,7 +226,7 @@ async function mayStillReceive(row: Pick<WebhookRow, "user_id" | "api_key_id">):
     ]);
     if (!key || key.revoked) return false;
   }
-  // Where reads are for members, `public` means every member and nobody else.
+  // Where reads are for members, a request reads nothing without membership, and neither does a delivery.
   if (membersOnly()) return (await resolveStanding(row.user_id)).member;
   return true;
 }
@@ -297,8 +300,8 @@ export async function subscribeWebhook(
       return fail("FORBIDDEN", "This account may not follow events here.");
     }
     if (checked.name === "correspondent.update") {
-      // Deliveries are read at public, so the Correspondent must be one public reads.
-      const visible = await runAtLabel(PUBLIC_LABEL, "a webhook subscription", () =>
+      // Deliveries are read at the published label, so the Correspondent must be one it reads.
+      const visible = await runAtLabel(publishedLabel(), "a webhook subscription", () =>
         rawQuery<{ id: string }>(`SELECT id FROM correspondents WHERE id = $1`, [checked.arguments.correspondent_id])
       );
       if (visible.length === 0) return fail("INVALID_PARAMS", "correspondent_id names no Correspondent that a webhook can follow.");
@@ -433,8 +436,8 @@ export async function subscribeWebhook(
     );
     const filter = checked.name === "graph.change" ? routerFilterFor(checked.arguments) : null;
     if (filter) {
-      // The router's row is at public: it is matched as public reads the graph, and only against public events.
-      const sub = await runAtLabel(PUBLIC_LABEL, "a webhook subscription", () =>
+      // The router's row is at the published label: it is matched as that label reads the graph, and only against events anyone may read.
+      const sub = await runAtLabel(publishedLabel(), "a webhook subscription", () =>
         createSubscription({
           subscriberKind: "webhook",
           subscriberRef: row!.id,
@@ -561,7 +564,7 @@ async function deliverFor(row: WebhookRow, send: WebhookSend): Promise<number> {
     await rawQuery(`UPDATE event_webhooks SET active = false, wake_at = NULL, next_attempt_at = NULL WHERE id = $1`, [row.id]);
     return 0;
   }
-  const read = await runAtLabel(PUBLIC_LABEL, `webhook ${row.subscription_key}`, () =>
+  const read = await runAtLabel(publishedLabel(), `webhook ${row.subscription_key}`, () =>
     pollEvents({ name: row.event_name, arguments: row.arguments, cursor: row.cursor, maxEvents: MAX_EVENTS_PER_TICK })
   );
   if (!read.ok) {

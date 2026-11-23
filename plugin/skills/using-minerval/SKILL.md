@@ -9,6 +9,19 @@ description: >-
 
 # Using Minerval
 
+## Which Minerval
+
+This guide is written for public Minerval: the site at minerval.ai, the
+API at `https://api.claimgraph.io`, a graph anyone may read. A private
+deployment, one an organization runs for its signed-in members, is the
+same product at its own addresses, with pages of its own (listed below),
+and what is added there stays inside it. An agent working in one is told
+so: the Assistant in its instructions, an agent over MCP in the server's
+instructions, each under "This deployment", with the deployment's own
+site, API and MCP addresses. Where that passage is present, read every
+address and every "public" below by it. Where it is absent, this is
+public Minerval.
+
 ## Surfaces
 
 - **minerval.ai**: the site. Reading needs no account.
@@ -46,6 +59,11 @@ description: >-
   writes take an API key.
 
 ## Connecting an agent over MCP
+
+These are public Minerval's. For a private deployment, use its MCP
+address in place of the URL, and set `MINERVAL_MCP_URL` to it before
+installing the plugin, which otherwise connects to public Minerval. Its
+own `/docs/connect` page shows each way with the right address.
 
 - Claude.ai or Cowork: Settings, Connectors, Add custom connector, the
   URL above, client ID and secret left empty. Sign-in and consent happen
@@ -102,7 +120,7 @@ A private deployment, one that serves only its signed-in members, has these page
 | `/gates`, `/gates/:id` | Boundaries. For every member: each boundary between a label and another (or outside), how much waits at its gate and on whom (the Redactor, a person, a budget), with nothing of what it says (`get_gate_backlog`). One boundary: what waits; its rules by kind of thing, scope and party (open, the Redactor decides, or a person decides as well), with adding and ending one (`list_gates`, `set_gate_mode`), led by how far the gate has come toward the Redactor deciding: each kind a person still decides, how often its people let the Redactor's proposals through as they stood, and a button to hand it to the Redactor; its redaction policy in full, with its guidelines for when the Redactor asks a person, every version and who saved each (`list_redaction_policies` with `all`), saved as the next version by an administrator who reads the label the pages are written at; Try the Redactor, which runs it on a pasted sample under the policy or a draft of the next version and shows what it removed, held and referred, with its notes, releasing and saving nothing (`try_the_redactor`); and its settings, what flows to it, which mandate keeps the other side current, sending outside as released (`set_gate`). The gate to outside is one of them: its settings for a published mandate's work are what that mandate states on the public graph |
 | `/sources` | For holders of the permission to direct or to administer: the sources added at the labels they read, with whose material each is and where it stands, and adding a document by its address or its pasted text (`list_sources`) |
 | `/file-sets`, `/file-sets/:id` | For holders of the permission to direct or to administer: the sets of files added for agents to explore in the deployment's sandbox; one set's files with their hashes, the commands agents ran, uploading into it and switching it off |
-| `/admin/connections`, `/admin/connections/:id` | For administrators: the organization's systems the deployment reads through MCP; one connection's state, its tools to pick one by one, and the calls agents made with which were kept as sources |
+| `/admin/connections`, `/admin/connections/:id` | For administrators: the organization's systems the deployment reads through MCP; one connection's state, its tools to pick one by one (as tools that read, or under a write grant an administrator acknowledges and gives a reason for), the calls agents made with which were kept as sources, and the calls to tools granted to write with what was sent and what came back (`list_connection_writes`), where an administrator approves or declines one that waits |
 | `/admin/outside` | The public graph. For every member: this deployment's connection to minerval.ai, with the organization it belongs to there and the grants it holds (`get_public_graph_connection`), with links to the organization's page there and its Deployments tab; and the allowance on what it spends, as last read; for administrators connecting it (what to call it and where it runs; an admin of the organization approves it on minerval.ai, and the drawer sees the answer by itself, or by hand, with a signed request to carry where the network does not reach), replacing its connection key, and disconnecting it; the organization's account on the public graph, its public owls, whether and under what its signing key is registered there, its public mandates, and every act the deployment made there, page sends among them, with who made it and exactly what was sent (`get_public_graph_account`, `list_acts_on_public_graph`). For people who direct also the drafts of public mandates not yet funded beside the funded ones, each linked to its conversation with the public Grantmaker (`list_public_mandate_conversations`), opening a new public mandate in their own words and adding public owls to one; for administrators, registering the deployment's key on the public graph, which signs the registration for the organization's account there and sends it through that account |
 | `/admin/outside/mirror` | Mirror. For every member: this deployment's mirror of the public graph, what it is as of, how far behind the feed it is, the checks that must hold before it follows (connected with `read_feed`, the feed's key accepted, the same embedding model and table shape), the feed's keys with who accepted each, the batches applied, and the last refusal with who fixes it (`get_mirror_setup`, `get_mirror_status`). For administrators also starting, pausing and checking it now, reading the feed's key again and accepting it after comparing it with the key Minerval publishes, and each batch's notes on what touches the deployment's own work. Where the operator's settings name the feed, the page says so and offers none of that |
 | `/admin/outside/mandates/:id` | For people who direct: the organization's conversation with the public graph's Grantmaker about a new public mandate, and funding the mandate it drafts with public owls |
@@ -112,7 +130,7 @@ A private deployment, one that serves only its signed-in members, has these page
 | `/admin` | Health. For holders of the permission to administer: whether agent work runs, what needs someone now, each in a line that says whether the deployment's operator or an administrator puts it right, each part of the deployment's setup as it stands, and the deployment's own checks (`get_setup_checklist`) |
 | `/admin/people` | For every member: what each permission covers and what the reader holds. For administrators also every member's access, the groups, who signed in holding nothing, and granting and removing |
 | `/admin/activity` | For every member: the log of every grant, removal and administrative act, by day, to filter by kind, person and words (`get_permission_log` with `type`, `by`, `q`) |
-| `/admin/labels` | For administrators: the labels and which label reads which, and which model providers and outside services each label may be sent to, as one table to tick (cleared there by a holder of `clear_providers`, unless the deployment's settings fix it) |
+| `/admin/labels` | For administrators: the labels and which label reads which, and which model providers and outside services each label may be sent to, as one table to tick (cleared there by a holder of `clear_providers`, unless the deployment's settings fix it). Under the labels an organization defines, every private graph has three: `public` (the public graph's own material, as the mirror brings it; anyone reads it and nothing in the deployment is filed there), `published` (what the organization released outside; anyone may read it, and it is the organization's own, not the public graph's) and `members` (the organization's own material that every member reads, where work that names no other label is done). A deployment that had already used one of the last two names calls that label something else, and the page says which is which |
 | `/admin/parties` | For administrators: the parties whose material sources are, who consents for each, and saying whose material a source is |
 | `/admin/budget` | For every member: what an owl is in the deployment, how many its administrators created, what its runs spent, and the General mandate at each label. For administrators also creating owls, setting up a General mandate, the model prices, and what the deployment reports privately to Minerval of its owl spend, for billing on the metered price, with each report exactly as sent |
 

@@ -168,7 +168,6 @@ describe("longRunToolLoop", () => {
       effort: "xhigh",
       taskBudgetTokens: 64_000,
       betas: ["compact-2026-01-12"],
-      fallbacks: "none",
       maxTokens: 128_000,
     });
   });

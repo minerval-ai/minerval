@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import { loadConfig } from "../../config.js";
-import { LlmBudgetExceededError } from "../../llm/errors.js";
+import { LlmBudgetExceededError, LlmRefusalError } from "../../llm/errors.js";
 import { refusalForCaller } from "../../db/clearance.js";
 import { PublicGraphNodeError, mirroredRefusalForPerson } from "../../services/mirrored-node-service.js";
 
@@ -33,6 +33,21 @@ export async function registerErrorHandler(
         error: {
           code: "SERVICE_UNAVAILABLE",
           message: "LLM processing temporarily unavailable due to usage limits",
+          request_id: requestId,
+        },
+      });
+    }
+
+    // The model declined the request (#1044). That is an answer, not a fault
+    // of the server, and it is shown as what it is: nothing retried it on
+    // another model, and nothing will.
+    if (error instanceof LlmRefusalError) {
+      app.log.warn({ err: error, requestId }, "The model refused the request");
+      return reply.code(422).send({
+        error: {
+          code: "MODEL_REFUSED",
+          message: error.message,
+          ...(error.category ? { category: error.category } : {}),
           request_id: requestId,
         },
       });

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { PUBLIC_GRAPH_LABEL } from "@/lib/label-layers";
 import { can, viewer } from "@/components/admin/access";
 import { WorkForm } from "@/components/work/WorkForm";
 import { Empty, Tabs, Tip, WorkHead, WorkPage, shortDay } from "@/components/work/ui";
@@ -48,11 +49,11 @@ type Tab = "concerns" | "anyone" | "adopted" | "passed" | "closed";
 const TABS: Tab[] = ["concerns", "anyone", "adopted", "passed", "closed"];
 const hrefOf = (tab: Tab) => (tab === "concerns" ? "/admin/outside/requests" : `/admin/outside/requests?tab=${tab}`);
 
-/** The labels a public request can be adopted at: the person's own, but for `public` (services/outward-acts-service.ts, adoptRequest). */
+/** The labels a public request can be adopted at: the ones the person may file at, never the public graph's own (services/outward-acts-service.ts, adoptRequest). */
 type AdoptAt = { kind: "one_label" } | { kind: "choose"; labels: MyLabel[] } | { kind: "none" };
 function adoptAt(labels: MyLabels | null): AdoptAt {
   if (!labels || !labels.must_choose) return { kind: "one_label" };
-  const own = labels.labels.filter((l) => l.name !== "public");
+  const own = labels.labels.filter((l) => l.name !== PUBLIC_GRAPH_LABEL);
   return own.length > 0 ? { kind: "choose", labels: own } : { kind: "none" };
 }
 

@@ -166,6 +166,22 @@ describe("what each service may reach", () => {
   });
 });
 
+describe("the settings file", () => {
+  // .env holds every secret of the deployment. A plain `cp` gives it the
+  // umask's mode, readable by every account on the machine (#1155).
+  const places = [
+    ["deploy/compose.yml", compose],
+    ["deploy/env.example", example],
+    ["docs/self-hosting.md", readFileSync(join(ROOT, "docs", "self-hosting.md"), "utf8")],
+    ["web/app/docs/self-hosting/page.tsx", readFileSync(join(ROOT, "web", "app", "docs", "self-hosting", "page.tsx"), "utf8")],
+  ] as const;
+
+  it.each(places)("is made readable by its owner alone in %s", (_name, text) => {
+    expect(text).toContain("install -m 600 env.example .env");
+    expect(text).not.toMatch(/\bcp\s+env\.example\s+\.env\b/);
+  });
+});
+
 describe("one kind of deployment", () => {
   it("is members-only, in the API and in the web app as built and as run", () => {
     expect(service("api")).toContain("- READS=members");

@@ -27,7 +27,7 @@
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, isWorkableLabel } from "../labels.js";
 import {
   clearanceFixedBySettings,
   clearedLabels,
@@ -95,6 +95,14 @@ export interface ProviderClearanceView {
   providers: ProviderDescription[];
   /** Each label besides `public`, with the providers cleared for it, as in force now. */
   labels: Array<{ label: string; cleared: string[] }>;
+  /**
+   * What is in force for `public`, the public graph's own text: every
+   * provider under the stored choice, and the setting's own lines where the
+   * settings fix the clearance. `works_here` is whether any run of this
+   * deployment works at it: none does once its bottom layers are labels of
+   * their own, and then nothing is sent from there whatever is cleared.
+   */
+  public_graph: { label: string; cleared: string[]; works_here: boolean };
 }
 
 /** The clearance as it stands, for the labels page and its MCP tool. */
@@ -108,6 +116,11 @@ export async function listProviderClearance(config: ProviderKeysConfig = loadCon
   return {
     fixed_by_settings: fixed,
     providers,
+    public_graph: {
+      label: PUBLIC_LABEL,
+      cleared: providers.map((p) => p.name).filter((p) => clearedLabels(p, config, stored).includes(PUBLIC_LABEL)),
+      works_here: isWorkableLabel(PUBLIC_LABEL),
+    },
     labels: labels.map(({ name }) => ({
       label: name,
       cleared: providers

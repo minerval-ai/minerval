@@ -122,7 +122,8 @@ describe("knowing that enforcement is off", () => {
     // While unsettled every statement asks, and the answer may now be yes.
     const ask = answering(true);
     expect(await enforcementOn(ask)).toBe(true);
-    expect(ask).toHaveBeenCalledTimes(1);
+    // One check: whether the policy exists, and which label is which layer.
+    expect(ask).toHaveBeenCalledTimes(2);
     vi.advanceTimersByTime(60_000);
     expect(enforcementKnownOff()).toBe(false);
   });

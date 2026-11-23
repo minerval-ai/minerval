@@ -103,7 +103,7 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   "src/services/event-webhook-service.ts": [
     [
       "A webhook subscription is the account's own record, kept on the owner's connection as an API key is; making one reads the account's standing and its other subscriptions, none of which carries a label.",
-      "event_webhooks, api_keys and permission_grants for one account: none carries a label. What the subscription will deliver is not read here; the one read of the graph (that the Correspondent exists) and the router's row are made at public, inside runAtLabel.",
+      "event_webhooks, api_keys and permission_grants for one account: none carries a label. What the subscription will deliver is not read here; the one read of the graph (that the Correspondent exists) and the router's row are made at the published label, inside runAtLabel.",
     ],
     [
       "Ending a webhook subscription removes the account's own record and its row for the router, found by id.",
@@ -114,8 +114,8 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Rows of event_webhooks for one account. No secret is returned.",
     ],
     [
-      "The delivery tick finds every due webhook subscription, whoever holds it, and checks each account's standing; what it sends is read at public.",
-      "event_webhooks at large, and standing for each account. Every read of the graph for a delivery is inside runAtLabel at public, which leaves this clearance, so nothing above public can reach a callback address.",
+      "The delivery tick finds every due webhook subscription, whoever holds it, and checks each account's standing; what it sends is read at the published label.",
+      "event_webhooks at large, and standing for each account. Every read of the graph for a delivery is inside runAtLabel at the published label, which leaves this clearance, so nothing but what anyone may read can reach a callback address.",
     ],
   ],
   "src/services/public-graph-client.ts": [
@@ -146,6 +146,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
     [
       "A label and what it reads are the wall itself, so they are written on the owner's connection. The caller has checked that the actor may administer.",
       "A label, a pair in label_reads, and the administrators' log entry for each: what the administrator asked for and nothing read from elsewhere.",
+    ],
+  ],
+  "src/services/label-split.ts": [
+    [
+      "The split restamps every row that was at `public` with the label that says which of three things it is, in every labelled table, and defines the two labels: the owner's to do, once.",
+      "The two labels, the label of each row that was at `public` and is not the mirror's, the pairs, grants and keys that named `public`, the providers cleared for the two labels, and the log entry. It returns names and counts and no row's content.",
     ],
   ],
   "src/services/provider-clearance-service.ts": [
@@ -405,6 +411,11 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing of its own across labels: every lane claims a row and runs it inside runAtLabel at that row's label, and what the run writes is the run's. " +
         "A mandate's events are collected inside runAtLabel at the mandate's label, by statements that read the judgments and flags there. " +
         "Settlement reads and updates money through the whole views (src/db/money.ts), which hold no text.",
+    ],
+    [
+      "The ledger's housekeeping reads and moves work at every label (events to route, holds to release, rows to fund); each delivery runs at its subscriber's label.",
+      "The same housekeeping the engine lane runs under the clearance above, on a timer of its own (#1028): each subscription is delivered inside runAtLabel at its subscriber's label, " +
+        "a mandate's events are collected inside runAtLabel at the mandate's label, and holds, fault markers and funding move status and money through the whole views, which hold no text.",
     ],
   ],
   "src/workers/lookout-triggers.ts": [

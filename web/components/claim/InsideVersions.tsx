@@ -3,6 +3,7 @@ import type { InsideNode, ReleasedTab } from "@/lib/inside-node";
 import { modelDisplayName } from "@/lib/model-names";
 import { isStatus } from "@/lib/ontology";
 import { leftStandingLines, notExaminedLine, versionRef } from "@/lib/inside-versions";
+import { ONE_LAYER, anAssessmentAt, assessmentName, isOpenLabel, layerOf, type LabelLayers } from "@/lib/label-layers";
 import { day, stateWords, type PublishedPageView } from "@/lib/published";
 import type { ClaimDetail, NodeVersion } from "@/lib/types";
 import { Credence, StatusBadge } from "../Assessment";
@@ -30,8 +31,8 @@ const quiet = { color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8r
 export const RELEASED_TAB_INSIDE = "Redacted assessment on evidence you cannot read";
 export const RELEASED_TAB_OUTSIDE = "Redacted assessment, as released outside";
 
-export function versionTabName(label: string): string {
-  return label === "public" ? "Public assessment" : `Assessment at ${label}`;
+export function versionTabName(label: string, layers: LabelLayers = ONE_LAYER): string {
+  return assessmentName(label, layers);
 }
 
 function releasedTabName(tab: ReleasedTab): string {
@@ -63,7 +64,7 @@ export function VersionTabs({ claimId, inside }: { claimId: string; inside: Insi
       )}
       {versions.map((v) => (
         <Link key={v.id} href={`/claims/${claimId}?at=${encodeURIComponent(v.label)}`} {...here(open.kind === "version" && open.version.id === v.id)}>
-          {versionTabName(v.label)}
+          {versionTabName(v.label, inside.layers)}
         </Link>
       ))}
       {released.map((t) => (
@@ -76,20 +77,29 @@ export function VersionTabs({ claimId, inside }: { claimId: string; inside: Insi
 }
 
 /** What an assessment was made on, in a sentence: the label it was made at, said in ordinary words. */
-function madeOn(version: NodeVersion, detail: ClaimDetail): string {
-  if (version.label === "public") {
-    return detail.mirrored
-      ? `This is the public graph's own assessment, read from the copy of the public graph this deployment keeps${detail.mirrored.public_graph_as_of ? `, as it stood on ${day(detail.mirrored.public_graph_as_of)}` : ""}. Nothing held in this deployment went into it.`
-      : "This assessment was made on what every member of this deployment may read, and on nothing filed more narrowly.";
+function madeOn(version: NodeVersion, detail: ClaimDetail, layers: LabelLayers): string {
+  const layer = layerOf(version.label, layers);
+  const publicGraphs = `This is the public graph's own assessment, read from the copy of the public graph this deployment keeps${detail.mirrored?.public_graph_as_of ? `, as it stood on ${day(detail.mirrored.public_graph_as_of)}` : ""}. Nothing held in this deployment went into it.`;
+  // Where the bottom layers are labels of their own, the label says which it is.
+  if (layers.split) {
+    if (layer === "public_graph") return publicGraphs;
+    if (layer === "base") {
+      return detail.mirrored
+        ? "This assessment was made in this deployment, on what every member of it may read and on what the public graph holds. It stands beside the public graph's own assessment and does not replace it."
+        : "This assessment was made on what every member of this deployment may read, and on nothing filed more narrowly.";
+    }
+    if (layer === "published") return "This assessment is among what this organization released outside: anyone may read it.";
+  } else if (version.label === layers.public_graph) {
+    return detail.mirrored ? publicGraphs : "This assessment was made on what every member of this deployment may read, and on nothing filed more narrowly.";
   }
   return `This assessment was made by this node's Steward working at the label ${version.label}: on what is filed at ${version.label} and at the labels ${version.label} reads, and on nothing else.`;
 }
 
 /** What it was made beside, and whether that has since changed. */
-function madeBeside(version: NodeVersion): string[] {
+function madeBeside(version: NodeVersion, layers: LabelLayers): string[] {
   const lines: string[] = [];
   for (const b of version.made_beside) {
-    const other = b.label === "public" ? "the public assessment" : `the assessment at ${b.label}`;
+    const other = anAssessmentAt(b.label, layers);
     lines.push(
       b.replaced
         ? `When it was made, ${other} was in front of it. That one has been replaced since, so this assessment has not taken the newer one into account. The deployment opens a fresh assessment at ${version.label} when that happens, and it runs when someone pays for it.`
@@ -97,7 +107,8 @@ function madeBeside(version: NodeVersion): string[] {
     );
   }
   for (const label of version.versions_since) {
-    lines.push(`${label === "public" ? "A public assessment" : `An assessment at ${label}`} has been made since. This one was made without it.`);
+    const since = anAssessmentAt(label, layers);
+    lines.push(`${since.startsWith("the assessment at ") ? `An${since.slice(3)}` : `${since.charAt(0).toUpperCase()}${since.slice(1)}`} has been made since. This one was made without it.`);
   }
   return lines;
 }
@@ -112,7 +123,7 @@ export function VersionNote({ claimId, detail, inside, version }: { claimId: str
   return (
     <div className="version-note">
       <p style={{ ...quiet, margin: 0 }}>
-        {madeOn(version, detail)}{" "}
+        {madeOn(version, detail, inside.layers)}{" "}
         {others.length > 0 &&
           (version.in_force ? (
             first.length === 1 ? (
@@ -122,18 +133,18 @@ export function VersionNote({ claimId, detail, inside, version }: { claimId: str
               </>
             ) : (
               <>
-                You also read <Link href={`/claims/${claimId}`}>{listOf(first.filter((v) => v.id !== version.id).map((v) => versionRef(v.label)))}</Link>, made on
+                You also read <Link href={`/claims/${claimId}`}>{listOf(first.filter((v) => v.id !== version.id).map((v) => versionRef(v.label, inside.layers)))}</Link>, made on
                 evidence this one did not see. Neither replaces the other.
               </>
             )
           ) : (
             <>
               It is not the one shown first:{" "}
-              {listOf(first.map((v) => versionRef(v.label)))} {first.length === 1 ? "was" : "were"} made on more that you may read.
+              {listOf(first.map((v) => versionRef(v.label, inside.layers)))} {first.length === 1 ? "was" : "were"} made on more that you may read.
             </>
           ))}
       </p>
-      {madeBeside(version).map((line, i) => (
+      {madeBeside(version, inside.layers).map((line, i) => (
         <p key={i} style={quiet}>
           {line}
         </p>
@@ -156,7 +167,7 @@ export function ExaminedNote({ inside }: { inside: InsideNode }) {
   return (
     <>
       {leftStanding.map((e) => {
-        const lines = leftStandingLines(e, day(e.examined_at));
+        const lines = leftStandingLines(e, day(e.examined_at), inside.layers);
         return (
           <div key={e.label} className="left-standing">
             <p style={quiet}>
@@ -212,8 +223,10 @@ function VersionBand({ version }: { version: NodeVersion }) {
 
 /** Each of the given assessments in full: the verdict, what it was made on and beside, the summary and the reasoning. */
 export function VersionsInFull({
-  claimId, detail, versions, texts, withMadeOn = true,
+  claimId, detail, versions, texts, withMadeOn = true, layers = ONE_LAYER,
 }: {
+  /** Which labels are the deployment's bottom layers (inside.layers). */
+  layers?: LabelLayers;
   claimId: string;
   detail: ClaimDetail;
   versions: NodeVersion[];
@@ -229,11 +242,11 @@ export function VersionsInFull({
           return (
             <article key={v.id} className="version-column">
               <h2 className="version-head">
-                <Link href={`/claims/${claimId}?at=${encodeURIComponent(v.label)}`}>{versionTabName(v.label)}</Link>
+                <Link href={`/claims/${claimId}?at=${encodeURIComponent(v.label)}`}>{versionTabName(v.label, layers)}</Link>
               </h2>
               <VersionBand version={v} />
-              {withMadeOn && <p style={quiet}>{madeOn(v, detail)}</p>}
-              {madeBeside(v).map((line, i) => (
+              {withMadeOn && <p style={quiet}>{madeOn(v, detail, layers)}</p>}
+              {madeBeside(v, layers).map((line, i) => (
                 <p key={i} style={quiet}>
                   {line}
                 </p>
@@ -262,7 +275,7 @@ export function VersionsInFull({
  * column has room and one after the other where it has not, in the order of
  * the labels' names.
  */
-export function SeveralInForce({ claimId, detail, versions, texts }: { claimId: string; detail: ClaimDetail; versions: NodeVersion[]; texts?: Map<string, string> }) {
+export function SeveralInForce({ claimId, detail, versions, texts, layers = ONE_LAYER }: { claimId: string; detail: ClaimDetail; versions: NodeVersion[]; texts?: Map<string, string>; layers?: LabelLayers }) {
   const labels = versions.map((v) => v.label);
   return (
     <section className="versions-several" aria-label="The assessments that stand for you">
@@ -272,7 +285,7 @@ export function SeveralInForce({ claimId, detail, versions, texts }: { claimId: 
         the {labels.length === 2 ? "other" : "others"}. Neither replaces the other, and nothing here combines them or puts one first for being
         newer: they are in the order of the labels&rsquo; names.
       </p>
-      <VersionsInFull claimId={claimId} detail={detail} versions={versions} texts={texts} withMadeOn={false} />
+      <VersionsInFull claimId={claimId} detail={detail} versions={versions} texts={texts} withMadeOn={false} layers={layers} />
       <p style={{ ...quiet, margin: "1rem 0 0" }}>
         What follows is everything else on this node that you may read, at every label you read. Each argument is shown there with one
         evaluation; where an argument has been evaluated at more than one of your labels, its own page has each.
@@ -282,8 +295,19 @@ export function SeveralInForce({ claimId, detail, versions, texts }: { claimId: 
 }
 
 /** A line for whoever may release the page, on the tab of an assessment that some members cannot read. */
-export function AskToShow({ claimId, version }: { claimId: string; version: NodeVersion }) {
-  if (version.label === "public") return null;
+export function AskToShow({ claimId, version, layers = ONE_LAYER }: { claimId: string; version: NodeVersion; layers?: LabelLayers }) {
+  // What anyone may read is in front of everyone already.
+  if (isOpenLabel(version.label, layers)) return null;
+  // Every member reads the members' own label: who cannot is everyone outside.
+  if (layers.split && version.label === layers.base) {
+    return (
+      <p style={quiet}>
+        Nobody outside this deployment can read this assessment.{" "}
+        <Link href={`/releases/new?node=${claimId}&at=${encodeURIComponent(version.label)}`}>Release this page outside</Link>, with what a
+        redaction policy covers removed and marked.
+      </p>
+    );
+  }
   return (
     <p style={quiet}>
       People who do not read at {version.label} cannot read this assessment.{" "}

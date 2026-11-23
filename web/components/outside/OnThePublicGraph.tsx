@@ -1,3 +1,4 @@
+import { PUBLIC_GRAPH_LABEL } from "@/lib/label-layers";
 import Link from "next/link";
 import { ActionForm } from "@/components/admin/ActionForm";
 import { askPublicMandateAction, assessHereAction, fundPublicNodeAction } from "@/app/admin/outside/actions";
@@ -23,9 +24,10 @@ export async function OnThePublicGraph({ nodeId }: { nodeId: string }) {
   if (!requests?.node_is_on_the_public_graph) return null;
   const mayAct = holds(standing, "direct");
   // The deployment's own labels the person may file at. The node's public
-  // version is the mirror's, and nothing here works at public on it.
+  // version is the mirror's, and nothing here works at the public graph's
+  // label on it.
   const mine = holds(standing, "fund") ? await fetchMyLabels(standing.externalId).catch(() => null) : null;
-  const own = mine ? { ...mine, labels: mine.labels.filter((l) => l.name !== "public") } : null;
+  const own = mine ? { ...mine, labels: mine.labels.filter((l) => l.name !== PUBLIC_GRAPH_LABEL) } : null;
   const account = mayAct ? await fetchPublicAccount(standing.externalId).catch(() => null) : null;
   const open = requests.requests.filter((r) => ["open", "addressed", "in_progress"].includes(r.state_on_the_public_graph));
   return (

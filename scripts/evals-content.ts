@@ -180,7 +180,7 @@ export function modelLabel(model: string): string {
   return best ? best[1] : model;
 }
 
-/** STEWARD_MODEL → steward, EXTRACTOR_FALLBACK_MODEL → extractor fallback. */
+/** STEWARD_MODEL → steward, STEWARD_STRONG_MODEL → steward strong. */
 export function agentOfEnvVar(envVar: string): string {
   return envVar
     .replace(/_MODEL$/, "")

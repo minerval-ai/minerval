@@ -83,3 +83,22 @@ export function mirrorDatabaseUrl(side: (typeof MIRROR_DATABASE_SIDES)[number], 
   url.pathname = `${url.pathname}_mirror_${side}`;
   return url.toString();
 }
+
+/**
+ * Databases a single file has to itself in place of its worker's copy,
+ * because what the file does cannot be undone for the files that follow
+ * it on that copy. The split of `public` into its three bottom layers
+ * (src/services/label-split.ts) is such a thing: it happens once to a
+ * deployment and is never reversed. `split` is a deployment that had
+ * labels of its own and a mirror before it was split, and `split_bare`
+ * one that had `public` alone (tests/db/label-split.test.ts). The file
+ * points the app at one before anything loads the config (vi.hoisted).
+ * Named after the worker's database (`<name>_own_<which>`), made by the
+ * global setup as copies of it, and owned as it is.
+ */
+export const OWN_DATABASES = ["split", "split_bare", "split_hooks"] as const;
+export function ownDatabaseUrl(which: (typeof OWN_DATABASES)[number], base: string = TEST_DATABASE_URL): string {
+  const url = new URL(base);
+  url.pathname = `${url.pathname}_own_${which}`;
+  return url.toString();
+}

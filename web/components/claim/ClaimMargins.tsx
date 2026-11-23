@@ -72,7 +72,7 @@ export function ClaimMargins({
     <>
       <VersionTabs claimId={detail.claim.id} inside={inside} />
       {open?.kind === "version" && <VersionNote claimId={detail.claim.id} detail={detail} inside={inside} version={open.version} />}
-      {open?.kind === "version" && inside.mayAsk && <AskToShow claimId={detail.claim.id} version={open.version} />}
+      {open?.kind === "version" && inside.mayAsk && <AskToShow claimId={detail.claim.id} version={open.version} layers={inside.layers} />}
       {open && open.kind !== "version" && <ExaminedNote inside={inside} />}
     </>
   );
@@ -147,6 +147,7 @@ export function ClaimMargins({
                   claimId={detail.claim.id}
                   detail={detail}
                   versions={open.kind === "version" ? [open.version] : open.kind === "several" ? open.versions : []}
+                  layers={inside.layers}
                 />
               )}
               <QuestionView detail={detail} fixture={source === "fixture"} />
@@ -159,7 +160,7 @@ export function ClaimMargins({
               publishedPages={publishedPages}
               judgedAbove={open?.kind === "several"}
               versionsAbove={
-                open?.kind === "several" ? <SeveralInForce claimId={detail.claim.id} detail={detail} versions={open.versions} /> : undefined
+                open?.kind === "several" ? <SeveralInForce claimId={detail.claim.id} detail={detail} versions={open.versions} layers={inside?.layers} /> : undefined
               }
             />
           )}
