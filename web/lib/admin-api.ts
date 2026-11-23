@@ -726,3 +726,84 @@ export function submitSource(
 ): Promise<SubmittedSource> {
   return accountFetch("/sources", { method: "POST", actingUser: externalId, body });
 }
+
+// --- the deployment's settings (docs/settings.md) -------------------------------
+
+/** A setting's value as the config file would write it. */
+export type SettingValue =
+  | string
+  | number
+  | boolean
+  | string[]
+  | Array<Record<string, string | number | boolean>>
+  | Record<string, string[]>;
+
+/** One setting, as GET /settings gives it. */
+export interface SettingView {
+  key: string;
+  env: string;
+  group: string;
+  kind: "text" | "number" | "boolean" | "list" | "groups" | "lists";
+  about: string;
+  /** "machine": whoever runs the machine alone changes it. "app" and "app_secret": the administrators do, here. */
+  where: "machine" | "app" | "app_secret";
+  applies: "live" | "restart";
+  tuning: boolean;
+  secret: boolean;
+  source: "environment" | "file" | "app" | "default";
+  changeable: boolean;
+  fixed_by: string | null;
+  value: SettingValue | null;
+  default: SettingValue | null;
+  is_set: boolean | null;
+  last_four: string | null;
+  set_by: { id: string; name: string } | null;
+  set_at: string | null;
+  waiting: { value: SettingValue | null } | null;
+  unopened: boolean;
+}
+
+export interface SettingsListing {
+  problem: string | null;
+  waiting_for_restart: number;
+  settings: SettingView[];
+}
+
+export interface SettingChanged {
+  setting: SettingView;
+  in_force: "now" | "at_restart";
+  warnings: Array<{ check: string; message: string }>;
+}
+
+export function fetchSettings(externalId: string): Promise<SettingsListing> {
+  return accountFetch("/settings", { actingUser: externalId });
+}
+
+export function setSetting(
+  externalId: string,
+  key: string,
+  body: { value: SettingValue; reason?: string }
+): Promise<SettingChanged> {
+  return accountFetch(`/settings/${encodeURIComponent(key)}`, { method: "PUT", actingUser: externalId, body });
+}
+
+export function resetSetting(externalId: string, key: string, body: { reason?: string } = {}): Promise<SettingChanged> {
+  return accountFetch(`/settings/${encodeURIComponent(key)}`, { method: "DELETE", actingUser: externalId, body });
+}
+
+export async function fetchSettingsFile(externalId: string): Promise<string> {
+  return (await accountFetch<{ toml: string }>("/settings/file", { actingUser: externalId })).toml;
+}
+
+export function restartApi(externalId: string, body: { reason?: string } = {}): Promise<{ restarting: true; waiting: string[] }> {
+  return accountFetch("/setup/restart", { method: "POST", actingUser: externalId, body });
+}
+
+export function renameParty(externalId: string, partyId: string, name: string): Promise<{ party: PartyView }> {
+  return accountFetch(`/parties/${encodeURIComponent(partyId)}`, { method: "PATCH", actingUser: externalId, body: { name } });
+}
+
+/** Become the first administrator of a deployment that has none, with the code its API printed. */
+export function becomeFirstAdministrator(externalId: string, code: string): Promise<{ administrator: true }> {
+  return accountFetch("/setup/first-administrator", { method: "POST", actingUser: externalId, body: { code } });
+}

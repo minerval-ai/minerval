@@ -337,6 +337,11 @@ export interface MyPermissions {
   clearance: string[];
   raw_source_labels: string[];
   groups: string[];
+  /**
+   * Whether a person who holds nothing can become the first administrator by
+   * giving the code the API printed (docs/accounts.md, "The first administrator").
+   */
+  awaiting_first_administrator?: boolean;
 }
 
 export async function fetchMyPermissions(externalId: string): Promise<MyPermissions> {

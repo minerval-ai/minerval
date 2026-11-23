@@ -20,7 +20,18 @@ import {
   type Tone,
 } from "@/components/work/ui";
 import { AccountApiError } from "@/lib/account-api";
-import { fetchSetupChecklist, type PreflightCheck, type SetupChecklist } from "@/lib/admin-api";
+import {
+  fetchParties,
+  fetchSettings,
+  fetchSetupChecklist,
+  type PartyView,
+  type PreflightCheck,
+  type SettingsListing,
+  type SetupChecklist,
+} from "@/lib/admin-api";
+import { WorkForm } from "@/components/work/WorkForm";
+import { firstDaySteps, valueWords, type FirstDayStep } from "@/lib/settings";
+import { renamePartyAction } from "./settings/actions";
 import { fetchGates } from "@/lib/inside-api";
 import { ITEM_STATE_WORDS, preflightTitle, preflightTodo } from "@/lib/admin-words";
 import {
@@ -68,6 +79,21 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   }
 
   const gates = await fetchGates(who.externalId).then((g) => g.gates).catch(() => []);
+  // The first day's steps are the settings themselves and the organisation's
+  // own party; the page reads without them.
+  const [settings, parties] = await Promise.all([
+    fetchSettings(who.externalId).catch(() => null as SettingsListing | null),
+    fetchParties(who.externalId).catch(() => null as PartyView[] | null),
+  ]);
+  const ownParty = parties?.find((p) => p.is_own_organization) ?? null;
+  const firstDay =
+    settings && parties
+      ? firstDaySteps({
+          settings: settings.settings,
+          ownParty,
+          mathematicsOn: !((settings.settings.find((s) => s.key === "features.off")?.value ?? []) as string[]).includes("mathematics"),
+        })
+      : null;
   const attention = attentionItems(checklist, gates);
   const areas = areaTiles(checklist);
   const preflight = checklist.preflight;
@@ -92,6 +118,27 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
 
       {preflight ? <Status checklist={checklist} counts={n} /> : (
         <Banner>This build does not check its own configuration, so no check is reported here.</Banner>
+      )}
+
+      {firstDay && settings && (
+        <Section
+          title="First day"
+          id="first-day"
+          aside={
+            <span className="w-row" style={{ gap: 6 }}>
+              {firstDay.filter((step) => !step.done).length} still to decide
+              <Tip>
+                What a new deployment decides first, in order. Each is the same setting the Settings page shows, changed the same way and logged the same way. This section goes once the organisation is named and every load-bearing role has a model somebody chose.
+              </Tip>
+            </span>
+          }
+        >
+          <div className="w-feed">
+            {firstDay.map((step, i) => (
+              <FirstDayRow key={step.key} step={step} n={i + 1} settings={settings} ownParty={ownParty} />
+            ))}
+          </div>
+        </Section>
       )}
 
       <Section
@@ -214,6 +261,68 @@ function Status({ checklist, counts }: { checklist: SetupChecklist; counts: Retu
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function FirstDayRow({
+  step,
+  n,
+  settings,
+  ownParty,
+}: {
+  step: FirstDayStep;
+  n: number;
+  settings: SettingsListing;
+  ownParty: PartyView | null;
+}) {
+  const rows = step.settings
+    .map((key) => settings.settings.find((s) => s.key === key))
+    .filter((s): s is NonNullable<typeof s> => s !== undefined);
+  return (
+    <div className="w-item" style={{ alignItems: "flex-start" }}>
+      <span className={`w-ic w-${step.done ? "ok" : "warn"}`}>
+        <Icon name={step.done ? "check" : "warn"} size={15} />
+      </span>
+      <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+        <div className="w-item-t">
+          {n}. {step.title}
+        </div>
+        <div className="w-item-m">
+          <span>{step.fact}</span>
+        </div>
+        {step.key === "organisation" && !step.done && ownParty && (
+          <div style={{ marginTop: 8 }}>
+            <WorkForm action={renamePartyAction} submit="Name it" inline>
+              <input type="hidden" name="party_id" value={ownParty.id} />
+              <input className="w-input" name="name" required maxLength={200} autoComplete="organization" placeholder="The organisation's name" aria-label="The organisation's name" style={{ width: 280, height: 26 }} />
+            </WorkForm>
+          </div>
+        )}
+        {step.key === "organisation" && !ownParty && (
+          <div className="w-muted w-small" style={{ marginTop: 6 }}>
+            Add it on <Link href="/admin/parties?drawer=add">Parties</Link>, ticked as the organisation that runs this deployment.
+          </div>
+        )}
+        {rows.length > 0 && (
+          <div className="w-row" style={{ marginTop: 8, gap: 6, flexWrap: "wrap" }}>
+            {rows.map((s) => (
+              <Link
+                key={s.key}
+                className="w-btn w-sm"
+                href={`/admin/settings?edit=${encodeURIComponent(s.key)}&back=health`}
+                title={s.about}
+              >
+                {s.key.replace(/^models\./, "")}: {valueWords(s, s.waiting ? s.waiting.value : s.value)}
+                {s.source === "default" && !s.waiting ? " · default" : ""}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="w-item-r">
+        <Pill tone={step.done ? "ok" : "warn"}>{step.done ? "Decided" : "To decide"}</Pill>
       </div>
     </div>
   );
