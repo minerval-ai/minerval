@@ -75,7 +75,44 @@ export interface StandingMandate {
   by_label?: Array<{ label: string; mandate: StandingMandateState | null }>;
 }
 
+/** What one release asks of this deployment (docs/releases.md, "What a deployment shows"). */
+export interface ReleaseAsks {
+  version: string;
+  date: string;
+  security: boolean;
+  operator_steps: Array<{ step: string; done: boolean; done_at: string | null; done_by: string | null }>;
+  retired_still_set: Array<{ key: string; env: string; where: "environment" | "file"; replaced_by: string; note: string }>;
+  defaults_pinned: Array<{ key: string; env: string; from: string; to: string; why: string; where: "environment" | "file" | "app" }>;
+  added: Array<{ key: string; note: string; set: boolean }>;
+}
+
+/** What the deployment runs, what changed since the version before, and what is newer. */
+export interface VersionPart {
+  running: { version: string; commit: string | null; since: string | null };
+  parts: { api: string; web: string | null; sandbox: string | null };
+  dev: boolean;
+  before: { version: string; until: string } | null;
+  changes: ReleaseAsks[];
+  notes_problems: string[];
+  list: {
+    check: "daily" | "never";
+    reads: boolean;
+    url: string;
+    checked_at: string | null;
+    error: string | null;
+    known: number;
+    keys: number;
+  };
+  withdrawn: { date: string; reason: string; move_to: string } | null;
+  newer: Array<ReleaseAsks & { withdrawn: boolean; upgrades_from: string | null }>;
+  latest: string | null;
+  through: string | null;
+  upgrade_commands: string[] | null;
+}
+
 export interface SetupChecklist {
+  /** What the deployment runs and what it knows of releases; absent from an API built before versions. */
+  version?: VersionPart;
   /** The deployment's own checks of its configuration; null in a build that has no preflight. */
   preflight: PreflightReport | null;
   permissions: PermissionHolders[];
@@ -806,4 +843,19 @@ export function renameParty(externalId: string, partyId: string, name: string): 
 /** Become the first administrator of a deployment that has none, with the code its API printed. */
 export function becomeFirstAdministrator(externalId: string, code: string): Promise<{ administrator: true }> {
   return accountFetch("/setup/first-administrator", { method: "POST", actingUser: externalId, body: { code } });
+}
+
+// --- Minerval's releases (docs/releases.md) -------------------------------------
+
+/** Keep a file of the list of releases, for a deployment that reaches nothing outside. */
+export function uploadReleaseList(
+  externalId: string,
+  entries: unknown[]
+): Promise<{ accepted: number; already: number; refused: Array<{ version: string | null; code: string; message: string }> }> {
+  return accountFetch("/setup/releases/upload", { method: "POST", actingUser: externalId, body: { entries } });
+}
+
+/** Say that an operator step of a release was done. */
+export function markReleaseStepDone(externalId: string, version: string, step: string): Promise<{ done: true }> {
+  return accountFetch("/setup/releases/steps", { method: "POST", actingUser: externalId, body: { version, step } });
 }

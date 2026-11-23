@@ -157,6 +157,17 @@ const PREFLIGHT_WORDS: Record<string, { title: string; todo?: string }> = {
   database_owner: { title: "The role that owns the tables" },
   owls: { title: "Owls" },
   model_prices: { title: "A price for each model" },
+  version: {
+    title: "One version for every part",
+    todo: "Put right where the deployment runs: build every image from the same checkout (docker compose build) and start them again.",
+  },
+  releases: { title: "Releases", todo: "Upgrading is done where the deployment runs: the commands are under Version, above." },
+  unknown_settings: {
+    title: "Variables that look like settings",
+    todo: "Put right where the deployment runs: correct the name in its environment, or take the variable out.",
+  },
+  settings: { title: "Settings saved in the app", todo: "Put right on Settings (/admin/settings)." },
+  models_chosen: { title: "A chosen model for every load-bearing role", todo: "Choose them on Settings (/admin/settings), under Models." },
   usage_report: { title: "The usage report" },
   standing_mandates: { title: "A General mandate at each label" },
   own_organization: { title: "The organisation as a party" },

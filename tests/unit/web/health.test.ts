@@ -66,6 +66,72 @@ describe("what needs attention", () => {
     expect(attentionItems(healthy())).toEqual([]);
   });
 
+  it("raises a withdrawn release, a security release and an upgrade's steps not yet done, and not being a release behind", () => {
+    const asks = (version: string, over: Record<string, unknown> = {}) => ({
+      version,
+      date: "2026-12-10",
+      security: false,
+      operator_steps: [],
+      retired_still_set: [],
+      defaults_pinned: [],
+      added: [],
+      withdrawn: false,
+      upgrades_from: null,
+      ...over,
+    });
+    const version = (over: Record<string, unknown>) => ({
+      running: { version: "0.5.0", commit: null, since: "2026-12-02T00:00:00.000Z" },
+      parts: { api: "0.5.0", web: "0.5.0", sandbox: null },
+      dev: false,
+      before: { version: "0.4.1", until: "2026-12-02T00:00:00.000Z" },
+      changes: [],
+      notes_problems: [],
+      list: { check: "daily" as const, reads: true, url: "https://api.minerval.ai", checked_at: "2026-12-11T00:00:00.000Z", error: null, known: 3, keys: 1 },
+      withdrawn: null,
+      newer: [],
+      latest: null,
+      through: null,
+      upgrade_commands: null,
+      ...over,
+    });
+
+    // One release behind is a fact, not a fault.
+    const behind = healthy();
+    behind.version = version({ newer: [asks("0.6.0")], latest: "0.6.0" });
+    expect(attentionItems(behind)).toEqual([]);
+
+    const security = healthy();
+    security.version = version({ newer: [asks("0.5.1", { security: true })], latest: "0.5.1" });
+    security.preflight!.checks.push(check("releases", "fail", false, "A security release is out that this deployment does not run: 0.5.1."));
+    expect(attentionItems(security).map((i) => [i.title, i.owner, i.tone, i.href])).toEqual([
+      ["Security release 0.5.1 is out", "operator", "bad", "/admin#version"],
+    ]);
+
+    const withdrawn = healthy();
+    withdrawn.version = version({
+      withdrawn: { date: "2026-12-23", reason: "It exposes a label's titles.", move_to: "0.5.1" },
+      newer: [asks("0.5.1", { security: true })],
+    });
+    withdrawn.preflight!.checks.push(check("releases", "fail", false, "Release 0.5.0, which this deployment runs, was withdrawn."));
+    // Said once, and first: the security release it names is where to move to.
+    expect(attentionItems(withdrawn).map((i) => [i.title, i.consequence])).toEqual([["Release 0.5.0 was withdrawn", "Move to 0.5.1"]]);
+
+    const steps = healthy();
+    steps.version = version({
+      changes: [
+        asks("0.5.0", {
+          operator_steps: [
+            { step: "Rebuild all three images; the sandbox's changed.", done: false, done_at: null, done_by: null },
+            { step: "Rotate the sandbox token.", done: true, done_at: "2026-12-03T00:00:00.000Z", done_by: "Ada" },
+          ],
+        }),
+      ],
+    });
+    expect(attentionItems(steps).map((i) => [i.title, i.consequence, i.owner, i.tone])).toEqual([
+      ["A step of the upgrade to 0.5.0 is not marked done", "Rebuild all three images.", "operator", "warn"],
+    ]);
+  });
+
   it("gives each thing a short title, who fixes it, and where, the ones stopping work first", () => {
     const c = healthy();
     c.preflight!.agent_work = "refused";

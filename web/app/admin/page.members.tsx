@@ -30,6 +30,7 @@ import {
   type SetupChecklist,
 } from "@/lib/admin-api";
 import { WorkForm } from "@/components/work/WorkForm";
+import { VersionSection } from "@/components/admin/VersionSection";
 import { firstDaySteps, valueWords, type FirstDayStep } from "@/lib/settings";
 import { renamePartyAction } from "./settings/actions";
 import { fetchGates } from "@/lib/inside-api";
@@ -119,6 +120,8 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
       {preflight ? <Status checklist={checklist} counts={n} /> : (
         <Banner>This build does not check its own configuration, so no check is reported here.</Banner>
       )}
+
+      {checklist.version && <VersionSection version={checklist.version} />}
 
       {firstDay && settings && (
         <Section
