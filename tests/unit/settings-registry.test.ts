@@ -23,12 +23,12 @@ const source = readFileSync(join(ROOT, "src", "config.ts"), "utf8");
 /** Variables config.ts reads that are not settings: the test runner's own. */
 const NOT_SETTINGS = new Set(["VITEST"]);
 
-/** Each `field: ... process.env.NAME` of loadConfig's reading of the environment. */
+/** Each `field: ... env.NAME` of the config schema's reading of the layered environment (buildConfig). */
 function fieldsRead(): Array<{ field: string; env: string }> {
-  const start = source.indexOf("_config = configSchema.parse({");
+  const start = source.indexOf("configSchema.parse({");
   const end = source.indexOf("\n  });", start);
   const literal = source.slice(start, end).replace(/\n\s+/g, " ");
-  return [...literal.matchAll(/([A-Za-z0-9]+): (?:[^,]*?)process\.env\.([A-Z0-9_]+)/g)].map((m) => ({
+  return [...literal.matchAll(/([A-Za-z0-9]+): (?:[^,]*?)\benv\.([A-Z0-9_]+)/g)].map((m) => ({
     field: m[1]!,
     env: m[2]!,
   }));
@@ -36,7 +36,7 @@ function fieldsRead(): Array<{ field: string; env: string }> {
 
 describe("the registry of settings", () => {
   it("has a row for every environment variable src/config.ts reads", () => {
-    const read = new Set([...source.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]!));
+    const read = new Set([...source.matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]!));
     const missing = [...read].filter((env) => !NOT_SETTINGS.has(env) && !settingByEnv(env) && !(env in OTHER_VARIABLES));
     expect(
       missing,

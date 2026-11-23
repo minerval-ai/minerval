@@ -139,6 +139,8 @@ const OPERATOR =
   "Guarded by the operator key, which names no person and carries no clearance: the request reads and writes `public` alone.";
 const ADMINISTRATION =
   "Changes who may read or do what. The route checks the administrator and the change is written on the database owner's connection, to tables that carry no label.";
+const SETTINGS =
+  "A setting is the deployment's, not any row's. The route checks the administrator, and the setting and its entry in the administrators' log are written on the database owner's connection, to tables that carry no label (services/settings-service.ts).";
 const ACCOUNT = "Writes only to the account's own tables, which carry no label.";
 const OAUTH = "The OAuth server's own tables, which carry no label.";
 const ORGANIZATION =
@@ -372,6 +374,14 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
       "Says which model providers and outside services a label's work may be sent to. The route checks the person " +
       "holds the permission to clear providers, and the rows are written on the database owner's connection to a " +
       "table that carries no label (services/provider-clearance-service.ts).",
+  },
+
+  // ---- the deployment's settings (routes/settings.ts) ----
+  "PUT /settings/:key": { rule: "none", why: SETTINGS },
+  "DELETE /settings/:key": { rule: "none", why: SETTINGS },
+  "POST /setup/restart": {
+    rule: "none",
+    why: "Ends the API's process to start it again. It writes one entry in the administrators' log, which carries no label.",
   },
 
   // ---- the gate: members-only deployments only ----

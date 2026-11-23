@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import { loadConfig } from "../../config.js";
+import { onConfigChange } from "../../config-changes.js";
 import { LlmRefusalError } from "../errors.js";
 import {
   MODELS,
@@ -590,3 +591,6 @@ export const anthropicAdapter: ProviderAdapter = {
     return toolCompletionResult(response, req.model, usage);
   },
 };
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(resetAnthropicClient);

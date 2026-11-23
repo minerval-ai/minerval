@@ -65,6 +65,13 @@ const GATE_ACT =
   "An act at a gate: it decides what goes to readers who do not read a label, and what has gone is not taken back. " +
   "It takes the account's own permission and is recorded under the account. The Assistant shows its user a card.";
 
+/** What a change to the deployment's settings says of itself. */
+const SETTING_ACT =
+  "Changes how the whole deployment works: which model reads its material, what a run may spend, what is switched on. " +
+  "Read the setting with list_settings first, give the reason, and report `in_force` and any `warnings` as returned. " +
+  "A key someone outside issued cannot be given through this tool: the route refuses it and says to give it on the " +
+  "settings page (/admin/settings), so that no key passes through a model's context. The Assistant shows its user a card.";
+
 export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- claims ----
   "GET /claims": { name: "list_claims" },
@@ -442,6 +449,24 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     note: "Free. Each call runs the preflight's checks afresh, which takes a few seconds.",
   },
 
+  // The deployment's settings (routes/settings.ts; docs/settings.md), for its
+  // administrators. The restart is excluded below: it is a person's act.
+  "GET /settings": {
+    name: "list_settings",
+    note:
+      "Free. A setting whose `changeable` is false is fixed by whoever runs the machine: say so, with its `fixed_by`, " +
+      "and do not try to change it. A key (`secret`) is never returned.",
+  },
+  "GET /settings/file": { name: "export_settings_file" },
+  "PUT /settings/:key": {
+    name: "set_setting",
+    note: SETTING_ACT,
+  },
+  "DELETE /settings/:key": {
+    name: "reset_setting",
+    note: SETTING_ACT,
+  },
+
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
   "GET /findings": { name: "list_findings" },
@@ -697,6 +722,10 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /labels/:label/face/:at": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
   "PUT /labels/:label/providers": PROVIDER_CLEARANCE_SESSION,
+  "POST /setup/restart":
+    "Ends the API's process, and with it every run in flight, to start it again with the settings as they now are. " +
+    "It is a person's act in their signed-in session: an agent that could restart the deployment could end other " +
+    "people's work whenever text it read told it to. The settings themselves are tools (list_settings, set_setting).",
   "POST /operator/administrators":
     "The way back in for a deployment whose administrators cannot sign in: requires the " +
     "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",

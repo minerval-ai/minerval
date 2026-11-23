@@ -231,6 +231,21 @@ export interface LogEntry {
   changed?: string[];
   offered?: string[];
   no_longer_offered?: string[];
+  /**
+   * For setting_changed and setting_reset: the setting, its value before and
+   * after as the environment would hold it (for a key, "set" or "not set"),
+   * and the reason given (`why`, on a restart too).
+   */
+  setting?: string;
+  before?: string | null;
+  after?: string | null;
+  secret?: boolean;
+  why?: string;
+  /** For party_renamed: the name the party had. */
+  previous_name?: string;
+  /** For release_step_done: the release and the step. */
+  version?: string;
+  step?: string;
   /** For provider_clearance_set: the providers cleared for the label, and those no longer cleared. */
   cleared?: string[];
   no_longer_cleared?: string[];

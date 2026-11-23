@@ -20,6 +20,7 @@
 import OpenAI from "openai";
 
 import { loadConfig } from "../../config.js";
+import { onConfigChange } from "../../config-changes.js";
 import { LlmRefusalError } from "../errors.js";
 import { getUsageContext } from "../usage-context.js";
 import { logCacheUsage, recordCallUsage } from "./metering.js";
@@ -269,3 +270,6 @@ export const openaiAdapter: ProviderAdapter = {
     }
   },
 };
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(resetOpenAiClient);

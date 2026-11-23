@@ -10,7 +10,10 @@ import {
   unknownFeatureNames,
   unknownFeaturesMessage,
 } from "./features.js";
-import { applyConfigFile } from "./config-file.js";
+import { applyConfigFile, setByConfigFile } from "./config-file.js";
+import { SETTINGS } from "./settings-registry.js";
+import { configChanged } from "./config-changes.js";
+import { noteGivenVariables } from "./given-variables.js";
 import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
 import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
 import { parseLabelPosture } from "./label-posture.js";
@@ -1632,10 +1635,7 @@ export type Config = z.infer<typeof configSchema>;
 export function settingsThatDisagree(
   config: Pick<Config, "owls" | "reads" | "stripeSecretKey" | "usageReportUrl" | "usageReportDir">,
   /** The free grants the deployment's own settings ask for, in owls: zero where it sets none. */
-  grantsSet: { signup: number; monthly: number } = {
-    signup: Number(process.env.SIGNUP_GRANT_OWLS) || 0,
-    monthly: Number(process.env.MONTHLY_GRANT_OWLS) || 0,
-  }
+  grantsSet: { signup: number; monthly: number } = grantsSetBySettings()
 ): string | null {
   if (config.owls === "created" && config.reads !== "members") {
     return (
@@ -1722,364 +1722,361 @@ export function configFieldDefault(field: string): string | null {
   return null;
 }
 
-export function loadConfig(): Config {
-  if (_config) return _config;
-
-  // The deployment's config file, when it names one, is a layer under the
-  // environment: each setting it holds becomes its environment variable
-  // unless the environment already has one (src/config-file.ts). With no
-  // file this does nothing, and everything below reads what it always read.
-  applyConfigFile(configFieldProblem);
-
-  const rawDatabaseUrl = process.env.DATABASE_URL ?? DEFAULT_DB_URL;
+/**
+ * The configuration an environment makes: the schema's reading of it, and
+ * the rules that hold between settings. Throws, saying what to change,
+ * where the settings cannot hold together. It keeps nothing: loadConfig
+ * keeps the answer, and a change proposed in the app is tried here first
+ * (configWith).
+ */
+function buildConfig(env: NodeJS.ProcessEnv): Config {
+  const rawDatabaseUrl = env.DATABASE_URL ?? DEFAULT_DB_URL;
 
   // Whether the mathematics feature is off, read from the setting as it is
   // written: the solver's model is asked for only where it is on.
   const mathematicsOff = !featureOnGiven(
     "mathematics",
     // Split here and not parsed: a name that is not a feature is the schema's to refuse, below.
-    (process.env.FEATURES_OFF ?? "").split(",").map((name) => name.trim())
+    (env.FEATURES_OFF ?? "").split(",").map((name) => name.trim())
   );
-  _config = configSchema.parse({
-    env: process.env.ENVIRONMENT,
-    port: process.env.PORT,
-    host: process.env.HOST,
-    logLevel: process.env.LOG_LEVEL,
-    featuresOff: process.env.FEATURES_OFF,
-    modelEndpoints: process.env.MODEL_ENDPOINTS,
-    providerLabels: process.env.PROVIDER_LABELS,
-    labelPosture: process.env.LABEL_POSTURE,
+  let built: Config = configSchema.parse({
+    env: env.ENVIRONMENT,
+    port: env.PORT,
+    host: env.HOST,
+    logLevel: env.LOG_LEVEL,
+    featuresOff: env.FEATURES_OFF,
+    modelEndpoints: env.MODEL_ENDPOINTS,
+    providerLabels: env.PROVIDER_LABELS,
+    labelPosture: env.LABEL_POSTURE,
     databaseUrl: rawDatabaseUrl,
-    dbHost: process.env.DB_HOST,
-    dbPort: process.env.DB_PORT,
-    dbUser: process.env.DB_USERNAME,
-    dbName: process.env.DB_NAME,
-    dbPassword: process.env.DB_PASSWORD,
-    apiKeys: process.env.API_KEYS,
-    apiKeyContributors: process.env.API_KEYS,
-    reads: process.env.READS || undefined,
-    firstAdministrator: process.env.FIRST_ADMINISTRATOR,
-    signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
-    owls: process.env.OWLS || undefined,
-    modelPriceRefreshHours: process.env.MODEL_PRICE_REFRESH_HOURS,
-    modelPrices: process.env.MODEL_PRICES,
-    publicGraphPrice: process.env.PUBLIC_GRAPH_PRICE || undefined,
-    usageReportUrl: process.env.USAGE_REPORT_URL,
-    usageReportDir: process.env.USAGE_REPORT_DIR,
-    usageReportFrom: process.env.USAGE_REPORT_FROM,
-    usageReportIntervalSeconds: process.env.USAGE_REPORT_INTERVAL_SECONDS || undefined,
-    corsOrigins: process.env.CORS_ORIGINS,
-    publicReadMaxAgeSeconds: process.env.PUBLIC_READ_MAX_AGE_SECONDS,
+    dbHost: env.DB_HOST,
+    dbPort: env.DB_PORT,
+    dbUser: env.DB_USERNAME,
+    dbName: env.DB_NAME,
+    dbPassword: env.DB_PASSWORD,
+    apiKeys: env.API_KEYS,
+    apiKeyContributors: env.API_KEYS,
+    reads: env.READS || undefined,
+    firstAdministrator: env.FIRST_ADMINISTRATOR,
+    signInValidHours: env.SIGN_IN_VALID_HOURS || undefined,
+    owls: env.OWLS || undefined,
+    modelPriceRefreshHours: env.MODEL_PRICE_REFRESH_HOURS,
+    modelPrices: env.MODEL_PRICES,
+    publicGraphPrice: env.PUBLIC_GRAPH_PRICE || undefined,
+    usageReportUrl: env.USAGE_REPORT_URL,
+    usageReportDir: env.USAGE_REPORT_DIR,
+    usageReportFrom: env.USAGE_REPORT_FROM,
+    usageReportIntervalSeconds: env.USAGE_REPORT_INTERVAL_SECONDS || undefined,
+    corsOrigins: env.CORS_ORIGINS,
+    publicReadMaxAgeSeconds: env.PUBLIC_READ_MAX_AGE_SECONDS,
     publicReadStaleWhileRevalidateSeconds:
-      process.env.PUBLIC_READ_STALE_WHILE_REVALIDATE_SECONDS,
-    anonymousRateLimitPerMinute: process.env.ANONYMOUS_RATE_LIMIT_PER_MINUTE,
-    publicWebBaseUrl: process.env.PUBLIC_WEB_BASE_URL,
-    publicApiBaseUrl: process.env.PUBLIC_API_BASE_URL,
-    citationUrlBase: process.env.CITATION_URL_BASE,
-    openaiApiKey: process.env.OPENAI_API_KEY,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openrouterApiKey: process.env.OPENROUTER_API_KEY,
-    openrouterProviderSort: process.env.OPENROUTER_PROVIDER_SORT || undefined,
-    awsRegion: process.env.AWS_REGION,
-    owlPriceMicroUsd: process.env.OWL_PRICE_MICRO_USD,
-    capClaimProposalOwls: process.env.CAP_CLAIM_PROPOSAL_OWLS,
-    capAssessmentOwls: process.env.CAP_ASSESSMENT_OWLS,
-    capSourceIngestOwls: process.env.CAP_SOURCE_INGEST_OWLS,
-    capExtensionAnalysisOwls: process.env.CAP_EXTENSION_ANALYSIS_OWLS,
-    capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
-    capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
-    capCorrespondentRunOwls: process.env.CAP_CORRESPONDENT_RUN_OWLS,
-    capConsistencySweepOwls: process.env.CAP_CONSISTENCY_SWEEP_OWLS,
-    capConsistencySweepStrongOwls: process.env.CAP_CONSISTENCY_SWEEP_STRONG_OWLS,
-    paidAssessmentBudgetOwls: process.env.PAID_ASSESSMENT_BUDGET_OWLS,
-    curateRunBudgetOwls: process.env.CURATE_RUN_BUDGET_OWLS,
-    auditRunBudgetOwls: process.env.AUDIT_RUN_BUDGET_OWLS,
-    signupGrantOwls: process.env.SIGNUP_GRANT_OWLS,
-    monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS,
-    guestAskOwls: process.env.GUEST_ASK_OWLS,
-    guestAskDailyOwls: process.env.GUEST_ASK_DAILY_OWLS,
-    guestAskPerAddressPerDay: process.env.GUEST_ASK_PER_ADDRESS_PER_DAY,
-    contributionAwardOwlPerPoint: process.env.CONTRIBUTION_AWARD_OWL_PER_POINT,
-    extensionMaxClaims: process.env.EXTENSION_MAX_CLAIMS,
-    agenticRateLimitPerHour: process.env.AGENTIC_RATE_LIMIT_PER_HOUR,
-    stripeSecretKey: process.env.STRIPE_SECRET_KEY,
-    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    owlPacks: process.env.OWL_PACKS,
-    contributionRateLimitPerHour: process.env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
+      env.PUBLIC_READ_STALE_WHILE_REVALIDATE_SECONDS,
+    anonymousRateLimitPerMinute: env.ANONYMOUS_RATE_LIMIT_PER_MINUTE,
+    publicWebBaseUrl: env.PUBLIC_WEB_BASE_URL,
+    publicApiBaseUrl: env.PUBLIC_API_BASE_URL,
+    citationUrlBase: env.CITATION_URL_BASE,
+    openaiApiKey: env.OPENAI_API_KEY,
+    anthropicApiKey: env.ANTHROPIC_API_KEY,
+    openrouterApiKey: env.OPENROUTER_API_KEY,
+    openrouterProviderSort: env.OPENROUTER_PROVIDER_SORT || undefined,
+    awsRegion: env.AWS_REGION,
+    owlPriceMicroUsd: env.OWL_PRICE_MICRO_USD,
+    capClaimProposalOwls: env.CAP_CLAIM_PROPOSAL_OWLS,
+    capAssessmentOwls: env.CAP_ASSESSMENT_OWLS,
+    capSourceIngestOwls: env.CAP_SOURCE_INGEST_OWLS,
+    capExtensionAnalysisOwls: env.CAP_EXTENSION_ANALYSIS_OWLS,
+    capTextAnalysisOwls: env.CAP_TEXT_ANALYSIS_OWLS,
+    capLookoutRunOwls: env.CAP_LOOKOUT_RUN_OWLS,
+    capCorrespondentRunOwls: env.CAP_CORRESPONDENT_RUN_OWLS,
+    capConsistencySweepOwls: env.CAP_CONSISTENCY_SWEEP_OWLS,
+    capConsistencySweepStrongOwls: env.CAP_CONSISTENCY_SWEEP_STRONG_OWLS,
+    paidAssessmentBudgetOwls: env.PAID_ASSESSMENT_BUDGET_OWLS,
+    curateRunBudgetOwls: env.CURATE_RUN_BUDGET_OWLS,
+    auditRunBudgetOwls: env.AUDIT_RUN_BUDGET_OWLS,
+    signupGrantOwls: env.SIGNUP_GRANT_OWLS,
+    monthlyGrantOwls: env.MONTHLY_GRANT_OWLS,
+    guestAskOwls: env.GUEST_ASK_OWLS,
+    guestAskDailyOwls: env.GUEST_ASK_DAILY_OWLS,
+    guestAskPerAddressPerDay: env.GUEST_ASK_PER_ADDRESS_PER_DAY,
+    contributionAwardOwlPerPoint: env.CONTRIBUTION_AWARD_OWL_PER_POINT,
+    extensionMaxClaims: env.EXTENSION_MAX_CLAIMS,
+    agenticRateLimitPerHour: env.AGENTIC_RATE_LIMIT_PER_HOUR,
+    stripeSecretKey: env.STRIPE_SECRET_KEY,
+    stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET,
+    owlPacks: env.OWL_PACKS,
+    contributionRateLimitPerHour: env.CONTRIBUTION_RATE_LIMIT_PER_HOUR,
     grantConversationRateLimitPerHour:
-      process.env.GRANT_CONVERSATION_RATE_LIMIT_PER_HOUR,
+      env.GRANT_CONVERSATION_RATE_LIMIT_PER_HOUR,
     newContributorRateLimitPerHour:
-      process.env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,
-    llmHourlyCallLimit: process.env.LLM_HOURLY_CALL_LIMIT,
-    llmDailyCallLimit: process.env.LLM_DAILY_CALL_LIMIT,
-    traceLevel: process.env.TRACE_LEVEL,
-    runLogMode: process.env.RUN_LOG_MODE,
-    traceRetentionDays: process.env.TRACE_RETENTION_DAYS,
-    enqueueEvents: process.env.ENQUEUE_EVENTS,
-    queueDepthSampleIntervalHours: process.env.QUEUE_DEPTH_SAMPLE_INTERVAL_HOURS,
-    llmHourlyTokenLimit: process.env.LLM_HOURLY_TOKEN_LIMIT,
-    llmDailyTokenLimit: process.env.LLM_DAILY_TOKEN_LIMIT,
-    sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,
-    sqsClaimPipelineQueue: process.env.SQS_CLAIM_PIPELINE_QUEUE,
-    urlExtractionConcurrency: process.env.URL_EXTRACTION_CONCURRENCY,
-    urlExtractionStallMinutes: process.env.URL_EXTRACTION_STALL_MINUTES,
-    queueStallMinutes: process.env.QUEUE_STALL_MINUTES,
-    pipelineEpoch: process.env.PIPELINE_EPOCH,
-    gitSha: process.env.MINERVAL_COMMIT || process.env.GIT_SHA || undefined,
-    version: process.env.MINERVAL_VERSION,
-    releasesCheck: process.env.RELEASES_CHECK || undefined,
-    releasesUrl: process.env.RELEASES_URL || undefined,
-    llmRequestTimeoutMs: process.env.LLM_REQUEST_TIMEOUT_MS || undefined,
-    llmLongRunTimeoutMs: process.env.LLM_LONG_RUN_TIMEOUT_MS || undefined,
-    llmMaxRetries: process.env.LLM_MAX_RETRIES || undefined,
-    promptCacheTtl: process.env.PROMPT_CACHE_TTL,
-    matchingTopK: process.env.MATCHING_TOP_K,
-    matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,
-    extractionMaxTokens: process.env.EXTRACTION_MAX_TOKENS,
+      env.NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR,
+    llmHourlyCallLimit: env.LLM_HOURLY_CALL_LIMIT,
+    llmDailyCallLimit: env.LLM_DAILY_CALL_LIMIT,
+    traceLevel: env.TRACE_LEVEL,
+    runLogMode: env.RUN_LOG_MODE,
+    traceRetentionDays: env.TRACE_RETENTION_DAYS,
+    enqueueEvents: env.ENQUEUE_EVENTS,
+    queueDepthSampleIntervalHours: env.QUEUE_DEPTH_SAMPLE_INTERVAL_HOURS,
+    llmHourlyTokenLimit: env.LLM_HOURLY_TOKEN_LIMIT,
+    llmDailyTokenLimit: env.LLM_DAILY_TOKEN_LIMIT,
+    sqsUrlExtractionQueue: env.SQS_URL_EXTRACTION_QUEUE,
+    sqsClaimPipelineQueue: env.SQS_CLAIM_PIPELINE_QUEUE,
+    urlExtractionConcurrency: env.URL_EXTRACTION_CONCURRENCY,
+    urlExtractionStallMinutes: env.URL_EXTRACTION_STALL_MINUTES,
+    queueStallMinutes: env.QUEUE_STALL_MINUTES,
+    pipelineEpoch: env.PIPELINE_EPOCH,
+    gitSha: env.MINERVAL_COMMIT || env.GIT_SHA || undefined,
+    version: env.MINERVAL_VERSION,
+    releasesCheck: env.RELEASES_CHECK || undefined,
+    releasesUrl: env.RELEASES_URL || undefined,
+    llmRequestTimeoutMs: env.LLM_REQUEST_TIMEOUT_MS || undefined,
+    llmLongRunTimeoutMs: env.LLM_LONG_RUN_TIMEOUT_MS || undefined,
+    llmMaxRetries: env.LLM_MAX_RETRIES || undefined,
+    promptCacheTtl: env.PROMPT_CACHE_TTL,
+    matchingTopK: env.MATCHING_TOP_K,
+    matcherBudgetUsd: env.MATCHER_BUDGET_USD,
+    extractionMaxTokens: env.EXTRACTION_MAX_TOKENS,
     proposedClaimImportancePrior:
-      process.env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
-    owlCostMicroUsd: process.env.OWL_COST_MICRO_USD,
-    stewardStrongModel: process.env.STEWARD_STRONG_MODEL,
-    estStewardRunCostOwls: process.env.EST_STEWARD_RUN_COST_OWLS,
-    estStewardRunCostStrongOwls: process.env.EST_STEWARD_RUN_COST_STRONG_OWLS,
-    costEstimateWindowDays: process.env.COST_ESTIMATE_WINDOW_DAYS,
-    costEstimateMinRuns: process.env.COST_ESTIMATE_MIN_RUNS,
-    costEstimatePercentile: process.env.COST_ESTIMATE_PERCENTILE,
-    backgroundDailyBudgetOwls: process.env.BACKGROUND_DAILY_BUDGET_OWLS,
-    backgroundFallbackLaneEnabled: process.env.BACKGROUND_FALLBACK_LANE_ENABLED,
-    mandateReviewEnabled: process.env.MANDATE_REVIEW_ENABLED,
+      env.PROPOSED_CLAIM_IMPORTANCE_PRIOR,
+    owlCostMicroUsd: env.OWL_COST_MICRO_USD,
+    stewardStrongModel: env.STEWARD_STRONG_MODEL,
+    estStewardRunCostOwls: env.EST_STEWARD_RUN_COST_OWLS,
+    estStewardRunCostStrongOwls: env.EST_STEWARD_RUN_COST_STRONG_OWLS,
+    costEstimateWindowDays: env.COST_ESTIMATE_WINDOW_DAYS,
+    costEstimateMinRuns: env.COST_ESTIMATE_MIN_RUNS,
+    costEstimatePercentile: env.COST_ESTIMATE_PERCENTILE,
+    backgroundDailyBudgetOwls: env.BACKGROUND_DAILY_BUDGET_OWLS,
+    backgroundFallbackLaneEnabled: env.BACKGROUND_FALLBACK_LANE_ENABLED,
+    mandateReviewEnabled: env.MANDATE_REVIEW_ENABLED,
     mandateReviewMoveFractionPerPass:
-      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
+      env.MANDATE_REVIEW_MOVE_FRACTION_PER_PASS,
     mandateReviewMoveFractionPerDay:
-      process.env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
-    lookoutRunsEnabled: process.env.LOOKOUT_RUNS_ENABLED,
-    correspondentRunsEnabled: process.env.CORRESPONDENT_RUNS_ENABLED,
-    lookoutRetractionPollHours: process.env.LOOKOUT_RETRACTION_POLL_HOURS,
-    lookoutFeedPollMaxFeeds: process.env.LOOKOUT_FEED_POLL_MAX_FEEDS,
-    allocationSweepIntervalHours: process.env.ALLOCATION_SWEEP_INTERVAL_HOURS,
-    stalenessBaseDays: process.env.STALENESS_BASE_DAYS,
-    grantMaintainCadenceDays: process.env.GRANT_MAINTAIN_CADENCE_DAYS,
-    stewardMaxIterations: process.env.STEWARD_MAX_ITERATIONS,
-    stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
-    stewardConcurrency: process.env.STEWARD_CONCURRENCY,
-    stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
-    elicitEnabled: process.env.ELICIT_ENABLED || undefined,
-    pangramEnabled: process.env.PANGRAM_ENABLED || undefined,
-    paymentsEnabled: process.env.PAYMENTS_ENABLED || undefined,
-    elicitApiKey: process.env.ELICIT_API_KEY,
-    elicitMcpUrl: process.env.ELICIT_MCP_URL,
-    elicitUsdPerCall: process.env.ELICIT_USD_PER_CALL,
-    pangramApiKey: process.env.PANGRAM_API_KEY,
-    pangramApiUrl: process.env.PANGRAM_API_URL,
-    pangramPlagiarismApiUrl: process.env.PANGRAM_PLAGIARISM_API_URL,
-    pangramModel: process.env.PANGRAM_MODEL,
-    pangramAiUsdPerWord: process.env.PANGRAM_AI_USD_PER_WORD,
-    pangramPlagiarismUsdPerWord: process.env.PANGRAM_PLAGIARISM_USD_PER_WORD,
-    pangramMaxWords: process.env.PANGRAM_MAX_WORDS,
-    fileSetStoreDir: process.env.FILE_SET_STORE_DIR,
-    fileSetDirectoryRoot: process.env.FILE_SET_DIRECTORY_ROOT,
-    fileSetUploadMaxBytes: process.env.FILE_SET_UPLOAD_MAX_BYTES || undefined,
-    sandboxUrl: process.env.SANDBOX_URL,
-    sandboxToken: process.env.SANDBOX_TOKEN,
-    sandboxHourCostMicroUsd: process.env.SANDBOX_HOUR_COST_MICRO_USD || undefined,
-    leanCheckerUrl: process.env.LEAN_CHECKER_URL,
-    leanCheckerToken: process.env.LEAN_CHECKER_TOKEN,
-    leanCpuHourCostMicroUsd: process.env.LEAN_CPU_HOUR_COST_MICRO_USD,
-    leanCheckOverheadMicroUsd: process.env.LEAN_CHECK_OVERHEAD_MICRO_USD,
-    formalizationReviewPeriodDays: process.env.FORMALIZATION_REVIEW_PERIOD_DAYS,
-    formalizationReviewAwardOwls: process.env.FORMALIZATION_REVIEW_AWARD_OWLS,
+      env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
+    lookoutRunsEnabled: env.LOOKOUT_RUNS_ENABLED,
+    correspondentRunsEnabled: env.CORRESPONDENT_RUNS_ENABLED,
+    lookoutRetractionPollHours: env.LOOKOUT_RETRACTION_POLL_HOURS,
+    lookoutFeedPollMaxFeeds: env.LOOKOUT_FEED_POLL_MAX_FEEDS,
+    allocationSweepIntervalHours: env.ALLOCATION_SWEEP_INTERVAL_HOURS,
+    stalenessBaseDays: env.STALENESS_BASE_DAYS,
+    grantMaintainCadenceDays: env.GRANT_MAINTAIN_CADENCE_DAYS,
+    stewardMaxIterations: env.STEWARD_MAX_ITERATIONS,
+    stewardMaxRuns: env.STEWARD_MAX_RUNS,
+    stewardConcurrency: env.STEWARD_CONCURRENCY,
+    stewardEnqueueMinImportance: env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
+    elicitEnabled: env.ELICIT_ENABLED || undefined,
+    pangramEnabled: env.PANGRAM_ENABLED || undefined,
+    paymentsEnabled: env.PAYMENTS_ENABLED || undefined,
+    elicitApiKey: env.ELICIT_API_KEY,
+    elicitMcpUrl: env.ELICIT_MCP_URL,
+    elicitUsdPerCall: env.ELICIT_USD_PER_CALL,
+    pangramApiKey: env.PANGRAM_API_KEY,
+    pangramApiUrl: env.PANGRAM_API_URL,
+    pangramPlagiarismApiUrl: env.PANGRAM_PLAGIARISM_API_URL,
+    pangramModel: env.PANGRAM_MODEL,
+    pangramAiUsdPerWord: env.PANGRAM_AI_USD_PER_WORD,
+    pangramPlagiarismUsdPerWord: env.PANGRAM_PLAGIARISM_USD_PER_WORD,
+    pangramMaxWords: env.PANGRAM_MAX_WORDS,
+    fileSetStoreDir: env.FILE_SET_STORE_DIR,
+    fileSetDirectoryRoot: env.FILE_SET_DIRECTORY_ROOT,
+    fileSetUploadMaxBytes: env.FILE_SET_UPLOAD_MAX_BYTES || undefined,
+    sandboxUrl: env.SANDBOX_URL,
+    sandboxToken: env.SANDBOX_TOKEN,
+    sandboxHourCostMicroUsd: env.SANDBOX_HOUR_COST_MICRO_USD || undefined,
+    leanCheckerUrl: env.LEAN_CHECKER_URL,
+    leanCheckerToken: env.LEAN_CHECKER_TOKEN,
+    leanCpuHourCostMicroUsd: env.LEAN_CPU_HOUR_COST_MICRO_USD,
+    leanCheckOverheadMicroUsd: env.LEAN_CHECK_OVERHEAD_MICRO_USD,
+    formalizationReviewPeriodDays: env.FORMALIZATION_REVIEW_PERIOD_DAYS,
+    formalizationReviewAwardOwls: env.FORMALIZATION_REVIEW_AWARD_OWLS,
     // Unread where mathematics is off (see the schema's comment on solverModel).
-    solverModel: mathematicsOff ? undefined : process.env.SOLVER_MODEL,
-    solverEnabled: process.env.SOLVER_ENABLED,
-    solverDailyCapOwls: process.env.SOLVER_DAILY_CAP_OWLS,
-    solverCalibrationDailyCapOwls: process.env.SOLVER_CALIBRATION_DAILY_CAP_OWLS,
-    researcherStrongModel: process.env.RESEARCHER_STRONG_MODEL,
-    researcherStandardModel: process.env.RESEARCHER_STANDARD_MODEL,
-    researcherCheapModel: process.env.RESEARCHER_CHEAP_MODEL,
-    researcherEnabled: process.env.RESEARCHER_ENABLED,
-    researcherDailyCapOwls: process.env.RESEARCHER_DAILY_CAP_OWLS,
-    contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
-    contributionReviewBudgetUsd: process.env.CONTRIBUTION_REVIEW_BUDGET_USD,
-    arbitrationBudgetUsd: process.env.ARBITRATION_BUDGET_USD,
-    researcherRequestMaxWallMinutes: process.env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
-    attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
-    traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
-    maxBountyPerClaimOwls: process.env.MAX_BOUNTY_PER_CLAIM_OWLS,
-    minBountyPerClaimOwls: process.env.MIN_BOUNTY_PER_CLAIM_OWLS,
-    bountyEscrowFractionPerPass: process.env.BOUNTY_ESCROW_FRACTION_PER_PASS,
-    bountyEscrowFractionPerDay: process.env.BOUNTY_ESCROW_FRACTION_PER_DAY,
-    bountyAutonomyThresholdOwls: process.env.BOUNTY_AUTONOMY_THRESHOLD_OWLS,
-    bountyNoticeDays: process.env.BOUNTY_NOTICE_DAYS,
-    bountyDefaultExpiryDays: process.env.BOUNTY_DEFAULT_EXPIRY_DAYS,
-    prizeHumanSignoffOwls: process.env.PRIZE_HUMAN_SIGNOFF_OWLS,
-    prizeHumanSignoffImportance: process.env.PRIZE_HUMAN_SIGNOFF_IMPORTANCE,
-    prizeChallengeWindowDaysSmall: process.env.PRIZE_CHALLENGE_WINDOW_DAYS_SMALL,
-    prizeChallengeWindowDaysLarge: process.env.PRIZE_CHALLENGE_WINDOW_DAYS_LARGE,
-    prizeWindowTierOwls: process.env.PRIZE_WINDOW_TIER_OWLS,
-    prizePayeeStepsDays: process.env.PRIZE_PAYEE_STEPS_DAYS,
-    prizeReviewReserveFraction: process.env.PRIZE_REVIEW_RESERVE_FRACTION,
-    prizeDefectAwardFraction: process.env.PRIZE_DEFECT_AWARD_FRACTION,
-    prizeDefectAwardCapOwls: process.env.PRIZE_DEFECT_AWARD_CAP_OWLS,
-    prizeOwlTrancheOwls: process.env.PRIZE_OWL_TRANCHE_OWLS,
-    prizeCheckMaxConcurrent: process.env.PRIZE_CHECK_MAX_CONCURRENT,
-    prizeChecksPerDay: process.env.PRIZE_CHECKS_PER_DAY,
-    prizeCheckReclaimMinutes: process.env.PRIZE_CHECK_RECLAIM_MINUTES,
-    prizeCheckMaxAttempts: process.env.PRIZE_CHECK_MAX_ATTEMPTS,
+    solverModel: mathematicsOff ? undefined : env.SOLVER_MODEL,
+    solverEnabled: env.SOLVER_ENABLED,
+    solverDailyCapOwls: env.SOLVER_DAILY_CAP_OWLS,
+    solverCalibrationDailyCapOwls: env.SOLVER_CALIBRATION_DAILY_CAP_OWLS,
+    researcherStrongModel: env.RESEARCHER_STRONG_MODEL,
+    researcherStandardModel: env.RESEARCHER_STANDARD_MODEL,
+    researcherCheapModel: env.RESEARCHER_CHEAP_MODEL,
+    researcherEnabled: env.RESEARCHER_ENABLED,
+    researcherDailyCapOwls: env.RESEARCHER_DAILY_CAP_OWLS,
+    contributionReviewEstimateUsd: env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
+    contributionReviewBudgetUsd: env.CONTRIBUTION_REVIEW_BUDGET_USD,
+    arbitrationBudgetUsd: env.ARBITRATION_BUDGET_USD,
+    researcherRequestMaxWallMinutes: env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
+    attemptOverageFraction: env.ATTEMPT_OVERAGE_FRACTION,
+    traceAlwaysAgents: env.TRACE_ALWAYS_AGENTS,
+    maxBountyPerClaimOwls: env.MAX_BOUNTY_PER_CLAIM_OWLS,
+    minBountyPerClaimOwls: env.MIN_BOUNTY_PER_CLAIM_OWLS,
+    bountyEscrowFractionPerPass: env.BOUNTY_ESCROW_FRACTION_PER_PASS,
+    bountyEscrowFractionPerDay: env.BOUNTY_ESCROW_FRACTION_PER_DAY,
+    bountyAutonomyThresholdOwls: env.BOUNTY_AUTONOMY_THRESHOLD_OWLS,
+    bountyNoticeDays: env.BOUNTY_NOTICE_DAYS,
+    bountyDefaultExpiryDays: env.BOUNTY_DEFAULT_EXPIRY_DAYS,
+    prizeHumanSignoffOwls: env.PRIZE_HUMAN_SIGNOFF_OWLS,
+    prizeHumanSignoffImportance: env.PRIZE_HUMAN_SIGNOFF_IMPORTANCE,
+    prizeChallengeWindowDaysSmall: env.PRIZE_CHALLENGE_WINDOW_DAYS_SMALL,
+    prizeChallengeWindowDaysLarge: env.PRIZE_CHALLENGE_WINDOW_DAYS_LARGE,
+    prizeWindowTierOwls: env.PRIZE_WINDOW_TIER_OWLS,
+    prizePayeeStepsDays: env.PRIZE_PAYEE_STEPS_DAYS,
+    prizeReviewReserveFraction: env.PRIZE_REVIEW_RESERVE_FRACTION,
+    prizeDefectAwardFraction: env.PRIZE_DEFECT_AWARD_FRACTION,
+    prizeDefectAwardCapOwls: env.PRIZE_DEFECT_AWARD_CAP_OWLS,
+    prizeOwlTrancheOwls: env.PRIZE_OWL_TRANCHE_OWLS,
+    prizeCheckMaxConcurrent: env.PRIZE_CHECK_MAX_CONCURRENT,
+    prizeChecksPerDay: env.PRIZE_CHECKS_PER_DAY,
+    prizeCheckReclaimMinutes: env.PRIZE_CHECK_RECLAIM_MINUTES,
+    prizeCheckMaxAttempts: env.PRIZE_CHECK_MAX_ATTEMPTS,
     prizeClaimsPerStatementPer30Days:
-      process.env.PRIZE_CLAIMS_PER_STATEMENT_PER_30_DAYS,
-    prizeClaimsPerDayPlatform: process.env.PRIZE_CLAIMS_PER_DAY_PLATFORM,
-    minervalOperatorKey: process.env.MINERVAL_OPERATOR_KEY,
-    mathMandateEscrowOwls: process.env.MATH_MANDATE_ESCROW_OWLS,
-    mathMandateDailyOwls: process.env.MATH_MANDATE_DAILY_OWLS,
-    mathPrizesEscrowOwls: process.env.MATH_PRIZES_ESCROW_OWLS,
-    curatorMaxRuns: process.env.CURATOR_MAX_RUNS,
-    matcherModel: process.env.MATCHER_MODEL,
-    stewardModel: process.env.STEWARD_MODEL,
-    curatorModel: process.env.CURATOR_MODEL,
-    extractorModel: process.env.EXTRACTOR_MODEL,
-    extractorFallbackModel: process.env.EXTRACTOR_FALLBACK_MODEL,
-    governanceModel: process.env.GOVERNANCE_MODEL,
-    auditModel: process.env.AUDIT_MODEL,
-    redactorModel: process.env.REDACTOR_MODEL,
-    arbitrationModel: process.env.ARBITRATION_MODEL,
-    grantmakerModel: process.env.GRANTMAKER_MODEL,
-    assistantModel: process.env.ASSISTANT_MODEL,
-    assistantStandardModel: process.env.ASSISTANT_STANDARD_MODEL,
-    assistantTitleModel: process.env.ASSISTANT_TITLE_MODEL,
-    assistantMarkupModel: process.env.ASSISTANT_MARKUP_MODEL,
-    judgeModel: process.env.JUDGE_MODEL,
-    taggerModel: process.env.TAGGER_MODEL,
-    lookoutModel: process.env.LOOKOUT_MODEL,
-    programOfficerModel: process.env.PROGRAM_OFFICER_MODEL,
-    officerRunBudgetOwls: process.env.OFFICER_RUN_BUDGET_OWLS,
-    sessionWaitHours: process.env.SESSION_WAIT_HOURS,
-    sessionMaxTranscriptChars: process.env.SESSION_MAX_TRANSCRIPT_CHARS,
-    sessionWaitForAnswersSeconds: process.env.SESSION_WAIT_FOR_ANSWERS_SECONDS,
-    officerBatchMs: process.env.OFFICER_BATCH_MS,
-    defaultOfficerLimitOwls: process.env.DEFAULT_OFFICER_LIMIT_OWLS,
-    defaultReviewPassBudgetOwls: process.env.DEFAULT_REVIEW_PASS_BUDGET_OWLS,
-    reviewPassFloorOwls: process.env.REVIEW_PASS_FLOOR_OWLS,
-    officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,
-    sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
-    sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
-    clearedRolePassword: process.env.CLEARED_ROLE_PASSWORD || undefined,
-    databaseTls: process.env.DATABASE_TLS || undefined,
-    databaseCaFile: process.env.DATABASE_CA_FILE || undefined,
-    sqlDbHost: process.env.SQL_DB_HOST,
-    sqlDbPort: process.env.SQL_DB_PORT,
-    sqlAgentDbUser: process.env.SQL_AGENT_DB_USERNAME,
-    sqlAgentDbPassword: process.env.SQL_AGENT_DB_PASSWORD,
-    sqlCallerDbUser: process.env.SQL_CALLER_DB_USERNAME,
-    sqlCallerDbPassword: process.env.SQL_CALLER_DB_PASSWORD,
-    sqlAgentTimeoutSeconds: process.env.SQL_AGENT_TIMEOUT_SECONDS,
-    sqlCallerTimeoutSeconds: process.env.SQL_CALLER_TIMEOUT_SECONDS,
-    sqlMaxPlanCost: process.env.SQL_MAX_PLAN_COST,
-    sqlFreeAllowanceSeconds: process.env.SQL_FREE_ALLOWANCE_SECONDS,
-    sqlPaidAllowanceSeconds: process.env.SQL_PAID_ALLOWANCE_SECONDS,
-    sqlOwlsPerSecond: process.env.SQL_OWLS_PER_SECOND,
-    correspondentModel: process.env.CORRESPONDENT_MODEL,
-    consistencyModel: process.env.CONSISTENCY_MODEL,
-    consistencySweepsEnabled: process.env.CONSISTENCY_SWEEPS_ENABLED,
-    consistencyStrongModel: process.env.CONSISTENCY_STRONG_MODEL,
-    consistencyMinTagClaims: process.env.CONSISTENCY_MIN_TAG_CLAIMS,
-    taggingIntervalSeconds: process.env.TAGGING_INTERVAL_SECONDS,
-    taggingBatchSize: process.env.TAGGING_BATCH_SIZE,
-    enableContributions: process.env.ENABLE_CONTRIBUTIONS,
-    auditSweepIntervalHours: process.env.AUDIT_SWEEP_INTERVAL_HOURS,
-    auditStaleSuspensionDays: process.env.AUDIT_STALE_SUSPENSION_DAYS,
-    monitorSweepIntervalHours: process.env.MONITOR_SWEEP_INTERVAL_HOURS,
-    monitorReflagDays: process.env.MONITOR_REFLAG_DAYS,
-    monitorSweepMaxFlags: process.env.MONITOR_SWEEP_MAX_FLAGS,
-    monitorSettledConfidence: process.env.MONITOR_SETTLED_CONFIDENCE,
-    monitorMaterialCredenceDelta: process.env.MONITOR_MATERIAL_CREDENCE_DELTA,
-    monitorRecentChallengeDays: process.env.MONITOR_RECENT_CHALLENGE_DAYS,
-    monitorMonotonicityTolerance: process.env.MONITOR_MONOTONICITY_TOLERANCE,
-    monitorMonotonicityHorizonDays: process.env.MONITOR_MONOTONICITY_HORIZON_DAYS,
-    reportRateLimitPerHour: process.env.REPORT_RATE_LIMIT_PER_HOUR,
-    reportTriageIntervalHours: process.env.REPORT_TRIAGE_INTERVAL_HOURS,
-    reportMatchSimilarity: process.env.REPORT_MATCH_SIMILARITY,
+      env.PRIZE_CLAIMS_PER_STATEMENT_PER_30_DAYS,
+    prizeClaimsPerDayPlatform: env.PRIZE_CLAIMS_PER_DAY_PLATFORM,
+    minervalOperatorKey: env.MINERVAL_OPERATOR_KEY,
+    mathMandateEscrowOwls: env.MATH_MANDATE_ESCROW_OWLS,
+    mathMandateDailyOwls: env.MATH_MANDATE_DAILY_OWLS,
+    mathPrizesEscrowOwls: env.MATH_PRIZES_ESCROW_OWLS,
+    curatorMaxRuns: env.CURATOR_MAX_RUNS,
+    matcherModel: env.MATCHER_MODEL,
+    stewardModel: env.STEWARD_MODEL,
+    curatorModel: env.CURATOR_MODEL,
+    extractorModel: env.EXTRACTOR_MODEL,
+    extractorFallbackModel: env.EXTRACTOR_FALLBACK_MODEL,
+    governanceModel: env.GOVERNANCE_MODEL,
+    auditModel: env.AUDIT_MODEL,
+    redactorModel: env.REDACTOR_MODEL,
+    arbitrationModel: env.ARBITRATION_MODEL,
+    grantmakerModel: env.GRANTMAKER_MODEL,
+    assistantModel: env.ASSISTANT_MODEL,
+    assistantStandardModel: env.ASSISTANT_STANDARD_MODEL,
+    assistantTitleModel: env.ASSISTANT_TITLE_MODEL,
+    assistantMarkupModel: env.ASSISTANT_MARKUP_MODEL,
+    judgeModel: env.JUDGE_MODEL,
+    taggerModel: env.TAGGER_MODEL,
+    lookoutModel: env.LOOKOUT_MODEL,
+    programOfficerModel: env.PROGRAM_OFFICER_MODEL,
+    officerRunBudgetOwls: env.OFFICER_RUN_BUDGET_OWLS,
+    sessionWaitHours: env.SESSION_WAIT_HOURS,
+    sessionMaxTranscriptChars: env.SESSION_MAX_TRANSCRIPT_CHARS,
+    sessionWaitForAnswersSeconds: env.SESSION_WAIT_FOR_ANSWERS_SECONDS,
+    officerBatchMs: env.OFFICER_BATCH_MS,
+    defaultOfficerLimitOwls: env.DEFAULT_OFFICER_LIMIT_OWLS,
+    defaultReviewPassBudgetOwls: env.DEFAULT_REVIEW_PASS_BUDGET_OWLS,
+    reviewPassFloorOwls: env.REVIEW_PASS_FLOOR_OWLS,
+    officerSittingsEnabled: env.OFFICER_SITTINGS_ENABLED,
+    sqlAgentDatabaseUrl: env.SQL_AGENT_DATABASE_URL,
+    sqlCallerDatabaseUrl: env.SQL_CALLER_DATABASE_URL,
+    clearedRolePassword: env.CLEARED_ROLE_PASSWORD || undefined,
+    databaseTls: env.DATABASE_TLS || undefined,
+    databaseCaFile: env.DATABASE_CA_FILE || undefined,
+    sqlDbHost: env.SQL_DB_HOST,
+    sqlDbPort: env.SQL_DB_PORT,
+    sqlAgentDbUser: env.SQL_AGENT_DB_USERNAME,
+    sqlAgentDbPassword: env.SQL_AGENT_DB_PASSWORD,
+    sqlCallerDbUser: env.SQL_CALLER_DB_USERNAME,
+    sqlCallerDbPassword: env.SQL_CALLER_DB_PASSWORD,
+    sqlAgentTimeoutSeconds: env.SQL_AGENT_TIMEOUT_SECONDS,
+    sqlCallerTimeoutSeconds: env.SQL_CALLER_TIMEOUT_SECONDS,
+    sqlMaxPlanCost: env.SQL_MAX_PLAN_COST,
+    sqlFreeAllowanceSeconds: env.SQL_FREE_ALLOWANCE_SECONDS,
+    sqlPaidAllowanceSeconds: env.SQL_PAID_ALLOWANCE_SECONDS,
+    sqlOwlsPerSecond: env.SQL_OWLS_PER_SECOND,
+    correspondentModel: env.CORRESPONDENT_MODEL,
+    consistencyModel: env.CONSISTENCY_MODEL,
+    consistencySweepsEnabled: env.CONSISTENCY_SWEEPS_ENABLED,
+    consistencyStrongModel: env.CONSISTENCY_STRONG_MODEL,
+    consistencyMinTagClaims: env.CONSISTENCY_MIN_TAG_CLAIMS,
+    taggingIntervalSeconds: env.TAGGING_INTERVAL_SECONDS,
+    taggingBatchSize: env.TAGGING_BATCH_SIZE,
+    enableContributions: env.ENABLE_CONTRIBUTIONS,
+    auditSweepIntervalHours: env.AUDIT_SWEEP_INTERVAL_HOURS,
+    auditStaleSuspensionDays: env.AUDIT_STALE_SUSPENSION_DAYS,
+    monitorSweepIntervalHours: env.MONITOR_SWEEP_INTERVAL_HOURS,
+    monitorReflagDays: env.MONITOR_REFLAG_DAYS,
+    monitorSweepMaxFlags: env.MONITOR_SWEEP_MAX_FLAGS,
+    monitorSettledConfidence: env.MONITOR_SETTLED_CONFIDENCE,
+    monitorMaterialCredenceDelta: env.MONITOR_MATERIAL_CREDENCE_DELTA,
+    monitorRecentChallengeDays: env.MONITOR_RECENT_CHALLENGE_DAYS,
+    monitorMonotonicityTolerance: env.MONITOR_MONOTONICITY_TOLERANCE,
+    monitorMonotonicityHorizonDays: env.MONITOR_MONOTONICITY_HORIZON_DAYS,
+    reportRateLimitPerHour: env.REPORT_RATE_LIMIT_PER_HOUR,
+    reportTriageIntervalHours: env.REPORT_TRIAGE_INTERVAL_HOURS,
+    reportMatchSimilarity: env.REPORT_MATCH_SIMILARITY,
     reportEmbeddingBackfillPerTick:
-      process.env.REPORT_EMBEDDING_BACKFILL_PER_TICK,
+      env.REPORT_EMBEDDING_BACKFILL_PER_TICK,
     reportEmbeddingBackfillIntervalSeconds:
-      process.env.REPORT_EMBEDDING_BACKFILL_INTERVAL_SECONDS,
-    sourceBackfillPerTick: process.env.SOURCE_BACKFILL_PER_TICK,
-    sourceBackfillIntervalSeconds: process.env.SOURCE_BACKFILL_INTERVAL_SECONDS,
-    githubToken: process.env.GITHUB_TOKEN,
-    githubAppId: process.env.GITHUB_APP_ID,
-    githubAppInstallationId: process.env.GITHUB_APP_INSTALLATION_ID,
-    githubAppPrivateKey: process.env.GITHUB_APP_PRIVATE_KEY,
-    githubIssuesRepo: process.env.GITHUB_ISSUES_REPO,
-    githubIssuesLabel: process.env.GITHUB_ISSUES_LABEL,
-    githubApiBaseUrl: process.env.GITHUB_API_BASE_URL,
-    githubIssuesIncludeExternal: process.env.GITHUB_ISSUES_INCLUDE_EXTERNAL,
-    githubIssuesBackfillPerTick: process.env.GITHUB_ISSUES_BACKFILL_PER_TICK,
+      env.REPORT_EMBEDDING_BACKFILL_INTERVAL_SECONDS,
+    sourceBackfillPerTick: env.SOURCE_BACKFILL_PER_TICK,
+    sourceBackfillIntervalSeconds: env.SOURCE_BACKFILL_INTERVAL_SECONDS,
+    githubToken: env.GITHUB_TOKEN,
+    githubAppId: env.GITHUB_APP_ID,
+    githubAppInstallationId: env.GITHUB_APP_INSTALLATION_ID,
+    githubAppPrivateKey: env.GITHUB_APP_PRIVATE_KEY,
+    githubIssuesRepo: env.GITHUB_ISSUES_REPO,
+    githubIssuesLabel: env.GITHUB_ISSUES_LABEL,
+    githubApiBaseUrl: env.GITHUB_API_BASE_URL,
+    githubIssuesIncludeExternal: env.GITHUB_ISSUES_INCLUDE_EXTERNAL,
+    githubIssuesBackfillPerTick: env.GITHUB_ISSUES_BACKFILL_PER_TICK,
     githubIssuesSyncIntervalSeconds:
-      process.env.GITHUB_ISSUES_SYNC_INTERVAL_SECONDS,
-    sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
-    sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
-    sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
-    mirrorPublish: process.env.MIRROR_PUBLISH,
-    mirrorPublisherWorker: process.env.MIRROR_PUBLISHER_WORKER,
-    mirrorSigningKey: process.env.MIRROR_SIGNING_KEY,
-    mirrorPublishIntervalSeconds: process.env.MIRROR_PUBLISH_INTERVAL_SECONDS,
-    mirrorBatchMaxBytes: process.env.MIRROR_BATCH_MAX_BYTES,
-    mirrorFeedUrl: process.env.MIRROR_FEED_URL,
-    mirrorFeedDir: process.env.MIRROR_FEED_DIR,
-    mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
-    mirrorFeedNextPublicKeys: process.env.MIRROR_FEED_NEXT_PUBLIC_KEYS,
-    mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
-    publishSigningKey: process.env.PUBLISH_SIGNING_KEY,
-    deploymentHosting: process.env.DEPLOYMENT_HOSTING,
-    publicGraphApiUrl: process.env.PUBLIC_GRAPH_API_URL,
-    publicActsBy: process.env.PUBLIC_ACTS_BY || undefined,
-    privateRunFetches: process.env.PRIVATE_RUN_FETCHES || undefined,
-    retiredKeysSet: ["PUBLIC_GRAPH_API_KEY", "MIRROR_FEED_API_KEY", "USAGE_REPORT_API_KEY"].filter((k) => (process.env[k] ?? "").trim() !== "").join(","),
-    minervalHostingToken: process.env.MINERVAL_HOSTING_TOKEN,
-    oidcSigningKey: process.env.OIDC_SIGNING_KEY,
-    publishedPageMaxBytes: process.env.PUBLISHED_PAGE_MAX_BYTES,
+      env.GITHUB_ISSUES_SYNC_INTERVAL_SECONDS,
+    sqsContributionQueue: env.SQS_CONTRIBUTION_QUEUE,
+    sqsArbitrationQueue: env.SQS_ARBITRATION_QUEUE,
+    sqsStewardQueue: env.SQS_STEWARD_QUEUE,
+    mirrorPublish: env.MIRROR_PUBLISH,
+    mirrorPublisherWorker: env.MIRROR_PUBLISHER_WORKER,
+    mirrorSigningKey: env.MIRROR_SIGNING_KEY,
+    mirrorPublishIntervalSeconds: env.MIRROR_PUBLISH_INTERVAL_SECONDS,
+    mirrorBatchMaxBytes: env.MIRROR_BATCH_MAX_BYTES,
+    mirrorFeedUrl: env.MIRROR_FEED_URL,
+    mirrorFeedDir: env.MIRROR_FEED_DIR,
+    mirrorFeedPublicKeys: env.MIRROR_FEED_PUBLIC_KEYS,
+    mirrorFeedNextPublicKeys: env.MIRROR_FEED_NEXT_PUBLIC_KEYS,
+    mirrorApplyIntervalSeconds: env.MIRROR_APPLY_INTERVAL_SECONDS,
+    publishSigningKey: env.PUBLISH_SIGNING_KEY,
+    deploymentHosting: env.DEPLOYMENT_HOSTING,
+    publicGraphApiUrl: env.PUBLIC_GRAPH_API_URL,
+    publicActsBy: env.PUBLIC_ACTS_BY || undefined,
+    privateRunFetches: env.PRIVATE_RUN_FETCHES || undefined,
+    retiredKeysSet: ["PUBLIC_GRAPH_API_KEY", "MIRROR_FEED_API_KEY", "USAGE_REPORT_API_KEY"].filter((k) => (env[k] ?? "").trim() !== "").join(","),
+    minervalHostingToken: env.MINERVAL_HOSTING_TOKEN,
+    oidcSigningKey: env.OIDC_SIGNING_KEY,
+    publishedPageMaxBytes: env.PUBLISHED_PAGE_MAX_BYTES,
   });
 
   // What the two provider settings can only be checked for together: a name
   // in PROVIDER_LABELS that is no provider here, and a model field that
   // routes to an endpoint MODEL_ENDPOINTS does not declare.
-  const providerProblems = providerSettingProblems(_config);
+  const providerProblems = providerSettingProblems(built);
   if (providerProblems.length > 0) {
-    _config = null;
     throw new Error(providerProblems.join("\n"));
   }
 
   // If DATABASE_URL is the default and individual DB fields are set, construct URL
-  if (_config.databaseUrl === DEFAULT_DB_URL && _config.dbHost) {
-    const user = _config.dbUser ?? "episteme";
-    const password = _config.dbPassword ?? "";
-    const host = _config.dbHost;
-    const port = _config.dbPort ?? 5432;
-    const name = _config.dbName ?? "episteme";
-    _config = {
-      ..._config,
+  if (built.databaseUrl === DEFAULT_DB_URL && built.dbHost) {
+    const user = built.dbUser ?? "episteme";
+    const password = built.dbPassword ?? "";
+    const host = built.dbHost;
+    const port = built.dbPort ?? 5432;
+    const name = built.dbName ?? "episteme";
+    built = {
+      ...built,
       databaseUrl: `postgresql://${user}:${password}@${host}:${port}/${name}`,
     };
   }
 
   // Read-only SQL's connection strings, from the replica and the two login
   // roles' fields when no URL is given (the deployed form).
-  if (_config.sqlDbHost) {
-    const host = _config.sqlDbHost;
-    const port = _config.sqlDbPort ?? 5432;
-    const dbName = _config.dbName ?? "episteme";
+  if (built.sqlDbHost) {
+    const host = built.sqlDbHost;
+    const port = built.sqlDbPort ?? 5432;
+    const dbName = built.dbName ?? "episteme";
     const url = (user?: string, password?: string) =>
       user && password
         ? `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`
         : undefined;
-    _config = {
-      ..._config,
-      sqlAgentDatabaseUrl: _config.sqlAgentDatabaseUrl ?? url(_config.sqlAgentDbUser, _config.sqlAgentDbPassword),
-      sqlCallerDatabaseUrl: _config.sqlCallerDatabaseUrl ?? url(_config.sqlCallerDbUser, _config.sqlCallerDbPassword),
+    built = {
+      ...built,
+      sqlAgentDatabaseUrl: built.sqlAgentDatabaseUrl ?? url(built.sqlAgentDbUser, built.sqlAgentDbPassword),
+      sqlCallerDatabaseUrl: built.sqlCallerDatabaseUrl ?? url(built.sqlCallerDbUser, built.sqlCallerDbPassword),
     };
   }
 
-  if (_config.databaseTls === "off" && _config.databaseCaFile) {
-    _config = null;
+  if (built.databaseTls === "off" && built.databaseCaFile) {
     throw new Error(
       "DATABASE_TLS=off and DATABASE_CA_FILE are both set. One says connections to the database are not " +
         "encrypted and the other names the authority to verify its certificate against. Set one of them."
@@ -2087,9 +2084,8 @@ export function loadConfig(): Config {
   }
 
   // Settings that only make sense together. Each refusal says what to change.
-  const settingsProblem = settingsThatDisagree(_config);
+  const settingsProblem = settingsThatDisagree(built, grantsSetIn(env));
   if (settingsProblem) {
-    _config = null;
     throw new Error(settingsProblem);
   }
 
@@ -2098,11 +2094,11 @@ export function loadConfig(): Config {
   // deployment's accounts are its own people, and owls there are the
   // organization's budget for its agents' work, so an account receives a
   // grant only when the deployment sets one: the defaults do not apply.
-  if (_config.reads === "members") {
-    _config = {
-      ..._config,
-      signupGrantOwls: process.env.SIGNUP_GRANT_OWLS ? _config.signupGrantOwls : 0,
-      monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS ? _config.monthlyGrantOwls : 0,
+  if (built.reads === "members") {
+    built = {
+      ...built,
+      signupGrantOwls: env.SIGNUP_GRANT_OWLS ? built.signupGrantOwls : 0,
+      monthlyGrantOwls: env.MONTHLY_GRANT_OWLS ? built.monthlyGrantOwls : 0,
       // Guests are the public graph's offer alone: a members-only
       // deployment's readers are its members.
       guestAskOwls: 0,
@@ -2112,15 +2108,15 @@ export function loadConfig(): Config {
   // An outside service the deployment has switched off is off whatever keys
   // the environment holds: each of these services is "configured" when its
   // key is set, so the switch is honored by not carrying the key.
-  if (_config.elicitEnabled === "false") _config = { ..._config, elicitApiKey: "" };
-  if (_config.pangramEnabled === "false") _config = { ..._config, pangramApiKey: "" };
-  if (_config.paymentsEnabled === "false") {
-    _config = { ..._config, stripeSecretKey: "", stripeWebhookSecret: "" };
+  if (built.elicitEnabled === "false") built = { ...built, elicitApiKey: "" };
+  if (built.pangramEnabled === "false") built = { ...built, pangramApiKey: "" };
+  if (built.paymentsEnabled === "false") {
+    built = { ...built, stripeSecretKey: "", stripeWebhookSecret: "" };
   }
 
   // Where mathematics is off the solver has no model: the setting is empty,
   // not the default, so nothing can run an attempt on a model nobody chose.
-  if (mathematicsOff) _config = { ..._config, solverModel: "" };
+  if (mathematicsOff) built = { ...built, solverModel: "" };
 
   // The constitution's "strongest model for non-saturating assessment" mandate
   // (#77) lives entirely in deploy-time env — the code defaults keep tests and
@@ -2130,7 +2126,49 @@ export function loadConfig(): Config {
   // regresses it). Any other environment gets a once-per-process warning so a
   // new setup — e.g. the corpus harness — doesn't run assessment on the cheap
   // tier without anyone choosing that.
-  const defaultedModelEnvs = [
+  const defaultedModelEnvs = loadBearingModelVariables(mathematicsOff).filter((k) => !env[k]);
+  if (defaultedModelEnvs.length > 0) {
+    // On the public graph the environment is the only place a model can be
+    // chosen, so a production start without one stops here. A members-only
+    // deployment's administrators choose them in the app (docs/settings.md),
+    // after it has started: there the preflight's `models_chosen` check says
+    // which nobody has chosen, and holds agent work where private material
+    // is held (modelsNobodyChose).
+    if (built.env === "production" && built.reads !== "members") {
+      throw new Error(
+        `Missing model env(s) in production: ${defaultedModelEnvs.join(", ")}. ` +
+          "The load-bearing agents (Steward/Curator/Extractor/Audit/" +
+          "Arbitration/solver) and the Steward's money triggers " +
+          "(STEWARD_STRONG_MODEL) must run an explicitly chosen tier (issue " +
+          "#77, docs/mathematics.md §6.4) — set the env(s) rather than " +
+          "silently falling back to the default."
+      );
+    }
+    if (!process.env.VITEST && !warnedOfDefaultedModels && built.reads !== "members") {
+      warnedOfDefaultedModels = true;
+      console.warn(
+        `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
+          "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
+          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.frontier}, ` +
+          "and the Steward's money triggers on STEWARD_MODEL. " +
+          "Fine for local dev; set the env(s) (production uses " +
+          `${MODELS.strong}, and ${MODELS.frontier} for STEWARD_STRONG_MODEL, ` +
+          "ARBITRATION_MODEL and SOLVER_MODEL) if this environment does real " +
+          "assessment work."
+      );
+    }
+  }
+
+  return built;
+}
+
+/**
+ * The variables of the roles whose model must be somebody's choice: the
+ * load-bearing agents, the solver where mathematics is on, and the
+ * Steward's strong tier.
+ */
+function loadBearingModelVariables(mathematicsOff: boolean): string[] {
+  return [
     "STEWARD_MODEL",
     "CURATOR_MODEL",
     "AUDIT_MODEL",
@@ -2153,32 +2191,199 @@ export function loadConfig(): Config {
     // deploy that forgot it would fail on the first prize claim instead of
     // at boot. Naming it here fails the boot.
     "STEWARD_STRONG_MODEL",
-  ].filter((k) => !process.env[k]);
-  if (defaultedModelEnvs.length > 0) {
-    if (_config.env === "production") {
-      _config = null;
-      throw new Error(
-        `Missing model env(s) in production: ${defaultedModelEnvs.join(", ")}. ` +
-          "The load-bearing agents (Steward/Curator/Extractor/Audit/" +
-          "Arbitration/solver) and the Steward's money triggers " +
-          "(STEWARD_STRONG_MODEL) must run an explicitly chosen tier (issue " +
-          "#77, docs/mathematics.md §6.4) — set the env(s) rather than " +
-          "silently falling back to the default."
-      );
-    }
-    if (!process.env.VITEST) {
-      console.warn(
-        `[config] ${defaultedModelEnvs.join(", ")} not set — the ` +
-          "Steward/Curator/Extractor/Audit/Arbitration agents will run on the " +
-          `cheap default (${MODELS.sonnet}), the solver on ${MODELS.frontier}, ` +
-          "and the Steward's money triggers on STEWARD_MODEL. " +
-          "Fine for local dev; set the env(s) (production uses " +
-          `${MODELS.strong}, and ${MODELS.frontier} for STEWARD_STRONG_MODEL, ` +
-          "ARBITRATION_MODEL and SOLVER_MODEL) if this environment does real " +
-          "assessment work."
-      );
+  ];
+}
+
+let warnedOfDefaultedModels = false;
+
+/** The free grants an environment's own settings ask for, in owls: zero where it sets none. */
+function grantsSetIn(env: NodeJS.ProcessEnv): { signup: number; monthly: number } {
+  return { signup: Number(env.SIGNUP_GRANT_OWLS) || 0, monthly: Number(env.MONTHLY_GRANT_OWLS) || 0 };
+}
+
+// ---------------------------------------------------------------------------
+// The layers (docs/settings.md, "How a value is chosen")
+//
+// Four, the first that has a value winning: the environment, the config
+// file (which applyConfigFile turns into environment variables that the
+// environment does not already have), what an administrator set in the app,
+// and the code's default.
+//
+// The third is this process's copy of the deployment_settings table. The
+// settings service reads the table and hands the copy over
+// (noteStoredSettings), at start and again every few seconds, so a change
+// made in one process is in force in every other within that time
+// (services/settings-service.ts). loadConfig keeps the configuration the
+// layers made and makes it again when the copy changes, so every reader of
+// loadConfig() reads the current value.
+//
+// A setting that applies at a restart keeps the value this process started
+// with: the copy first handed over. A setting that stays on the machine is
+// never read from the copy, whatever the table holds.
+// ---------------------------------------------------------------------------
+
+/**
+ * Why settings could not be used, as sentences: the schema's findings each
+ * against the setting it is about, or the rule between settings that was
+ * broken, as it was thrown.
+ */
+export function configProblem(err: unknown): string {
+  if (err instanceof z.ZodError) {
+    return err.issues
+      .map((issue) => {
+        const field = String(issue.path[0] ?? "");
+        const row = SETTINGS.find((s) => s.field === field);
+        const said = /[.!?]$/.test(issue.message) ? issue.message : `${issue.message}.`;
+        return row ? `${row.key} (${row.env}): ${said}` : said;
+      })
+      .join(" ");
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** The administrators' layer as last read: environment variable to text. */
+let _stored: Readonly<Record<string, string>> = {};
+/** The copy this process started with, which the settings that apply at a restart keep. */
+let _storedAtStart: Readonly<Record<string, string>> | null = null;
+/** Why the stored settings are not in force, when they could not be: the configuration then leaves them out. */
+let _storedProblem: string | null = null;
+
+const blank = (value: string | undefined): boolean => value === undefined || value.trim() === "";
+
+/**
+ * Whether whoever runs the machine fixed a setting: its variable is in the
+ * environment with something in it, or the config file sets it (to
+ * anything, empty included). A variable that is present and empty is not a
+ * choice: a Compose file passes one for every variable it names. So the
+ * app may set such a setting; while it does not, the empty variable is read
+ * as it always was.
+ */
+export function fixedOnTheMachine(env: string): "environment" | "file" | null {
+  if (setByConfigFile(env)) return "file";
+  return blank(process.env[env]) ? null : "environment";
+}
+
+function layeredEnvironment(stored: Readonly<Record<string, string>>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const atStart = _storedAtStart ?? stored;
+  for (const row of SETTINGS) {
+    if (row.where === "machine" || row.retired) continue;
+    if (fixedOnTheMachine(row.env)) continue;
+    const value = (row.applies === "restart" ? atStart : stored)[row.env];
+    if (value !== undefined) env[row.env] = value;
+  }
+  return env;
+}
+
+/**
+ * Take the administrators' layer as the settings service just read it.
+ * Returns null when it is in force, or why it is not: settings that cannot
+ * hold together with the machine's (a model id that no longer resolves
+ * after an upgrade, say). The configuration then stands without the stored
+ * layer, and the preflight's `settings` check says so.
+ */
+export function noteStoredSettings(values: Readonly<Record<string, string>>): string | null {
+  const first = _storedAtStart === null;
+  if (first) _storedAtStart = { ...values };
+  const same =
+    !first &&
+    Object.keys(values).length === Object.keys(_stored).length &&
+    Object.entries(values).every(([name, value]) => _stored[name] === value);
+  if (same) return _storedProblem;
+  _stored = { ...values };
+  noteGivenVariables(_stored);
+  if (!_config) return _storedProblem;
+  // The configuration was made before this copy was read: make it again.
+  const before = _config;
+  try {
+    _config = buildConfig(layeredEnvironment(_stored));
+    _storedProblem = null;
+  } catch (err) {
+    _storedProblem = configProblem(err);
+    try {
+      _config = buildConfig(layeredEnvironment({}));
+    } catch {
+      _config = before;
     }
   }
+  configChanged();
+  return _storedProblem;
+}
 
+/** Why the stored settings are not in force; null when they are. */
+export function storedSettingsProblem(): string | null {
+  return _storedProblem;
+}
+
+/** The administrators' layer as this process holds it, and as it held it when it started. */
+export function storedSettings(): { now: Readonly<Record<string, string>>; atStart: Readonly<Record<string, string>> } {
+  return { now: _stored, atStart: _storedAtStart ?? _stored };
+}
+
+/**
+ * The configuration there would be with these values in the administrators'
+ * layer in place of the stored ones: `null` for a setting returned to its
+ * default. Throws what loadConfig would. Nothing is kept: this is how a
+ * change is tried before it is saved.
+ */
+export function configWith(changes: Readonly<Record<string, string | null>>): Config {
+  const stored: Record<string, string> = { ..._stored };
+  for (const [name, value] of Object.entries(changes)) {
+    if (value === null) delete stored[name];
+    else stored[name] = value;
+  }
+  // A change is tried as it will be in force once every process has started again.
+  const saved = _storedAtStart;
+  _storedAtStart = stored;
+  try {
+    return buildConfig(layeredEnvironment(stored));
+  } finally {
+    _storedAtStart = saved;
+  }
+}
+
+/** The free grants the deployment's own settings ask for, from any layer. */
+export function grantsSetBySettings(): { signup: number; monthly: number } {
+  return grantsSetIn(layeredEnvironment(_stored));
+}
+
+/**
+ * The load-bearing roles whose model nothing has set, by their variables:
+ * each would run on the code's default, which is the cheap tier. Empty
+ * where every one is somebody's choice.
+ */
+export function modelsNobodyChose(changes: Readonly<Record<string, string | null>> = {}): string[] {
+  const stored: Record<string, string> = { ..._stored };
+  for (const [name, value] of Object.entries(changes)) {
+    if (value === null) delete stored[name];
+    else stored[name] = value;
+  }
+  const env = layeredEnvironment(stored);
+  const mathematicsOff = !featureOnGiven(
+    "mathematics",
+    (env.FEATURES_OFF ?? "").split(",").map((name) => name.trim())
+  );
+  return loadBearingModelVariables(mathematicsOff).filter((name) => blank(env[name]));
+}
+
+export function loadConfig(): Config {
+  if (_config) return _config;
+
+  // The deployment's config file, when it names one, is a layer under the
+  // environment: each setting it holds becomes its environment variable
+  // unless the environment already has one (src/config-file.ts). With no
+  // file this does nothing, and everything below reads what it always read.
+  applyConfigFile(configFieldProblem);
+
+  try {
+    _config = buildConfig(layeredEnvironment(_stored));
+    _storedProblem = null;
+  } catch (err) {
+    // The stored layer must not keep a process from starting: without it
+    // the machine's own settings either load or say what is wrong with them.
+    if (Object.keys(_stored).length === 0) throw err;
+    _storedProblem = configProblem(err);
+    _config = buildConfig(layeredEnvironment({}));
+  }
   return _config;
 }

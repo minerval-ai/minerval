@@ -14,6 +14,7 @@
 import "../src/load-env.js";
 import { ConfigFileError } from "../src/config-file.js";
 import { closeDb } from "../src/db/client.js";
+import { readStoredSettings } from "../src/services/settings-service.js";
 import { runPreflight, type PreflightReport } from "../src/preflight.js";
 
 const LABEL = { pass: "pass", fail: "FAIL", to_do: "todo", not_applicable: "n/a " } as const;
@@ -48,6 +49,10 @@ function formatPreflight(report: PreflightReport): string {
 }
 
 async function main(): Promise<number> {
+  // The checks look at the configuration as the API runs with it, what the
+  // administrators set in the app included. A database that cannot be read
+  // leaves the machine's settings, and the `database` check says why.
+  await readStoredSettings().catch(() => null);
   const report = await runPreflight();
   console.log(process.argv.includes("--json") ? JSON.stringify(report, null, 2) : formatPreflight(report));
   return report.ready ? 0 : 1;

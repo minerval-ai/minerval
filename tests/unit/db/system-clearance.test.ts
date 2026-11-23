@@ -130,6 +130,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A label, a pair in label_reads, and the administrators' log entry for each: what the administrator asked for and nothing read from elsewhere.",
     ],
   ],
+  "src/services/settings-service.ts": [
+    [
+      "The deployment's settings are the owner's alone, sealed keys among them, so they are read and written on the owner's connection. A write's caller has checked that the actor administers the deployment.",
+      "A setting's row and the administrators' log entry for the change: what the administrator asked for and nothing read from elsewhere. The guards before a change count rows at every label (accounts that hold owls, proof attempts running, prize claims open) and return the counts alone, to an administrator.",
+    ],
+  ],
   "src/services/provider-clearance-service.ts": [
     [
       "Which providers may be sent a label's text is part of the wall, so it is written on the owner's connection. The caller has checked that the actor may clear providers.",

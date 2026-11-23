@@ -130,6 +130,8 @@ describe("the settings a deployment gives", () => {
     for (const file of ["web/auth.ts", "web/next.config.mjs", "web/instrumentation.ts", "sandbox/server.py"]) {
       for (const m of readFileSync(join(ROOT, file), "utf8").matchAll(/(?:process\.env\.|["'])([A-Z][A-Z0-9_]{3,})/g)) read.add(m[1]!);
     }
+    // The config schema reads the layered environment it is handed (buildConfig in src/config.ts).
+    for (const m of readFileSync(join(ROOT, "src", "config.ts"), "utf8").matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)) read.add(m[1]!);
     // Auth.js reads its own address itself.
     read.add("AUTH_URL");
     const handed = new Set<string>();

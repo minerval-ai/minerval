@@ -68,6 +68,7 @@ export const HELD_KINDS = {
   gate: "Act at a gate: set it, set what flows to it, and consent, hold, delay or remove from what is going to readers who do not read its label",
   send_outside:
     "Act on the public graph in the organization's name: send released pages and proposals of nodes, take up or decline a public request, and spend public owls",
+  settings: "Change the deployment's settings, or return one to its default",
 } as const;
 
 export type HeldKind = keyof typeof HELD_KINDS;
@@ -124,6 +125,10 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   cancel_budget_job: "cancel",
   cancel_grant: "cancel",
   withdraw_from_mandate: "cancel",
+  // A setting decides which model reads the deployment's material and what a
+  // run may spend, for everyone (docs/settings.md).
+  set_setting: "settings",
+  reset_setting: "settings",
 };
 
 /**
@@ -182,6 +187,17 @@ export const ALWAYS_ASKS: Readonly<Record<string, { when: (input: Record<string,
       (Array.isArray(input.acknowledge_warnings) && input.acknowledge_warnings.length > 0),
     reason: "It acknowledges the draft's warnings, which only the funder can agree to.",
   },
+  // A change to a setting is a change for the whole deployment, and the
+  // Assistant reads other people's text while it works. Each one is the
+  // administrator's own press, whatever they have allowed.
+  set_setting: {
+    when: () => true,
+    reason: "It changes how the whole deployment works, for everyone in it.",
+  },
+  reset_setting: {
+    when: () => true,
+    reason: "It changes how the whole deployment works, for everyone in it.",
+  },
 };
 
 /** Whether this held call waits for the user's press whatever they allow (ALWAYS_ASKS). */
@@ -235,6 +251,8 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   cancel_budget_job: "Cancel a funded job",
   cancel_grant: "Cancel a grant",
   withdraw_from_mandate: "Withdraw your funding from a mandate",
+  set_setting: "Change one of this deployment's settings",
+  reset_setting: "Return one of this deployment's settings to its default",
 };
 
 /**

@@ -56,6 +56,8 @@
 import OpenAI from "openai";
 
 import { loadConfig } from "../../config.js";
+import { givenVariable } from "../../given-variables.js";
+import { onConfigChange } from "../../config-changes.js";
 import { undeclaredEndpointMessage } from "../../provider-labels.js";
 import { LlmRefusalError } from "../errors.js";
 import type { ModelEndpoint } from "./endpoint-config.js";
@@ -103,7 +105,7 @@ const clients = new Map<string, OpenAI>();
 function getClient(endpoint: ModelEndpoint): OpenAI {
   let key = "";
   if (endpoint.keyEnv) {
-    key = process.env[endpoint.keyEnv] ?? "";
+    key = givenVariable(endpoint.keyEnv) ?? "";
     if (!key) {
       throw new Error(
         `Endpoint "${endpoint.name}" reads its key from the environment variable ` +
@@ -440,3 +442,6 @@ export function endpointAdapterFor(modelId: string): ProviderAdapter {
     },
   };
 }
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(() => clients.clear());

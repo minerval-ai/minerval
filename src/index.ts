@@ -41,6 +41,7 @@ import { handleArbitrationMessage } from "./workers/arbitration-pipeline.js";
 import { abandonStewardLeases } from "./services/steward-lease.js";
 import { startGatedWork } from "./workers/agent-work-gate.js";
 import { ConfigFileError } from "./config-file.js";
+import { startStoredSettings } from "./services/settings-service.js";
 import type {
   QueuedClaimPipelineMessage,
   UrlExtractionMessage,
@@ -222,7 +223,7 @@ function startWork(
 }
 
 async function main() {
-  const config = loadConfig();
+  let config = loadConfig();
   // Every tool a domain skill declares must have an executor and a name
   // that collides with nothing; a defective skill fails the process here,
   // not mid-run inside a Steward's toolset.
@@ -308,6 +309,20 @@ async function main() {
     console.error("[labels] the enforcement step failed; public is the only label, so nothing is held:", err);
   }
 
+  // What the administrators set in the app (docs/settings.md) is read here,
+  // once the database is migrated and before anything is built from the
+  // configuration, and kept fresh from then on: a setting that applies live
+  // is in force in this process within seconds of being changed in another.
+  // The settings that apply at a restart are the ones read now.
+  const storedSettings = await startStoredSettings({ logger: console });
+  if (storedSettings.problem) {
+    console.error(
+      `[settings] the settings saved in the app are not in force: ${storedSettings.problem} ` +
+        "The API is starting on the machine's settings and the defaults; the preflight's `settings` check says the same."
+    );
+  }
+  config = loadConfig();
+
   const app = await buildApp();
 
   const logger = {
@@ -330,7 +345,7 @@ async function main() {
   const prices = startModelPriceRefresh({
     logger: { ...logger, warn: (...args: unknown[]) => app.log.warn(args) },
   });
-  const pollers: Array<{ stop: () => void }> = [work, prices];
+  const pollers: Array<{ stop: () => void }> = [work, prices, storedSettings];
 
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands

@@ -3162,6 +3162,133 @@ export const deploymentRequestNonces = pgTable(
 export type Deployment = typeof deployments.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// deployment_settings: what the administrators set in the app
+// (docs/settings.md; services/settings-service.ts).
+//
+// One row for each setting an administrator has set, keyed by the setting's
+// name in the registry (src/settings-registry.ts). `value` is the setting as
+// the environment would hold it. A key someone outside issued is held in
+// `sealed_value` instead, sealed under CREDENTIAL_ENCRYPTION_KEY the way a
+// connection's credential is, with its last four characters beside it so
+// the page can say which key is set without opening it.
+//
+// A setting with no row is on its default. The table keeps no history: each
+// change writes an administrative_events row in the same transaction, and
+// that log is the history.
+//
+// It is the owner's alone (the enforcement step's owner_only list): it holds
+// sealed keys, and what it says decides which model reads a label's text. It
+// is read and written on the owner's connection once the route has checked
+// the administrator.
+// ---------------------------------------------------------------------------
+export const deploymentSettings = pgTable(
+  "deployment_settings",
+  {
+    key: text("key").primaryKey(),
+    value: text("value"),
+    sealedValue: text("sealed_value"),
+    lastFour: text("last_four"),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    check(
+      "ck_deployment_settings_one_value",
+      sql`(${table.value} IS NULL) <> (${table.sealedValue} IS NULL)`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// first_administrator_codes: the one-time code that makes the first
+// administrator (docs/accounts.md, "The first administrator").
+//
+// On its first start with no administrator, a members-only deployment
+// prints a code in its log and keeps the code's hash here. The first person
+// to sign in and give the code is granted every permission. A code works
+// once and for a day. The owner's alone, as deployment_settings is.
+// ---------------------------------------------------------------------------
+export const firstAdministratorCodes = pgTable("first_administrator_codes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  codeHash: text("code_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  usedBy: uuid("used_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+});
+
+// ---------------------------------------------------------------------------
+// versions_run: each version of Minerval this deployment's API has started
+// as (docs/releases.md, "The deployment records what it has run").
+//
+// One row per version, with when the API first and last started as it. It is
+// how a deployment says "upgraded from 0.4.1 on 3 March" and which releases'
+// notes lie between the version it ran before and the one it runs now. It
+// carries no label and says nothing of the deployment's material; it is
+// written at start, on the owner's connection.
+// ---------------------------------------------------------------------------
+export const versionsRun = pgTable("versions_run", {
+  version: text("version").primaryKey(),
+  commit: text("commit"),
+  firstStartedAt: timestamp("first_started_at", { withTimezone: true }).notNull().defaultNow(),
+  lastStartedAt: timestamp("last_started_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// product_release_entries: the list of Minerval's releases
+// (docs/releases.md, "What is current").
+//
+// Not the gate's releases of pages (`releases`, `release_pages`): these are
+// versions of the software. On the public graph the table is the list
+// itself, filled by Minerval's release workflow through the operator route.
+// On any other deployment it is that deployment's copy of the list, as it
+// last read it or as an administrator uploaded it.
+//
+// An entry is a signed statement and is never edited. `kind` 'release' is a
+// release's facts and prose at one `revision`: a correction is the next
+// revision, and the list shows the latest. `kind` 'withdrawal' says a
+// release was found to be bad, why, and which version to move to. `payload`
+// is exactly what was signed; `signature` is Ed25519 over its canonical
+// JSON, by the release key whose public half is in the code
+// (src/release-key.ts), so a copy of the list cannot invent, withdraw or
+// change a release.
+// ---------------------------------------------------------------------------
+export const productReleaseEntries = pgTable(
+  "product_release_entries",
+  {
+    version: text("version").notNull(),
+    kind: text("kind").notNull(),
+    revision: integer("revision").notNull().default(1),
+    payload: jsonb("payload").notNull(),
+    signature: text("signature").notNull(),
+    keyId: text("key_id").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.version, table.kind, table.revision] }),
+    check("ck_product_release_entries_kind", sql`${table.kind} IN ('release', 'withdrawal')`),
+    check("ck_product_release_entries_revision", sql`${table.revision} >= 1`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// release_steps_done: the operator steps of a release that an administrator
+// has marked done (docs/releases.md, "What a deployment shows"). A step is
+// shown on Health until it has a row here. `step` is the step's sentence, as
+// the release's notes give it.
+// ---------------------------------------------------------------------------
+export const releaseStepsDone = pgTable(
+  "release_steps_done",
+  {
+    version: text("version").notNull(),
+    step: text("step").notNull(),
+    doneBy: uuid("done_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    doneAt: timestamp("done_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.version, table.step] })]
+);
+
+// ---------------------------------------------------------------------------
 // public_graph_connection: this deployment's own connection to the public
 // graph (docs/organizations.md, "The deployment's own key"). One row at most.
 // The private key never leaves the deployment: the table is the owner's

@@ -355,6 +355,48 @@ function toEnvironmentText(key: ConfigFileKey, value: unknown): { text: string }
 }
 
 /**
+ * A setting's value as the file writes it, from the text its environment
+ * variable holds: the inverse of the conversion above, for showing a
+ * setting in the app in the same form a person gives it.
+ */
+export function fromEnvironmentText(key: ConfigFileKey, text: string): ConfigFileValue {
+  switch (key.kind) {
+    case "text":
+      return text;
+    case "number":
+      return Number(text);
+    case "boolean":
+      return text.trim() === "true";
+    case "list":
+      return text
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    case "groups": {
+      const inFile = Object.fromEntries(Object.entries(key.members ?? {}).map(([file, json]) => [json, file]));
+      let entries: unknown;
+      try {
+        entries = JSON.parse(text || "[]");
+      } catch {
+        return [];
+      }
+      if (!Array.isArray(entries)) return [];
+      return entries.map((entry) =>
+        Object.fromEntries(
+          Object.entries(entry as Record<string, string | number | boolean>).map(([name, v]) => [inFile[name] ?? name, v])
+        )
+      );
+    }
+    case "lists":
+      try {
+        return JSON.parse(text || "{}") as Record<string, string[]>;
+      } catch {
+        return {};
+      }
+  }
+}
+
+/**
  * What the config schema said about a structured setting, in the file's
  * words: the schema speaks of the environment variable and its JSON names,
  * and a reader of the file knows the setting by the names it has there.
@@ -542,6 +584,11 @@ export function applyConfigFile(check: FieldCheck, env: NodeJS.ProcessEnv = proc
   }
   applied = { path, settings: Object.keys(settings), overridden };
   return applied;
+}
+
+/** Whether the config file, as last applied, is what set this environment variable. */
+export function setByConfigFile(env: string): boolean {
+  return placed.has(env);
 }
 
 /** What the last load read from the deployment's config file; null when it named none. */

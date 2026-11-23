@@ -340,7 +340,7 @@ describe("the file as a layer under the environment", () => {
 
     // The same load with the layer taken out altogether.
     vi.resetModules();
-    vi.doMock("../../src/config-file.js", () => ({ applyConfigFile: () => null }));
+    vi.doMock("../../src/config-file.js", () => ({ applyConfigFile: () => null, setByConfigFile: () => false }));
     const without = await freshConfig();
     expect(JSON.stringify(without.loadConfig())).toBe(withLayer);
   });

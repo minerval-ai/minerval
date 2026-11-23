@@ -54,7 +54,14 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, type Config } from "./config.js";
+import {
+  fixedOnTheMachine,
+  loadConfig,
+  modelsNobodyChose,
+  storedSettings,
+  storedSettingsProblem,
+  type Config,
+} from "./config.js";
 import { appliedConfigFile, CONFIG_FILE_KEYS, type AppliedConfigFile } from "./config-file.js";
 import { rawQuery } from "./db/client.js";
 import { withSystemClearance } from "./db/clearance.js";
@@ -73,8 +80,9 @@ import {
   type OutsideServiceName,
   type StoredClearance,
 } from "./provider-labels.js";
+import { givenVariable } from "./given-variables.js";
 import { readStoredClearance } from "./services/provider-clearance-service.js";
-import { strayVariables, type RetiredVariable, type UnknownVariable } from "./settings-registry.js";
+import { SETTINGS, strayVariables, type RetiredVariable, type UnknownVariable } from "./settings-registry.js";
 import { labelsBesidesPublic, publicIsTheOnlyLabel } from "./services/label-service.js";
 import { verifyRunLog } from "./services/run-view-service.js";
 import { openAgentRun, recordAgentStep, sealAgentRun } from "./services/trace-service.js";
@@ -158,6 +166,17 @@ export interface PreflightFacts {
    * Absent (facts made up for a test) reads as none.
    */
   strays?: { unknown: UnknownVariable[]; retired: RetiredVariable[] };
+  /**
+   * The settings the administrators set in the app (docs/settings.md): how
+   * many, why they are not in force when they could not be, and the ones
+   * saved that wait for a restart. Absent reads as none set.
+   */
+  storedSettings?: { set: number; problem: string | null; waiting: string[] };
+  /**
+   * The load-bearing roles whose model nothing has set, by their variables
+   * (modelsNobodyChose in src/config.ts). Absent reads as every one chosen.
+   */
+  modelsNobodyChose?: string[];
 }
 
 type Outcome = { status: PreflightStatus; message: string };
@@ -247,6 +266,49 @@ function checkUnknownSettings({ strays }: PreflightFacts): Outcome {
     );
   }
   return fail(parts.join(" "));
+}
+
+// ---------------------------------------------------------------------------
+// The settings the administrators set in the app
+// ---------------------------------------------------------------------------
+
+function checkSettings({ storedSettings }: PreflightFacts): Outcome {
+  const { set, problem, waiting } = storedSettings ?? { set: 0, problem: null, waiting: [] };
+  if (problem) {
+    return fail(
+      `The settings saved in the app are not in force, because together with the machine's they cannot be used: ` +
+        `${problem.split("\n")[0]} The deployment is running on the machine's settings and the defaults. ` +
+        `Put the setting right on the settings page (/admin/settings), or return it to its default there.`
+    );
+  }
+  if (set === 0) return notApplicable("No setting has been set in the app: every one comes from the machine or its default.");
+  const inForce = `${plural(set, "setting")} set in the app ${set === 1 ? "is" : "are"} in force`;
+  if (waiting.length === 0) return pass(`${inForce}.`);
+  return pass(
+    `${inForce}, and ${plural(waiting.length, "change")} to ${listed(waiting)} ${waiting.length === 1 ? "waits" : "wait"} ` +
+      `for the API to be started again.`
+  );
+}
+
+/**
+ * In production, the load-bearing agents must run on a model somebody
+ * chose: the code's defaults are the cheap tier, kept cheap for tests. On
+ * the public graph the start itself refuses (src/config.ts). A members-only
+ * deployment starts, so that its administrators can choose in the app, and
+ * this says which are still nobody's choice.
+ */
+function checkModelsChosen({ config, modelsNobodyChose }: PreflightFacts): Outcome {
+  if (config.env !== "production") {
+    return notApplicable("Outside production the roles' models may be left on their defaults.");
+  }
+  const unchosen = modelsNobodyChose ?? [];
+  if (unchosen.length === 0) return pass("The model of every load-bearing role is one somebody chose.");
+  return fail(
+    `Nobody has chosen ${unchosen.length === 1 ? "the model" : "the models"} ${listed(unchosen)}: ` +
+      `${unchosen.length === 1 ? "that role" : "those roles"} would run on the code's default, which is the cheap tier ` +
+      `kept for tests. An administrator chooses them on the settings page (/admin/settings); whoever runs the ` +
+      `machine can set them in its environment or config file instead.`
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -883,8 +945,10 @@ function checkWorkOutsideTheRunLog({ config, holdsPrivate }: PreflightFacts): Ou
 export const PREFLIGHT_CHECKS: readonly PreflightCheck[] = [
   { name: "config_file", blocking: false, run: checkConfigFile },
   { name: "unknown_settings", blocking: false, run: checkUnknownSettings },
+  { name: "settings", blocking: false, run: checkSettings },
   { name: "database", blocking: true, run: checkDatabase },
   { name: "run_log", blocking: true, run: checkRunLog },
+  { name: "models_chosen", blocking: true, run: checkModelsChosen },
   { name: "models", blocking: false, run: checkModels },
   { name: "provider_labels", blocking: true, run: checkProviderLabels },
   { name: "model_clearance", blocking: false, run: checkModelClearance },
@@ -1040,8 +1104,17 @@ export async function runLogSelfTest(): Promise<RunLogSelfTest> {
   }
 }
 
-/** Gather what the checks look at from the running deployment. */
-export async function gatherPreflightFacts(): Promise<PreflightFacts> {
+/**
+ * Gather what the checks look at from the running deployment.
+ *
+ * `callOut: false` leaves out what reaches beyond the configuration and the
+ * tables: the run log's test run and the sandbox's probe. It is how a change
+ * to a setting is tried before it is saved (services/settings-service.ts):
+ * the same facts are evaluated with the configuration as it is and as it
+ * would be, and what differs is the change's doing.
+ */
+export async function gatherPreflightFacts(options: { callOut?: boolean } = {}): Promise<PreflightFacts> {
+  const callOut = options.callOut !== false;
   const config = loadConfig();
   const database = await readDatabaseFacts();
   let privateLabels: string[] | null = null;
@@ -1060,24 +1133,41 @@ export async function gatherPreflightFacts(): Promise<PreflightFacts> {
       storedClearance = null;
     }
   }
-  const endpointKeysMissing = (config.modelEndpoints ?? [])
-    .map((endpoint) => endpoint.keyEnv)
-    .filter((env): env is string => !!env && !process.env[env]);
-  const runLog: RunLogSelfTest = database.reachable
-    ? await runLogSelfTest()
-    : { ok: false, reason: "the database cannot be reached" };
+  const runLog: RunLogSelfTest = !callOut
+    ? { ok: true, steps: 0 }
+    : database.reachable
+      ? await runLogSelfTest()
+      : { ok: false, reason: "the database cannot be reached" };
   return {
     config,
     configFile: appliedConfigFile(),
     holdsPrivate,
     privateLabels,
     storedClearance,
-    endpointKeysMissing,
+    endpointKeysMissing: endpointKeysMissing(config),
     database,
     runLog,
-    deployment: await gatherDeploymentFacts(config, database.reachable),
+    deployment: await gatherDeploymentFacts(config, database.reachable, { callOut }),
     strays: strayVariables(process.env),
+    storedSettings: storedSettingsFacts(),
+    modelsNobodyChose: modelsNobodyChose(),
   };
+}
+
+/** The variables that declared model endpoints read their keys from and that nothing has given. */
+export function endpointKeysMissing(config: Config): string[] {
+  return (config.modelEndpoints ?? [])
+    .map((endpoint) => endpoint.keyEnv)
+    .filter((env): env is string => !!env && !givenVariable(env));
+}
+
+/** What this process holds of the settings set in the app. */
+export function storedSettingsFacts(): NonNullable<PreflightFacts["storedSettings"]> {
+  const { now, atStart } = storedSettings();
+  const waiting = SETTINGS.filter(
+    (row) => row.applies === "restart" && row.where !== "machine" && !fixedOnTheMachine(row.env) && now[row.env] !== atStart[row.env]
+  ).map((row) => row.key);
+  return { set: Object.keys(now).length, problem: storedSettingsProblem(), waiting };
 }
 
 /** Run the preflight against the running deployment. */

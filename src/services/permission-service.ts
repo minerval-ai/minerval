@@ -617,7 +617,16 @@ export type AdministrativeAction =
   | "mirror_followed"
   | "mirror_paused"
   | "mirror_check_requested"
-  | "mirror_feed_key_accepted";
+  | "mirror_feed_key_accepted"
+  // The deployment's settings (services/settings-service.ts; docs/settings.md):
+  // one was set or returned to its default, and the API was asked to start again.
+  | "setting_changed"
+  | "setting_reset"
+  | "restart_requested"
+  // A party was given another name (party-service.ts).
+  | "party_renamed"
+  // An operator step of a release was marked done (services/product-release-service.ts).
+  | "release_step_done";
 
 /**
  * The kinds of act the log is filtered by (`type` on GET /permissions/log),
@@ -625,7 +634,7 @@ export type AdministrativeAction =
  * Activity log page shows the API's word, and a new event is given a kind
  * here or the compiler says so.
  */
-export const LOG_TYPES = ["access", "labels", "parties", "connections", "owls", "providers", "mandates", "file_sets", "mirror", "other"] as const;
+export const LOG_TYPES = ["access", "labels", "parties", "connections", "owls", "providers", "mandates", "file_sets", "mirror", "settings", "other"] as const;
 export type LogType = (typeof LOG_TYPES)[number];
 
 export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, LogType> = {
@@ -655,6 +664,11 @@ export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, L
   mirror_paused: "mirror",
   mirror_check_requested: "mirror",
   mirror_feed_key_accepted: "mirror",
+  setting_changed: "settings",
+  setting_reset: "settings",
+  restart_requested: "settings",
+  party_renamed: "parties",
+  release_step_done: "settings",
 };
 
 /** The kind of act an event is; "other" for one this build does not know. */
@@ -725,6 +739,21 @@ export interface LogEntry {
   key_id?: string;
   /** The feed the mirror started following (mirror_followed). */
   feed?: string;
+  /**
+   * For setting_changed and setting_reset: the setting by its name, its
+   * value before and after as the environment would hold it (for a key, only
+   * "set" or "not set"), and the reason the administrator gave.
+   */
+  setting?: string;
+  before?: string | null;
+  after?: string | null;
+  secret?: boolean;
+  why?: string;
+  /** For party_renamed: the name the party had. */
+  previous_name?: string;
+  /** For release_step_done: the release and the step. */
+  version?: string;
+  step?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -994,6 +1023,24 @@ export async function permissionLog(
         }
         entry.previous_party =
           typeof d.previous_party_id === "string" ? partyName(d.previous_party_id) : null;
+      }
+      if (r.event === "setting_changed" || r.event === "setting_reset") {
+        if (typeof d.setting === "string") entry.setting = d.setting;
+        entry.before = typeof d.before === "string" ? d.before : null;
+        if (r.event === "setting_changed") entry.after = typeof d.after === "string" ? d.after : null;
+        if (d.secret === "true") entry.secret = true;
+      }
+      if (
+        (r.event === "setting_changed" || r.event === "setting_reset" || r.event === "restart_requested") &&
+        typeof d.reason === "string" &&
+        d.reason.length > 0
+      ) {
+        entry.why = d.reason;
+      }
+      if (r.event === "party_renamed" && typeof d.previous_name === "string") entry.previous_name = d.previous_name;
+      if (r.event === "release_step_done") {
+        if (typeof d.version === "string") entry.version = d.version;
+        if (typeof d.step === "string") entry.step = d.step;
       }
       if (r.event === "provider_clearance_set") {
         const list = (value: string | null | undefined) =>
