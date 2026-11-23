@@ -732,6 +732,11 @@ export interface ClaimDetail {
   question?: QuestionDetail | null;
   /** A list's specification, entries, what it left out, its fidelity and whether it is stale (constitution §7b). */
   list?: ListDetail | null;
+  /**
+   * A safety case's specification, conclusion, structure, form, fidelity and verdict (constitution §7b).
+   * An artifact carries this or `list`, never both.
+   */
+  safety_case?: SafetyCaseDetail | null;
   /** Requests that bear on this node (Part VIII, Requests). */
   requests?: RequestItem[];
   /** What has arrived for the node's Steward since its last pass and has not yet been weighed. */
@@ -820,6 +825,133 @@ export interface ListDetail {
   /** True when an entry moved, joined or left since the judgment; null when there is nothing to compare. */
   stale: boolean | null;
   changed_entries: number;
+}
+
+// ---------------------------------------------------------------------------
+// Artifacts: safety cases (constitution §7b, #1211)
+// ---------------------------------------------------------------------------
+
+// A safety case argues one conclusion about one system in one deployment, to
+// a stated standard. It carries two judgments that are never merged: its
+// fidelity, as every artifact has, and its verdict, which says whether the
+// case establishes its conclusion to its standard. Neither is the graph's
+// assessment of the conclusion, which stays the conclusion's own.
+// These mirror src/services/safety-case-service.ts and src/services/case-form.ts.
+
+export type CaseVerdict = "established" | "not_established";
+export type CaseFramework = "assurance_2_cae" | "none";
+export type CaseElementType = "claim" | "step" | "side_claim" | "evidence" | "defeater";
+export type DefeaterStanding = "open" | "answered" | "sustained";
+
+export interface CaseSpec {
+  subtype: "safety_case";
+  system: string;
+  deployment: string;
+  conclusion_claim_id: string;
+  /** The standard the conclusion has to meet, and whose standard it is. */
+  standard: string;
+  standard_of: string;
+  framework: CaseFramework | string;
+  not_covered: string | null;
+}
+
+/** A graph node as a case presents it, with the graph's own judgment of it, unchanged. */
+export interface CaseNodeRef {
+  id: string;
+  kind: NodeKind | string;
+  text: string;
+  page_url?: string;
+  /** Null where the graph has not judged the node. A quantity's estimate comes without its unit. */
+  judgment: {
+    status?: string | null;
+    credence?: number | null;
+    standing?: string | null;
+    estimate?: unknown;
+    fidelity?: string | null;
+  } | null;
+  judgments_in_force?: number;
+}
+
+/** One element of a case's structure. */
+export interface CaseElement {
+  id: string;
+  type: CaseElementType | string;
+  /** The element it hangs under. Null for the case's top claim alone. */
+  parent: string | null;
+  /** A step's building block. */
+  block?: string | null;
+  /** A step: the inference in words. Any other element: what the case needs of the node. */
+  statement: string;
+  /** The graph node the element presents. Absent on a step. */
+  node?: CaseNodeRef | null;
+  argument_id?: string | null;
+  /** A defeater: where it stands in the case, and why. Not the graph's assessment of the claim. */
+  standing?: DefeaterStanding | string | null;
+  standing_reason?: string | null;
+  /** A residual doubt: who accepted it, and why. */
+  accepted_by?: string | null;
+  acceptance?: string | null;
+  /** Where the element departs from the framework, in the Steward's words. */
+  departure?: string | null;
+  /** Whether the developer's published case raises this element. Null where none is being read in. */
+  raised_in_published?: boolean | null;
+  position: number;
+  /** The node's verdict moved after the case was last judged, or the node joined the case since. */
+  changed_since: boolean;
+  label?: string;
+}
+
+export interface CaseFormFailure {
+  /** The element the failure is at, or null for one about the case as a whole. */
+  element: string | null;
+  rule: string;
+  message: string;
+  /** The Steward's stated departure at this element. The failure is still a failure of form. */
+  departure: string | null;
+}
+
+export interface CaseCountsAgainst {
+  element: string | null;
+  kind: "open_defeater" | "sustained_defeater_not_accepted" | "form" | string;
+  message: string;
+}
+
+export interface CaseAssessment {
+  id: string;
+  fidelity: ListFidelity;
+  verdict: CaseVerdict | null;
+  /** What the verdict rests on, the residual doubts among it. */
+  verdict_basis: string | null;
+  would_change: string | null;
+  summary: string | null;
+  reasoning_trace: string;
+  gaps: string | null;
+  confidence: number | null;
+  model: string | null;
+  run_id: string | null;
+  assessed_at: string;
+}
+
+export interface SafetyCaseDetail {
+  spec: CaseSpec | null;
+  /** The conclusion as the graph holds it, with the graph's own assessment of it: not the case's verdict. */
+  conclusion: CaseNodeRef | null;
+  fidelity: ListFidelity | null;
+  /** Whether the case establishes its conclusion to its standard. Null until it is judged. */
+  verdict: CaseVerdict | null;
+  assessment: CaseAssessment | null;
+  elements: CaseElement[];
+  /** The form under the case's framework, as it stands now. */
+  form: { framework: CaseFramework | string; well_formed: boolean; failures: CaseFormFailure[] };
+  /** What counts against the case under its own burden, as far as its structure shows it. */
+  counts_against: CaseCountsAgainst[];
+  /** Sustained defeaters accepted as residual doubts, by element id. */
+  residual_doubts: string[];
+  /** Elements the developer's published case never raises, by element id. Empty where none is being read in. */
+  not_raised_in_published: string[];
+  /** True when a node the case draws on moved, joined or left since the judgment; null when there is nothing to compare. */
+  stale: boolean | null;
+  changed_nodes: number;
 }
 
 // What a quantity's value is measured in. `kind` drives formatting and the
@@ -1172,8 +1304,12 @@ export interface SearchResultItem {
   tags?: TagRef[];
   // What stands where a claim's status would: a question's standing, a
   // quantity's estimate and unit. Present only on that kind.
-  // A list's fidelity to its criteria (constitution §7b).
+  // An artifact's fidelity (constitution §7b): a list's to its criteria, a safety case's to what it draws on.
   fidelity?: ListFidelity | null;
+  // Which artifact the row is: a list or a safety case. Present only on an artifact.
+  artifact_subtype?: "list" | "safety_case" | null;
+  // A safety case: whether the case establishes its conclusion to its standard. Not the conclusion's status.
+  case_verdict?: "established" | "not_established" | null;
   standing?: QuestionStanding | null;
   estimate?: QuantityEstimate | null;
   unit?: QuantityUnit | null;

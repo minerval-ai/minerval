@@ -512,6 +512,8 @@ read of a claim, use a card.
   listed in `not_found`; one call where a list of claims would otherwise
   take a `get_claim` each), `cite_claim`, `get_claim_provenance`,
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
+  `export_safety_case` (a safety case in Claims, Arguments, Evidence form,
+  [safety-cases.md](safety-cases.md)),
   `get_claim_record`, `get_node_lookouts` (the watches its Steward posted on
   it, with their funds and flags), `get_assessment_history`, `get_assessment_trajectory`,
   `get_judgment_inputs` (what a node's judgment in force was made against,
@@ -525,7 +527,11 @@ read of a claim, use a card.
   enters the graph), `propose_list` (a list by its specification, constitution
   §7b: its Steward finds the entries and judges the list's fidelity; a list
   whose specification reads very close to one the graph holds is shown back
-  instead of minted, unless `confirm_new`).
+  instead of minted, unless `confirm_new`), `propose_safety_case` (a safety
+  case by its specification: the system, the deployment, the claim it argues
+  for, the standard and whose it is; its Steward builds the structure and
+  judges whether the case establishes its conclusion to that standard, which
+  is not the conclusion's own assessment).
 - **Funding:** `order_assessment`, `fund_claim_assessment` (commission a
   claim's next assessment whole, at a budget you choose; what it does not
   spend comes back),

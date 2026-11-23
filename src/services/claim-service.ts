@@ -168,6 +168,8 @@ export async function listClaims(opts: {
       updated_at: claims.updatedAt,
       standing: questionAssessmentsInForce.standing,
       fidelity: artifactAssessmentsInForce.fidelity,
+      case_verdict: artifactAssessmentsInForce.verdict,
+      artifact_subtype: sql<string | null>`CASE WHEN ${claims.kind} = 'artifact' THEN (SELECT s.subtype FROM artifact_specs s WHERE s.claim_id = ${claims.id} LIMIT 1) END`,
       estimate: quantityEstimatesInForce.estimate,
       unit: quantityDefinitions.unit,
       assessment_status: assessmentsInForce.status,
@@ -193,9 +195,9 @@ export async function listClaims(opts: {
 
   const hasMore = rows.length > opts.limit;
   const results = (hasMore ? rows.slice(0, opts.limit) : rows).map(
-    ({ kind, standing, estimate, unit, fidelity, ...r }) => ({
+    ({ kind, standing, estimate, unit, fidelity, case_verdict, artifact_subtype, ...r }) => ({
       ...r,
-      ...kindFields({ kind, standing, estimate, unit, fidelity }),
+      ...kindFields({ kind, standing, estimate, unit, fidelity, case_verdict, artifact_subtype }),
       prize_micro_usd: r.prize_micro_usd === null || r.prize_micro_usd === undefined ? null : Number(r.prize_micro_usd),
       checked: r.checked === "proof" || r.checked === "disproof" ? r.checked : null,
     })

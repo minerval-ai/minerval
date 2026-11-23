@@ -43,8 +43,12 @@ export interface SearchResult {
   standing?: string | null;
   estimate?: unknown | null;
   unit?: unknown | null;
-  // A list's fidelity to its criteria (§7b): never a verdict on its entries.
+  // An artifact's fidelity (§7b): never a verdict on what it draws on.
   fidelity?: string | null;
+  // Which artifact: a list or a safety case. Absent on every other kind.
+  artifact_subtype?: string | null;
+  // A safety case: whether the case establishes its conclusion to its standard. Not the conclusion's status.
+  case_verdict?: string | null;
 }
 
 // Filter on whether a node carries a current assessment. "unassessed" matches
@@ -80,7 +84,9 @@ const kindJoinSql = () => `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_
     LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
     LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
     LEFT JOIN artifact_assessments_in_force aa ON aa.claim_id = c.id`;
-const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit, aa.fidelity`;
+// An artifact's subtype is the same at every layer that holds its specification, so any row of it answers.
+const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit, aa.fidelity, aa.verdict AS case_verdict,
+    CASE WHEN c.kind = 'artifact' THEN (SELECT s.subtype FROM artifact_specs s WHERE s.claim_id = c.id LIMIT 1) END AS artifact_subtype`;
 const ASSESSED_SQL = `(CASE c.kind WHEN 'question' THEN qa.id IS NOT NULL
       WHEN 'quantity' THEN qe.id IS NOT NULL WHEN 'artifact' THEN aa.id IS NOT NULL ELSE a.status IS NOT NULL END)`;
 
@@ -118,12 +124,24 @@ interface KindRow {
   estimate?: unknown;
   unit?: unknown;
   fidelity?: string | null;
+  artifact_subtype?: string | null;
+  case_verdict?: string | null;
 }
 
 /** The kind, and the verdict fields of that kind only (a claim carries none). */
-export function kindFields(r: KindRow): Pick<SearchResult, "kind" | "standing" | "estimate" | "unit" | "fidelity"> {
+export function kindFields(
+  r: KindRow
+): Pick<SearchResult, "kind" | "standing" | "estimate" | "unit" | "fidelity" | "artifact_subtype" | "case_verdict"> {
   if (r.kind === "question") return { kind: "question", standing: r.standing ?? null };
-  if (r.kind === "artifact") return { kind: "artifact", fidelity: r.fidelity ?? null };
+  if (r.kind === "artifact") {
+    const subtype = r.artifact_subtype ?? null;
+    return {
+      kind: "artifact",
+      fidelity: r.fidelity ?? null,
+      artifact_subtype: subtype,
+      ...(subtype === "safety_case" ? { case_verdict: r.case_verdict ?? null } : {}),
+    };
+  }
   if (r.kind === "quantity") {
     return { kind: "quantity", estimate: r.estimate ?? null, unit: r.unit ?? null };
   }

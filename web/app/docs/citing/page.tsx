@@ -74,7 +74,7 @@ export default function Page() {
       <p>The same citation is on every claim page under <b>Cite this claim</b>, with copy buttons for each rendering and the full evidence record as a JSON download. With <code>format=json</code> you can trim the response with <code>fields</code>, as on any JSON read.</p>
       <p>A claim that has not been assessed still cites: the citation says so and carries no version. Cite it as the graph's wording of the proposition, not as a finding.</p>
       <h2 id="export">Export it</h2>
-      <p>Four exports render what the graph already holds. Each is a plain <code>GET</code> with an MCP twin, and none is metered. Graph content is dedicated to the public domain under CC0, and the exports say so.</p>
+      <p>Five exports render what the graph already holds. Each is a plain <code>GET</code> with an MCP twin, and none is metered. Graph content is dedicated to the public domain under CC0, and the exports say so.</p>
       <div className="dc-tablewrap">
         <table>
           <thead>
@@ -103,6 +103,12 @@ export default function Page() {
               <td><code>/claims/:claim_id/mira</code></td>
               <td>MIRA graph, JSON-LD</td>
               <td>Research-attribution tools. A claim or a question with its evidence, sources, neighbouring nodes and requests, each with its creator</td>
+            </tr>
+            <tr>
+              <td><code>export_safety_case</code></td>
+              <td><code>/claims/:claim_id/cae</code></td>
+              <td>Claims, Arguments, Evidence structure, JSON</td>
+              <td>Assurance-case tooling. A safety case&apos;s structure, with the node each element presents and the graph&apos;s assessment of that node when exported, where each doubt stands in the case, the case&apos;s verdict, and where its form fails. <code>404</code> for any node that is not a safety case</td>
             </tr>
             <tr>
               <td><code>get_formalization_lean</code></td>

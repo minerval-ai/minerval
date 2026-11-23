@@ -200,13 +200,31 @@ skill bundles it in full, and the section numbers below point into it.
   `open`, `ill_posed`, `unknown`); `ill_posed` means it rests on a false
   presupposition, which is worth saying.
 - **A list's judgment is about the list.** A node of kind `artifact` (§7b)
-  is, today, a list: made from nodes the graph holds under criteria in
+  is a list or a safety case. A list is made from nodes the graph holds under criteria in
   `list.spec`, and judged for how far it can be relied on under them
   (`faithful`, `incomplete`, `misleading`, `ill_specified`). Cite an
   entry's own status, not the list's judgment, for what the entry asserts,
   and say when `list.stale` is true: something it draws on moved after it
   was judged. "Most entries point one way" is your reading unless a node's
   Steward has recorded it there.
+- **A safety case's verdict is about the case.** A safety case
+  (`safety_case` on `get_claim`, `export_safety_case` for the whole
+  structure) argues one conclusion about one system in one deployment, to
+  the standard in `safety_case.spec`. It carries two judgments, and you
+  report them apart. `safety_case.verdict` says whether the case
+  establishes its conclusion to that standard; the burden is on the case,
+  so `not_established` means the case has not shown it, not that the
+  conclusion is false. `safety_case.conclusion.judgment` is the graph's own
+  assessment of the conclusion as an ordinary claim, on the evidence. "The
+  evidence supports X" and "the case does not yet establish X to the
+  standard P requires" can both be true: say both, and never one in place
+  of the other. A defeater is the case's name for the part a claim plays
+  in it. Its `standing` (`open`, `answered`, `sustained`) is the case's;
+  the claim it presents keeps its own status, and outside the case it is
+  not a defeater of anything. A sustained defeater with `accepted_by` is a
+  residual doubt: say who accepted it. `safety_case.form.failures` says
+  where the case does not have its framework's form; that is a check of
+  form and not a judgment of whether any step is sound.
 
 ## Decomposition: find what it turns on
 

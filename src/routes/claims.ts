@@ -13,14 +13,15 @@ import {
 } from "../services/judgment-inputs-service.js";
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
-import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
+import { CASE_FRAMEWORKS, NODE_KINDS, type CaseFramework, type NodeKind } from "../schemas/kinds.js";
 import { membersOnly } from "../permissions.js";
 import { COVERAGE_DESCRIPTION, COVERAGE_EVIDENCE, READER_COVERAGE_EVIDENCE, coverage, summarizeCoverage } from "../services/coverage-service.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
 import { getQuestionDetail } from "../services/question-service.js";
-import { getListDetail, proposeList } from "../services/artifact-service.js";
+import { proposeList } from "../services/artifact-service.js";
+import { exportCase, getArtifactDetail, proposeCase } from "../services/safety-case-service.js";
 import { KindError } from "../services/node-kind.js";
 import { loadConfig } from "../config.js";
 import { JUDGMENTS_IN_FORCE_DESCRIPTION, nodeVersions, severalInForceNote } from "../services/judgment-version-service.js";
@@ -124,8 +125,13 @@ const tagFilterProperties = {
 const kindItemProperties = {
   kind: { type: "string", enum: [...NODE_KINDS] },
   standing: { type: "string", nullable: true },
-  // A list's fidelity to its criteria (constitution §7b); absent on every other kind.
+  // An artifact's fidelity (constitution §7b); absent on every other kind.
   fidelity: { type: "string", nullable: true },
+  // Which artifact: list or safety_case. Absent on every other kind.
+  artifact_subtype: { type: "string", nullable: true },
+  // A safety case: whether the case establishes its conclusion to its standard
+  // (established, not_established). It is not the conclusion's status.
+  case_verdict: { type: "string", nullable: true },
   estimate: looseObject,
   unit: looseObject,
   // Only where more than one judgment of the node is in force for the reader (judgment-version-service.ts).
@@ -793,6 +799,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               // fidelity, and whether it is stale (constitution §7b).
               // Absent on every other kind.
               list: looseObject,
+              // A safety case's specification, structure, form, verdict and
+              // whether it is stale (constitution §7b, #1211). Absent on
+              // every other kind.
+              safety_case: looseObject,
               // Requests that bear on this node (Part VIII), live ones and
               // closed ones alike, newest first.
               requests: { type: "array", items: REQUEST_SCHEMA },
@@ -864,11 +874,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           return [];
         });
 
-        const [quantity, thresholdOf, question, list, nodeRequests, waiting, changes, covered] = await Promise.all([
+        const [quantity, thresholdOf, question, artifact, nodeRequests, waiting, changes, covered] = await Promise.all([
           claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
           claim.kind === "claim" ? getThresholdOf(claim_id) : null,
           claim.kind === "question" ? getQuestionDetail(claim_id) : null,
-          claim.kind === "artifact" ? getListDetail(claim_id) : null,
+          claim.kind === "artifact" ? getArtifactDetail(claim_id) : null,
           // Requests degrade to none rather than failing the page, as tags do.
           listRequests({ claimId: claim_id, limit: 20 }).catch((err) => {
             console.error(
@@ -931,7 +941,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           quantity,
           threshold_of: thresholdOf,
           question,
-          ...(list ? { list } : {}),
+          ...(artifact?.list ? { list: artifact.list } : {}),
+          ...(artifact?.safety_case ? { safety_case: artifact.safety_case } : {}),
           requests: nodeRequests.items,
           waiting_messages: waiting,
           tags: claimTags.map((t) => ({
@@ -1289,6 +1300,46 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           });
         }
         return reply.type("text/x-prolog; charset=utf-8").send(program);
+      },
+    }
+  );
+
+  // GET /claims/:claim_id/cae — a safety case in its framework's form
+  // (docs/safety-cases.md, "Export"): every claim, step with its building
+  // block, side claim, evidence item and defeater with its standing, each
+  // carrying the graph node it points at and that node's judgment at the
+  // time of export. Read-only, and read with the caller's clearance, as the
+  // case's page is: a reader who does not read the case's label is not
+  // served it here, and receives it, if at all, as a page released through
+  // the gate (docs/releasing-a-page.md). No response schema, as for
+  // /nanopub and /mira: the document's own format is its contract, and
+  // readCaseExport (src/services/case-form.ts) reads it back.
+  app.get<{ Params: { claim_id: string } }>(
+    "/:claim_id/cae",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "Export a safety case in Claims, Arguments, Evidence form: its structure with each element's graph node and that node's judgment, its defeaters with where each stands, its verdict, and where its form fails",
+        params: {
+          type: "object",
+          properties: {
+            claim_id: { type: "string", format: "uuid" },
+          },
+        },
+      },
+      handler: async (request, reply) => {
+        const doc = await exportCase(request.params.claim_id);
+        if (doc === null) {
+          return reply.code(404).send({
+            error: {
+              code: "NOT_FOUND",
+              message: "No safety case with that id. A claim, a quantity, a question or a list has no case export.",
+              request_id: request.id,
+            },
+          });
+        }
+        return reply.type("application/json; charset=utf-8").send(doc);
       },
     }
   );
@@ -1993,6 +2044,153 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           message:
             "A list with a very close specification already exists. If its criteria are the ones you mean, use it; " +
             "if yours differ, say how in the specification and propose again with confirm_new.",
+        });
+      }
+      const claim = await getClaimById(result.id);
+      return reply.code(201).send({
+        created: true,
+        claim: formatClaim(claim!),
+        page_url: `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${result.id}`,
+        similar: result.similar,
+      });
+    },
+  });
+
+  // POST /claims/propose-case — propose a safety case (constitution §7b,
+  // #1211). A safety case is an artifact that argues one conclusion about
+  // one system in one deployment, to a stated standard. Like a list it is
+  // proposed by its specification, so it does not go through the Matcher;
+  // the conclusion it argues for does, as a claim proposed first. Its
+  // Steward builds the structure from what the graph holds and judges the
+  // case: its burden and its verdict are the case's own, and change nothing
+  // in the assessment of any node it draws on.
+  app.post("/propose-case", {
+    schema: {
+      tags: ["claims"],
+      summary:
+        "Propose a safety case: a node that argues one conclusion about one system in one deployment, to a stated standard. " +
+        "Its Steward builds the case from what the graph holds, records the doubts against it and where each stands, and judges " +
+        "whether the case establishes its conclusion to that standard. The conclusion is a claim the graph already holds, with its own assessment. " +
+        "Returns the near cases by specification; when one reads very close nothing is minted unless confirm_new says it is another case.",
+      body: {
+        type: "object",
+        required: ["title", "system", "deployment", "conclusion_claim_id", "standard", "standard_of"],
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 300, description: "What the case argues, and of what, in a line." },
+          system: {
+            type: "string",
+            minLength: 1,
+            maxLength: 2000,
+            description: "The system the case is about, named specifically enough that a later model is plainly another case.",
+          },
+          deployment: {
+            type: "string",
+            minLength: 1,
+            maxLength: 4000,
+            description: "The deployment the case is about: who uses the system, for what, under which controls.",
+          },
+          conclusion_claim_id: {
+            type: "string",
+            format: "uuid",
+            description: "The claim the case argues for. Propose it as a claim first where the graph does not hold it.",
+          },
+          standard: { type: "string", minLength: 1, maxLength: 4000, description: "The standard the conclusion has to meet." },
+          standard_of: { type: "string", minLength: 1, maxLength: 1000, description: "Whose standard it is, and where it is written." },
+          framework: {
+            type: "string",
+            enum: [...CASE_FRAMEWORKS],
+            default: "assurance_2_cae",
+            description:
+              "The framework the case follows: assurance_2_cae (Assurance 2.0 in Claims, Arguments, Evidence form, whose form is then checked), or none.",
+          },
+          not_covered: { type: "string", maxLength: 4000, description: "What the case does not cover." },
+          confirm_new: {
+            type: "boolean",
+            default: false,
+            description: "Mint the case even though one with a very close specification exists, because it is another case.",
+          },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            created: { type: "boolean" },
+            similar: { type: "array", items: { type: "object", additionalProperties: true } },
+            message: { type: "string" },
+          },
+        },
+        201: {
+          type: "object",
+          properties: {
+            created: { type: "boolean" },
+            claim: claimSchema,
+            page_url: { type: "string" },
+            similar: { type: "array", items: { type: "object", additionalProperties: true } },
+          },
+        },
+        400: errorEnvelopeSchema,
+        402: errorEnvelopeSchema,
+        403: errorEnvelopeSchema,
+        429: errorEnvelopeSchema,
+      },
+    },
+    // Proposing a case commands a full Steward pass on it, as proposing a
+    // claim or a list does, and is capped and charged the same (src/services/owl.ts).
+    preHandler: [app.authenticate, app.requireAgenticQuota("claim_proposal")],
+    handler: async (request, reply) => {
+      const body = request.body as {
+        title: string;
+        system: string;
+        deployment: string;
+        conclusion_claim_id: string;
+        standard: string;
+        standard_of: string;
+        framework?: CaseFramework;
+        not_covered?: string;
+        confirm_new?: boolean;
+      };
+      const auth = request.auth;
+      const direct = isDirectService(auth);
+      if (!direct) {
+        // Priced: the owl charge bounds proposals, so no hourly count.
+        const contributor = await gateContributor(request, reply, { priced: true });
+        if (!contributor) return;
+      }
+      const charge = direct ? null : await chargeAgenticOp(auth, "claim_proposal");
+      if (charge && !charge.allowed) return app.sendQuotaDenial(reply, charge);
+      let result: Awaited<ReturnType<typeof proposeCase>>;
+      try {
+        result = await proposeCase({
+          title: body.title,
+          spec: {
+            system: body.system,
+            deployment: body.deployment,
+            conclusion_claim_id: body.conclusion_claim_id,
+            standard: body.standard,
+            standard_of: body.standard_of,
+            framework: body.framework ?? "assurance_2_cae",
+            not_covered: body.not_covered?.trim() || null,
+          },
+          createdBy: direct ? "service" : "user",
+          confirmNew: body.confirm_new === true,
+        });
+      } catch (err) {
+        if (charge) await refundAgenticOp(auth, "claim_proposal").catch(() => {});
+        if (err instanceof KindError) {
+          return reply.code(400).send({ error: { code: "INVALID_CASE", message: err.message } });
+        }
+        throw err;
+      }
+      if (!result.id) {
+        // Nothing was minted: the proposer pays nothing for being shown the near cases.
+        if (charge) await refundAgenticOp(auth, "claim_proposal").catch(() => {});
+        return reply.code(200).send({
+          created: false,
+          similar: result.similar,
+          message:
+            "A safety case with a very close specification already exists. If it is the case you mean, use it; " +
+            "if yours is about another system, deployment or standard, say so in the specification and propose again with confirm_new.",
         });
       }
       const claim = await getClaimById(result.id);

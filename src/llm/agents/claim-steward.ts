@@ -83,7 +83,9 @@ import {
 import { originalPayer } from "../../services/commission-service.js";
 import { executeSessionTool, getSessionToolDefinitions, takeArrivals } from "../tools/session-tools.js";
 import { getQuestionStewardSystemPromptBlocks } from "../prompts/question-steward.js";
-import { getArtifactStewardSystemPromptBlocks } from "../prompts/artifact-steward.js";
+import { getArtifactStewardSystemPromptBlocks, getCaseStewardSystemPromptBlocks } from "../prompts/artifact-steward.js";
+import { CASE_ASSESSMENT_TOOL, executeCaseTool, getCaseToolDefinitions } from "../tools/case-tools.js";
+import { artifactSubtypeOf } from "../../services/safety-case-service.js";
 import { executeListTool, getListToolDefinitions, LIST_ASSESSMENT_TOOL } from "../tools/list-tools.js";
 import {
   executeKindTool,
@@ -91,7 +93,7 @@ import {
   getQuestionToolDefinitions,
   getRequestToolDefinitions,
 } from "../tools/kind-tools.js";
-import type { NodeKind } from "../../schemas/kinds.js";
+import type { ArtifactSubtype, NodeKind } from "../../schemas/kinds.js";
 import { loadChangesSinceJudgedNote } from "./steward-changes-note.js";
 import {
   classifyPass,
@@ -151,6 +153,11 @@ const ARTIFACT_WITHHELD_TOOLS = new Set([
   "reattach_claim_instance",
   "set_instance_order",
 ]);
+
+/** What a node is called to its Steward. */
+function nounOf(kind: NodeKind, subtype: ArtifactSubtype | null): string {
+  return kind !== "artifact" ? kind : subtype === "safety_case" ? "safety case" : "list";
+}
 
 function withheldFor(kind: NodeKind): Set<string> {
   if (kind === "artifact") return ARTIFACT_WITHHELD_TOOLS;
@@ -341,9 +348,17 @@ it.`;
  * decision is the whole outcome. Re-recording the same verdict would also
  * mark every argument evaluation stale and ask for each to be re-recorded.
  */
-export function defaultTask(passNote: string, kind: NodeKind, mustRecord: boolean, readsAnothers = false): PassTask {
-  const noun = kind === "artifact" ? "list" : kind;
-  const tool = ASSESSMENT_TOOL[kind];
+export function defaultTask(
+  passNote: string,
+  kind: NodeKind,
+  mustRecord: boolean,
+  readsAnothers = false,
+  /** Which artifact, for kind 'artifact': a safety case has tools and a task of its own (#1211). */
+  subtype: ArtifactSubtype | null = null
+): PassTask {
+  const isCase = kind === "artifact" && subtype === "safety_case";
+  const noun = nounOf(kind, subtype);
+  const tool = isCase ? CASE_ASSESSMENT_TOOL : ASSESSMENT_TOOL[kind];
   const record =
     kind === "quantity"
       ? `the estimate
@@ -352,7 +367,11 @@ of each named argument`
       : kind === "question"
         ? `the assessment
 (update_question_assessment, with its standing and both texts)`
-        : kind === "artifact"
+        : isCase
+          ? `the assessment
+(${CASE_ASSESSMENT_TOOL}, with its fidelity, its verdict and what the verdict
+rests on, and both texts)`
+          : kind === "artifact"
           ? `the assessment
 (${LIST_ASSESSMENT_TOOL}, with its fidelity, both texts, the entries' order and
 what you left out)`
@@ -360,7 +379,21 @@ what you left out)`
 (update_claim_assessment, with both texts and marginal_yield), an evaluation
 of each named argument`;
   const opening =
-    kind === "artifact"
+    isCase
+      ? `You own this safety case: its specification, its structure, its doubts and
+its judgment. Your role describes what that involves. How you go about this
+pass is your judgment.
+
+${passNote}
+
+Read the case with get_claim: its specification, the conclusion with the
+graph's own assessment of it, the structure with each node's current verdict,
+where the form fails, what counts against the case, and whether anything it
+draws on moved since it was judged. check_case_form gives the structure again
+with each element's id. Start from the conclusion: form your own view of what
+would have to be true, and what would have to have been looked for, before you
+rely on the structure already there or on what the developer published.`
+      : kind === "artifact"
       ? `You own this list: its specification, its entries and its assessment. Your
 role describes what that involves. How you go about this pass is your judgment.
 
@@ -774,6 +807,9 @@ async function runClaimStewardImpl(input: {
   const kind = (claimRow?.kind ?? "claim") as NodeKind;
   const kindRole =
     kind === "question" ? "question_steward" : kind === "artifact" ? "artifact_steward" : "claim_steward";
+  // Which artifact (§7b): a list and a safety case have one role, and each its own tools and prompt.
+  const subtype = kind === "artifact" ? await artifactSubtypeOf(input.claimId) : null;
+  const isCase = subtype === "safety_case";
   const elicitTools = await getElicitToolDefinitions(config);
   // Pangram (AI-writing detection, original-source search), priced per
   // word against the run's budget inside the bundle.
@@ -857,9 +893,11 @@ async function runClaimStewardImpl(input: {
     ...(oneLabelOnly() ? [] : [getLeaveStandingToolDefinition()]),
     ...(kind === "question"
       ? getQuestionToolDefinitions()
-      : kind === "artifact"
-        ? getListToolDefinitions()
-        : getQuantityToolDefinitions()),
+      : isCase
+        ? getCaseToolDefinitions()
+        : kind === "artifact"
+          ? getListToolDefinitions()
+          : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
     ...elicitTools,
@@ -874,7 +912,7 @@ async function runClaimStewardImpl(input: {
     ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
 
-  const noun = kind === "artifact" ? "list" : kind;
+  const noun = nounOf(kind, subtype);
   const [judged, structured] = await Promise.all([
     hasCurrentJudgment(input.claimId, kind),
     hasStructure(input.claimId),
@@ -939,7 +977,7 @@ a cent.`
   const task =
     formalTask ??
     moneyTask(input.trigger) ??
-    defaultTask(passNote, kind, !judged, judged && (await readsAnothersJudgment(input.claimId, kind)));
+    defaultTask(passNote, kind, !judged, judged && (await readsAnothersJudgment(input.claimId, kind)), subtype);
 
   // What has changed under the node's judgment since it was written (#566):
   // which premises were judged again, added or removed, which sources came
@@ -961,7 +999,7 @@ a cent.`
 
 Today's date: ${today}
 Trigger: ${input.trigger}
-${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : kind === "artifact" ? "List" : "Question"} ID: ${input.claimId}
+${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : isCase ? "Safety case" : kind === "artifact" ? "List" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
 ${task.text}\n\n${PAYER_TOLD}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${lookoutNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
@@ -971,9 +1009,11 @@ ${task.text}\n\n${PAYER_TOLD}${changesNote ? `\n\n${changesNote}` : ""}${lookout
   const system =
     kind === "question"
       ? getQuestionStewardSystemPromptBlocks()
-      : kind === "artifact"
-        ? getArtifactStewardSystemPromptBlocks()
-        : getClaimStewardSystemPromptBlocks();
+      : isCase
+        ? getCaseStewardSystemPromptBlocks()
+        : kind === "artifact"
+          ? getArtifactStewardSystemPromptBlocks()
+          : getClaimStewardSystemPromptBlocks();
 
   // A run that ends its turn with nothing recorded (GLM 5.3 Flash has
   // returned an empty end_turn after seventeen steps of structuring) loses
@@ -1159,7 +1199,15 @@ ${task.text}\n\n${PAYER_TOLD}${changesNote ? `\n\n${changesNote}` : ""}${lookout
     // Elicit calls cost real money, not just tokens (#299/#300); the
     // executor declines a call the run's budget cannot cover.
     if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
-    if (kind === "artifact") {
+    if (isCase) {
+      const caseOutput = await executeCaseTool(name, toolInput, {
+        claimId: input.claimId,
+        model,
+        trigger: input.trigger,
+        context: input.context,
+      });
+      if (caseOutput !== null) return caseOutput;
+    } else if (kind === "artifact") {
       const listOutput = await executeListTool(name, toolInput, {
         claimId: input.claimId,
         model,

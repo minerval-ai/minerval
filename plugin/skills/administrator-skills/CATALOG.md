@@ -59,7 +59,7 @@ The owner of a question: it keeps the question's wording and presuppositions, ga
 
 ### Artifact Steward (`roles/artifact-steward.md`)
 
-The owner of a list: it keeps the list's criteria clear and checkable, finds the nodes that meet them, says why each is on the list and what was left out, and judges the list's fidelity, never the truth of its entries.
+The owner of an artifact. For a list: it keeps the criteria clear and checkable, finds the nodes that meet them, says why each is on the list and what was left out, and judges the list's fidelity, never the truth of its entries. For a safety case: it builds the case's structure from what the graph holds, records the doubts against it and where each stands, and judges whether the case establishes its conclusion to its standard, which changes nothing in the assessment of any node the case draws on.
 
 ### Curator (`roles/curator.md`)
 
