@@ -238,6 +238,10 @@ export interface LogEntry {
   no_longer_cleared?: string[];
   tool?: string;
   reason?: string;
+  /** On a write grant: the administrator's reason. On it or a change of terms: whether calls wait, and a call's price. */
+  write_reason?: string;
+  held?: boolean;
+  owls_per_call?: number;
   amount_owls?: number;
   mandate?: { id: string; title: string };
   note?: string;
@@ -393,8 +397,30 @@ export interface ConnectionTool {
   offered: boolean;
   offered_at: string | null;
   withdrawn: { at: string; reason: string } | null;
+  /** The write grant the tool was picked under; null for a tool picked as one that reads, or not picked. */
+  write_grant: {
+    reason: string;
+    acknowledgement: string;
+    granted_by: { id: string; name: string } | null;
+    granted_at: string;
+    /** Each call waits for an administrator before it is sent. */
+    held: boolean;
+  } | null;
+  /** What one answered call is charged to the run's budget, in owls; 0 for none. */
+  owls_per_call: number;
   calls: number;
   readings_kept: number;
+  writes_made: number;
+  writes_held: number;
+}
+
+/** One tool in a pick, with the terms it is offered on (PUT /connections/:id/tools). */
+export interface ConnectionToolPick {
+  name: string;
+  definition_hash: string;
+  writes?: { acknowledged: boolean; reason: string };
+  held?: boolean;
+  owls_per_call?: number;
 }
 
 export interface ConnectionView {
@@ -437,8 +463,11 @@ export interface ConnectionCall {
   tool: string;
   called_at: string;
   duration_ms: number | null;
-  /** in_flight | answered | tool_error | failed */
+  /** in_flight | answered | tool_error | failed | held | declined | not_sent */
   outcome: string;
+  /** Whether the call was to a tool granted to write when it was made. */
+  writes: boolean;
+  charged_owls: number;
   error: string | null;
   result_chars: number | null;
   result_sha256: string | null;
@@ -449,6 +478,41 @@ export interface ConnectionCall {
   kept_at: string | null;
   /** What the agent wrote in the call. */
   arguments: unknown;
+}
+
+/** A notice the API puts in place of a system's own text for a reader who may not open raw sources. */
+export interface WithheldText {
+  withheld: string;
+  permission: string;
+  labels: string[];
+  message: string;
+}
+
+/** A call to a tool granted to write, with what was sent and what came back (GET /connections/:id/writes). */
+export interface ConnectionWrite {
+  id: string;
+  tool: string;
+  called_at: string;
+  /** held | in_flight | answered | tool_error | failed | declined | not_sent */
+  outcome: string;
+  error: string | null;
+  duration_ms: number | null;
+  run_id: string | null;
+  agent: string | null;
+  claim_id: string | null;
+  label: string;
+  /** The call's arguments, as the agent wrote them. */
+  sent: unknown;
+  came_back:
+    | { content: string; total_chars: number; truncated: boolean; sha256: string; system_error: boolean }
+    | { withheld: WithheldText; total_chars: number; sha256: string; system_error: boolean }
+    | null;
+  held: {
+    at: string;
+    decided: { at: string; by: { id: string; name: string } | null; decision: "approved" | "declined"; note: string | null } | null;
+  } | null;
+  charged_owls: number;
+  owls_per_call: number;
 }
 
 /** A list an administrator's clearance leaves rows out of, with how many and the API's sentence saying so. */
@@ -523,8 +587,36 @@ export function fetchConnections(
 export function fetchConnection(
   externalId: string,
   id: string
-): Promise<{ notice: string; can_keep_credentials: boolean; roles: ConnectionRoleView[]; connection: ConnectionView }> {
+): Promise<{
+  notice: string;
+  /** What a write grant acknowledges, in the API's words. */
+  write_acknowledgement: string;
+  can_keep_credentials: boolean;
+  roles: ConnectionRoleView[];
+  connection: ConnectionView;
+}> {
   return accountFetch(`/connections/${seg(id)}`, { actingUser: externalId });
+}
+
+/** The calls made to a connection's tools granted to write, newest first, with how many wait for an administrator. */
+export function fetchConnectionWrites(
+  externalId: string,
+  id: string,
+  options: { heldOnly?: boolean; limit?: number } = {}
+): Promise<{ writes: ConnectionWrite[]; waiting: number } & NotShown> {
+  const params = new URLSearchParams({ limit: String(options.limit ?? 100) });
+  if (options.heldOnly) params.set("held", "true");
+  return accountFetch(`/connections/${seg(id)}/writes?${params}`, { actingUser: externalId });
+}
+
+/** Approve or decline a write that waits for an administrator. Approved, it is sent now, once. */
+export function decideConnectionWrite(
+  externalId: string,
+  id: string,
+  callId: string,
+  body: { decision: "approve" | "decline"; note?: string }
+): Promise<{ call_id: string; outcome: string; problem?: string }> {
+  return accountFetch(`/connections/${seg(id)}/writes/${seg(callId)}/decision`, { method: "POST", actingUser: externalId, body });
 }
 
 export async function fetchConnectionCalls(
@@ -584,8 +676,14 @@ export function lookAtConnection(
 export function offerConnectionTools(
   externalId: string,
   id: string,
-  offered: Array<{ name: string; definition_hash: string }>
-): Promise<{ connection: ConnectionView; offered: string[]; no_longer_offered: string[] }> {
+  offered: ConnectionToolPick[]
+): Promise<{
+  connection: ConnectionView;
+  offered: string[];
+  no_longer_offered: string[];
+  write_granted: string[];
+  write_revoked: string[];
+}> {
   return accountFetch(`/connections/${seg(id)}/tools`, { method: "PUT", actingUser: externalId, body: { offered } });
 }
 

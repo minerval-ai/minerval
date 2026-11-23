@@ -500,6 +500,29 @@ function What({ entry }: { entry: LogEntry }) {
           {entry.reason && <span className="w-faint w-small">· {logSentence(entry).split(", because ")[1]?.replace(/\.$/, "") ?? entry.reason.replace(/_/g, " ")}</span>}
         </>
       );
+    case "connection_tool_write_granted":
+      return (
+        <>
+          granted {entry.tool ? <span className="w-chip w-mono">{entry.tool}</span> : "a tool"} on <ConnectionOf v={entry.connection} /> to write
+          {entry.held && <span className="w-faint w-small">· each call waits for an administrator</span>}
+          {entry.write_reason && <span className="w-faint w-small">· {entry.write_reason}</span>}
+        </>
+      );
+    case "connection_tool_write_revoked":
+      return (
+        <>
+          revoked the write grant of {entry.tool ? <span className="w-chip w-mono">{entry.tool}</span> : "a tool"} on{" "}
+          <ConnectionOf v={entry.connection} />
+        </>
+      );
+    case "connection_tool_terms_changed":
+      return (
+        <>
+          changed how {entry.tool ? <span className="w-chip w-mono">{entry.tool}</span> : "a tool"} on <ConnectionOf v={entry.connection} /> is
+          offered
+          <span className="w-faint w-small">· {logSentence(entry).split(": ").slice(1).join(": ").replace(/\.$/, "") || "its terms"}</span>
+        </>
+      );
     case "owls_created":
       return (
         <>

@@ -604,6 +604,12 @@ export type AdministrativeAction =
   | "connection_changed"
   | "connection_tools_offered"
   | "connection_tool_withdrawn"
+  // A tool was granted to write, with the administrator's reason; a write
+  // grant was revoked; whether a granted tool's calls wait for an
+  // administrator, or what a tool's call costs a run, was changed.
+  | "connection_tool_write_granted"
+  | "connection_tool_write_revoked"
+  | "connection_tool_terms_changed"
   // File sets (src/file-sets.ts, services/file-set-service.ts). These are
   // acts of a person who directs the graph, logged with the administrative
   // ones because they change what agents may read.
@@ -652,6 +658,9 @@ export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, L
   connection_changed: "connections",
   connection_tools_offered: "connections",
   connection_tool_withdrawn: "connections",
+  connection_tool_write_granted: "connections",
+  connection_tool_write_revoked: "connections",
+  connection_tool_terms_changed: "connections",
   file_set_added: "file_sets",
   file_set_closed: "file_sets",
   file_set_changed: "file_sets",
@@ -711,6 +720,12 @@ export interface LogEntry {
   /** A tool withdrawn from agents, and why: changed, missing or address_changed. */
   tool?: string;
   reason?: string;
+  /** On a write grant: the administrator's reason for it. */
+  write_reason?: string;
+  /** On a write grant or a change of a tool's terms: whether its write calls wait for an administrator. */
+  held?: boolean;
+  /** On a change of a tool's terms: what one call is charged to the run's budget, in owls. */
+  owls_per_call?: number;
   /** The providers a label was cleared for, and those it no longer is (provider_clearance_set). */
   cleared?: string[];
   no_longer_cleared?: string[];
@@ -1049,7 +1064,11 @@ export async function permissionLog(
           const dropped = list(d.no_longer_offered);
           if (dropped) entry.no_longer_offered = dropped;
           if (typeof d.tool === "string") entry.tool = d.tool;
+          // The reason is an administrator's words about the system.
+          if (typeof d.write_reason === "string") entry.write_reason = d.write_reason;
         }
+        if (typeof d.held === "string") entry.held = d.held === "true";
+        if (typeof d.price_micro_usd === "string") entry.owls_per_call = microUsdToOwls(Number(d.price_micro_usd));
       }
       if (typeof d.file_set_id === "string") {
         entry.file_set = fileSetName(d.file_set_id);

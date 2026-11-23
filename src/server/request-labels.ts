@@ -416,7 +416,12 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "PUT /connections/:connection_id/tools": from(
     "connection",
     "connection_id",
-    "Changes which of the connection's tools are offered: rows at the connection's label."
+    "Changes which of the connection's tools are offered, and under what terms, a write grant among them: rows at the connection's label."
+  ),
+  "POST /connections/:connection_id/writes/:call_id/decision": from(
+    "connection",
+    "connection_id",
+    "Decides a call that waited for an administrator, on the call's own row, and sends it. A write through a connection is a write at the connection's label: a tool granted to write is offered only to a run that works at that label (connectionsOfferedAt in services/connection-service.ts), so the call's row is at the connection's label and the request works there. An administrator who does not read it is told the connection does not exist."
   ),
   "PUT /connections/:connection_id/credential": from(
     "connection",

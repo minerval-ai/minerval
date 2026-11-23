@@ -52,6 +52,8 @@ const { state } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/llm/tools/connection-tools.js", () => ({
+  connectionsHeading: (bundle: { writes?: boolean }) =>
+    bundle.writes ? "Systems you can read, and write to where granted" : "Systems you can read",
   createConnectionTools: vi.fn(async (opts: Record<string, unknown>) => {
     state.connectionOpts = opts;
     return state.connections ?? { definitions: [], note: "", execute: async () => null };

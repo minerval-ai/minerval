@@ -2,7 +2,8 @@
 # workers, the web app built members-only, and the sandbox.
 # docs/self-hosting.md has the steps, in order.
 #
-#   cp env.example .env        # then fill it in; it is never committed
+#   install -m 600 env.example .env   # readable by you alone; then fill
+#                                     # it in. It is never committed
 #   docker compose build
 #   docker compose up -d
 #

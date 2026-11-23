@@ -72,8 +72,9 @@ export default function Page() {
         <li>
           <strong>Write <code>.env</code></strong>
           <Code label="Shell">{`cd deploy
-cp env.example .env
+install -m 600 env.example .env   # readable by you alone
 openssl rand -hex 32   # one per secret`}</Code>
+          <p><code>install -m 600</code> copies the file readable by your account alone; a plain <code>cp</code> leaves every secret in it readable by every account on the machine. If yours was made that way, run <code>chmod 600 .env api.env</code>. An account that may run <code>docker</code> can read the secrets from the running containers whatever the file's mode.</p>
           <p>Every line of <code>env.example</code> that is not commented out must be filled in: the site's address (<code>SITE_URL</code>); two database passwords (<code>POSTGRES_PASSWORD</code>, <code>DB_OWNER_PASSWORD</code>); the web app's session secret (<code>AUTH_SECRET</code>); the key the web app presents to the API (<code>WEB_API_KEY</code>) and the token the API presents to the sandbox (<code>SANDBOX_TOKEN</code>); your identity provider's issuer, client id and secret; and the model for six roles (Steward, Steward strong, Curator, Extractor, Audit, Dispute Arbitrator). <code>DB_OWNER_PASSWORD</code> must be letters and digits only, which <code>openssl rand -hex</code> gives. With mathematics on, the solver's model is needed too. <code>docker compose</code> stops and names any required setting left empty. Leave <code>RUN_LOG_MODE</code> as the package sets it, <code>record</code>: once you define a label, no agent work starts without it.</p>
         </li>
         <li>
@@ -94,7 +95,7 @@ docker compose logs -f api`}</Code>
       </ol>
       <p>To stop: <code>docker compose down</code>; the database and file sets stay in Docker volumes. <code>docker compose down -v</code> deletes them. To upgrade: <code>git pull</code>, <code>docker compose build</code>, <code>docker compose up -d</code>.</p>
       <h2 id="settings">Settings</h2>
-      <p>Three places hold them. <code>deploy/.env</code> holds what <code>env.example</code> names, and Compose hands each setting only to the container that reads it. <code>deploy/api.env</code>, optional, holds any other setting the API reads (budgets, intervals, Stripe keys, a connection's credential); the repository's root <code>.env.example</code> lists them. The Compose file fixes the rest: members-only, production mode, where the database and the sandbox are.</p>
+      <p>Three places hold them. <code>deploy/.env</code> holds what <code>env.example</code> names, and Compose hands each setting only to the container that reads it. <code>deploy/api.env</code>, optional, holds any other setting the API reads (budgets, intervals, Stripe keys, a connection's credential); the repository's root <code>.env.example</code> lists them. It holds secrets too: make it with <code>install -m 600 /dev/null api.env</code>. The Compose file fixes the rest: members-only, production mode, where the database and the sandbox are.</p>
       <p>The API can also read its settings from one TOML file, named in <code>MINERVAL_CONFIG</code> or found as <code>minerval.toml</code> in the directory it starts in. An environment variable overrides the file, and secrets are never accepted in it. <a href="https://github.com/minerval-ai/minerval/blob/main/deploy/minerval.example.toml"><code>deploy/minerval.example.toml</code></a> is the public graph's own settings written out. The Compose file does not mount one yet.</p>
       <p>The decisions most deployments make first:</p>
       <div className="dc-tablewrap">
