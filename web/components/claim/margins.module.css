@@ -7,8 +7,10 @@
 
 /* full-bleed escape from the 62rem .frame, then re-center our own grid */
 .bleed {
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
+  /* --bleed is the width of the column the page sits in: the viewport, or
+     beside the workspace sidebar the main column (app/workspace.css) */
+  width: var(--bleed, 100vw);
+  margin-left: calc(50% - var(--bleed, 100vw) / 2);
 }
 
 .grid {

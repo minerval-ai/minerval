@@ -8,8 +8,10 @@
 
 /* full-bleed escape from the 62rem .frame (same trick as the claim margins) */
 .bleed {
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
+  /* --bleed is the width of the column the page sits in: the viewport, or
+     beside the workspace sidebar the main column (app/workspace.css) */
+  width: var(--bleed, 100vw);
+  margin-left: calc(50% - var(--bleed, 100vw) / 2);
 }
 
 /* ----- toolbar: back-link, view name, trail --------------------------------- */
