@@ -37,7 +37,11 @@ export interface Inbox {
   items: InboxItem[];
   checklist: SetupChecklist | null;
   deployment: string | null;
-  /** Open requests on the public graph that nobody here has adopted. */
+  /**
+   * Open requests on the public graph that concern this deployment in
+   * particular and that nobody here has adopted or passed on. The rest are
+   * asked of anyone, and wait on nobody here.
+   */
   openPublicRequests: number;
 }
 
@@ -142,25 +146,32 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
   }
 
   if (requests) {
-    const open = requests.requests.filter(
-      (r) => r.here.length === 0 && ["open", "addressed", "in_progress"].includes(r.state_on_the_public_graph),
+    // The mirror brings every public node, so every public request bears on a node held here. What waits on
+    // this deployment is the few the API marks as its own (concerns_this_graph): addressed to a mandate it
+    // published, or bearing on a node it has worked on. The button opens the list; adopting is decided there.
+    const mine = requests.requests.filter(
+      (r) =>
+        r.concerns_this_graph &&
+        !r.passed_on &&
+        r.here.length === 0 &&
+        ["open", "addressed", "in_progress"].includes(r.state_on_the_public_graph),
     );
-    openPublicRequests = open.length;
-    const bearing = open.filter((r) => r.bears_on.length > 0);
-    if (bearing.length > 0) {
+    openPublicRequests = mine.length;
+    if (mine.length > 0) {
+      const asked = mine.filter((r) => r.asked_of_this_graph).length;
+      const ask = mine[0].ask.length > 140 ? `${mine[0].ask.slice(0, 137).trimEnd()}…` : mine[0].ask;
       items.push({
         key: "public-requests",
         group: "public",
         icon: "globe",
         tone: "plain",
-        title:
-          bearing.length === 1
-            ? `Public request: ${bearing[0].ask}`
-            : `${plural(bearing.length, "public request")} bear on nodes here`,
-        facts: bearing.length === 1 ? [`bears on ${plural(bearing[0].bears_on.length, "node")} here`] : [],
-        pill: { text: "open", tone: "neu" },
-        since: oldest(bearing.map((r) => r.filed_at)),
-        action: { href: "/admin/outside/requests", label: directs ? "Adopt" : "View" },
+        title: mine.length === 1 ? `Public request: ${ask}` : `${plural(mine.length, "public request")} concern this graph`,
+        facts: [
+          ...(asked > 0 ? [`${asked === mine.length && asked === 1 ? "addressed" : `${asked} addressed`} to a mandate this graph published`] : []),
+          ...(asked < mine.length ? [mine.length === 1 ? "bears on a node this graph has worked on" : "on nodes this graph has worked on"] : []),
+        ],
+        since: oldest(mine.map((r) => r.filed_at)),
+        action: { href: "/admin/outside/requests", label: "View" },
       });
     }
   }

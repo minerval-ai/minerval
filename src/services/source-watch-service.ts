@@ -34,6 +34,7 @@ import { fetchRuleApplies, noteGiven, noteGivenIn } from "./given-addresses.js";
 import { parseDoi } from "./identifiers.js";
 import { bodyToText, looksLikePdf, windowText, type TextWindow } from "./document-text.js";
 import { sniffImage } from "./paper-files.js";
+import { readHtml } from "./html-text.js";
 
 const CROSSREF = "https://api.crossref.org";
 const USER_AGENT = "Minerval/1.0 (lookout; mailto:hello@minerval.ai)";
@@ -661,74 +662,13 @@ export async function claimsRestingOnSources(sourceIds: string[]): Promise<Resti
   );
 }
 
-/*
- * The two stripping steps below are linear-time scans with exactly the
- * output of the regex replacements named on each. Those regexes, run on a
- * fetched page, retried every later start position after a failed match: a
- * long run of `<` with no `>` after it (or of `<script` with no `</script>`)
- * cost time quadratic in its length, enough for one page to pin the event
- * loop for hours.
+/**
+ * A page's markup as readable text, bounded: the same reading the stored
+ * copy of a source gets (html-text.ts), so what an agent quotes from
+ * read_page is what the quote check finds in the copy.
  */
-
-/** `html.replace(/<NAME[\s\S]*?<\/NAME>/gi, " ")`, in linear time. */
-function stripElement(html: string, name: "script" | "style" | "noscript"): string {
-  // One of the three fixed names above, so safe to build a pattern from.
-  const open = new RegExp(`<${name}`, "gi");
-  const close = new RegExp(`<\\/${name}>`, "gi");
-  let out = "";
-  let pos = 0;
-  for (;;) {
-    open.lastIndex = pos;
-    const o = open.exec(html);
-    if (!o) break;
-    close.lastIndex = o.index + o[0].length;
-    const c = close.exec(html);
-    // No closing tag after this opening tag means none after any later one: the rest stays as written.
-    if (!c) break;
-    out += html.slice(pos, o.index) + " ";
-    pos = c.index + c[0].length;
-  }
-  return out + html.slice(pos);
-}
-
-/** `html.replace(/<[^>]+>/g, " ")`, in linear time. */
-function stripTags(html: string): string {
-  let out = "";
-  let pos = 0;
-  let from = 0;
-  for (;;) {
-    const lt = html.indexOf("<", from);
-    if (lt < 0) break;
-    const gt = html.indexOf(">", lt + 1);
-    // No `>` after this `<` means none after any later one: the rest stays as written.
-    if (gt < 0) break;
-    // `<>` encloses nothing, so it is not a tag.
-    if (gt === lt + 1) {
-      from = gt + 1;
-      continue;
-    }
-    out += html.slice(pos, lt) + " ";
-    pos = from = gt + 1;
-  }
-  return out + html.slice(pos);
-}
-
-/** Reduce an HTML document to readable text, bounded. */
 export function htmlToText(html: string, maxChars = 12_000): string {
-  const blocks = stripElement(stripElement(stripElement(html, "script"), "style"), "noscript")
-    .replace(/<\/(p|div|li|h[1-6]|tr|br|section|article)>/gi, "\n");
-  const text = stripTags(blocks)
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    // Last, so "&amp;lt;" reads "&lt;" and is not decoded twice.
-    .replace(/&amp;/g, "&")
-    .replace(/[ \t]+/g, " ")
-    .replace(/[ \t]*\n[ \t]*/g, "\n")
-    .replace(/\n\n+/g, "\n")
-    .trim();
+  const { text } = readHtml(html);
   return text.length > maxChars ? `${text.slice(0, maxChars)}\n[truncated]` : text;
 }
 

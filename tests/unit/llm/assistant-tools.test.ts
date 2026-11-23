@@ -77,6 +77,8 @@ describe("the Assistant's tools", () => {
       "save_redaction_policy",
       "try_the_redactor",
       "send_pages_outside",
+      "pass_on_public_request",
+      "put_back_public_request",
       "take_up_public_request",
       "decline_public_request",
       "fund_public_mandate",

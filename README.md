@@ -188,9 +188,9 @@ the agent that launched it (replicate a finding, trace a statistic to its
 origin, map a literature) and reports back. The **Solver** makes one bounded
 attempt on a formal mathematical statement, with Lean and a computer-algebra
 sandbox, and reports to the claim's Steward. The **Tagger** labels claims
-with topic tags for navigation. The **Extension Agent** sits behind the
-browser extension, judging on-page phrasings against the graph and powering
-its chat; it never writes to the graph.
+with topic tags for navigation. The **Assistant** works for one user, with
+that account's own tools; behind the browser extension it also judges
+on-page phrasings against the graph and is its chat.
 
 Model choice follows the value of the judgment. Narrow, saturating calls
 (matching, tagging, the Lookout's relevance call, the Consistency Checker's

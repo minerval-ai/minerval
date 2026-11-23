@@ -324,7 +324,7 @@ describe("retractionNoticesSince", () => {
 describe("htmlToText / readPage", () => {
   it("drops scripts, styles and tags, keeps line structure, and bounds the length", () => {
     const html = "<html><head><style>p{}</style><script>x()</script></head><body><h1>Title</h1><p>One &amp; two</p><p>Three</p></body></html>";
-    expect(htmlToText(html)).toBe("Title\nOne & two\nThree");
+    expect(htmlToText(html)).toBe("# Title\n\nOne & two\n\nThree");
     expect(htmlToText("<p>" + "a".repeat(50) + "</p>", 10)).toBe("aaaaaaaaaa\n[truncated]");
   });
 
@@ -334,12 +334,12 @@ describe("htmlToText / readPage", () => {
 
   it("keeps the edge cases of its stripping: tag case, unclosed elements, `<>`", () => {
     expect(
-      htmlToText("<div><SCRIPT type=x>if (a < b) {}</Script>Kept<scripts>gone</SCRIPT> <style>p{}</STYLE><noscript>x</noscript>.</div>")
+      htmlToText("<div><SCRIPT type=x>if (a < b) {}</Script>Kept <style>p{}</STYLE><noscript>x</noscript>.</div>")
     ).toBe("Kept .");
-    // An unclosed <script> stays as text and does not hide a closed <style> after it.
-    expect(htmlToText("<p>x <script never closed <style>gone</style> y</p>")).toBe("x <script never closed y");
-    expect(htmlToText("<p>a</p><p>b<style>never closed")).toBe("a\nb never closed");
-    expect(htmlToText("a<script>x</script >b</script>c")).toBe("a c");
+    // An unclosed <script> is read on from its opening tag and does not hide a closed <style> after it.
+    expect(htmlToText("<p>x <script never closed>y <style>gone</style>z</p>")).toBe("x y z");
+    expect(htmlToText("<p>a</p><p>b <style>never closed")).toBe("a\n\nb never closed");
+    expect(htmlToText("a<script>x</script >b</script>c")).toBe("abc");
     expect(htmlToText("<p>1 <> 2 < 3</p>")).toBe("1 <> 2 < 3");
   });
 

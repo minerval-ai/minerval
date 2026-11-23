@@ -248,10 +248,10 @@ describe("models", () => {
       assistantTitleModel: MODELS.sonnet,
       researcherCheapModel: MODELS.sonnet,
     };
-    const on = check("models", { config: config({ ...allAnthropic, extensionModel: "gpt-example", openaiApiKey: "" }) });
-    expect(on.message).toBe("OPENAI_API_KEY is not set, and 1 role runs on OpenAI models (extension).");
+    const on = check("models", { config: config({ ...allAnthropic, assistantMarkupModel: "gpt-example", openaiApiKey: "" }) });
+    expect(on.message).toBe("OPENAI_API_KEY is not set, and 1 role runs on OpenAI models (assistant_markup).");
     const off = check("models", {
-      config: config({ ...allAnthropic, extensionModel: "gpt-example", openaiApiKey: "", featuresOff: ["extension"] }),
+      config: config({ ...allAnthropic, assistantMarkupModel: "gpt-example", openaiApiKey: "", featuresOff: ["extension"] }),
     });
     expect(off.status).toBe("pass");
   });
@@ -516,11 +516,11 @@ describe("providers cleared by label", () => {
     it("leaves out the roles of features that are off", () => {
       const over = {
         ...ALL_ANTHROPIC,
-        extensionModel: "gpt-example",
+        assistantMarkupModel: "gpt-example",
         providerLabels: { anthropic: ["public", "internal"] },
       };
       expect(check("model_clearance", withLabels(["internal"], over)).message).toMatch(
-        /^At the label "internal", OpenAI is not cleared \(extension\), so /
+        /^At the label "internal", OpenAI is not cleared \(assistant_markup\), so /
       );
       expect(check("model_clearance", withLabels(["internal"], { ...over, featuresOff: ["extension"] }))).toMatchObject({
         status: "pass",

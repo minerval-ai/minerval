@@ -302,9 +302,9 @@ describe("the model seam in record mode", () => {
     await untraced(() => withAgent("matcher", ask));
     // Naming a conversation: the run outside, untraced inside.
     await withAgent("assistant", () => untraced(ask));
-    // The extension agent, never traced while the log is best-effort.
-    await untraced(() => withAgent("extension", ask));
-    await withAgent("extension", () => openrouterWebSearch("anything", 3));
+    // The Assistant's marks on a page, inside the page analysis.
+    await untraced(() => withAgent("assistant", ask));
+    await withAgent("assistant", () => openrouterWebSearch("anything", 3));
     expect(mocks.create).toHaveBeenCalledTimes(4);
     // Marking the work is not opening a run.
     await expect(untraced(ask)).rejects.toThrow(UnloggedModelCallError);

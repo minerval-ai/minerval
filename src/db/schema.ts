@@ -1406,11 +1406,13 @@ export const sourceEvents = pgTable(
 // instance, an examination's coverage, a finding) is anchored to a segment,
 // so that the many claims a document carries share one map of it.
 //
-// Offsets index the document's READABLE text (htmlToText of raw_content),
-// the same text provenance_read_source returns and the quote check reads,
-// so an offset an agent sees and an offset stored here agree. text_hash is
-// the sha256 of the segment's text, so a later copy of the document that
-// differs can be detected rather than silently mis-anchored.
+// Offsets index the document's READABLE text (htmlToText of raw_content,
+// services/html-text.ts), the same text provenance_read_source returns and
+// the quote check reads, so an offset an agent sees and an offset stored
+// here agree. text_hash is the sha256 of the segment's text, so a copy of
+// the document that differs, or a changed reading of the same copy, is
+// detected and the document segmented again rather than silently
+// mis-anchored (segmentsStale in services/source-segment-service.ts).
 // ---------------------------------------------------------------------------
 export const sourceSegments = pgTable(
   "source_segments",
@@ -9809,6 +9811,19 @@ export const outwardActs = pgTable(
     check("ck_outward_acts_result", sql`${table.result} IN ('done', 'refused', 'failed')`),
   ]
 );
+
+// Public requests this deployment has passed on (docs/outward-acts.md,
+// "Passing on one"): set aside from the list of requests that wait on
+// somebody here, and said to nobody outside. The public request is the
+// mirror's row and is not written to; this is the deployment's own note
+// about it, one for the whole deployment, kept at `public` where every
+// member reads the list it tidies. Putting a request back deletes the row.
+export const passedPublicRequests = pgTable("passed_public_requests", {
+  publicRequestId: uuid("public_request_id").primaryKey(),
+  passedBy: uuid("passed_by").references((): AnyPgColumn => contributors.id),
+  passedAt: timestamp("passed_at", { withTimezone: true }).notNull().defaultNow(),
+  sensitivityLabel: sensitivityLabelColumn(),
+});
 
 // A contribution made on the public graph through a page this deployment
 // published, as it came in with the mirror. The contribution's own text is

@@ -492,6 +492,11 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /outside/reports": { name: "list_agents_reports", note: "Free." },
   "GET /outside/mandates/conversations": { name: "list_public_mandate_conversations", note: "Free." },
   "GET /outside/mandates/conversations/:conversation_id": { name: "get_public_mandate_conversation", note: "Free." },
+  "POST /outside/requests/:public_request_id/pass": {
+    name: "pass_on_public_request",
+    note: "Free. Sets the request aside in this deployment so it stops waiting on anyone here; says nothing outside, and put_back_public_request undoes it.",
+  },
+  "DELETE /outside/requests/:public_request_id/pass": { name: "put_back_public_request", note: "Free. Says nothing outside." },
   "POST /outside/requests/adopted/:adoption_id/take-up": {
     name: "take_up_public_request",
     note: "An act on the public graph in the organization's name: it shows outside what this graph is working on. It takes a person, so your user is shown a card.",

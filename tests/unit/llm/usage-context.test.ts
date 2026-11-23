@@ -265,11 +265,11 @@ describe("untraced", () => {
   it("leaves metering attribution untouched", async () => {
     await runWithUsageContext({ userId: "user-1", apiKeyId: "key-1" }, () =>
       untraced(() =>
-        withAgent("extension", async () => {
+        withAgent("assistant", async () => {
           expect(getUsageContext()).toMatchObject({
             userId: "user-1",
             apiKeyId: "key-1",
-            agent: "extension",
+            agent: "assistant",
             untraced: true,
           });
         })

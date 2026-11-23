@@ -45,12 +45,12 @@ import {
   getAssistantContext,
   getAssistantTitleSystemPrompt,
   EXTENSION_SECTION,
+  getChatContextPrompt,
   guestSection,
   NODE_SECTION,
   WEB_SECTION,
 } from "../llm/prompts/assistant.js";
 import { RUN_TURN_GUARD } from "../llm/prompts/turn-budget.js";
-import { getChatContextPrompt } from "../llm/prompts/extension-agent.js";
 import {
   alwaysAsks,
   assistantAuthFor,
@@ -504,6 +504,10 @@ export interface AssistantPageOrigin {
   claims: Array<{
     verbatim_text: string;
     verdict: string;
+    /** The one-line reason the verdict was given; absent from an extension that predates sending it. */
+    why?: string | null;
+    /** Whether the page affirms, denies or poses the claim; absent likewise. */
+    stance?: string | null;
     claim_id: string | null;
     canonical_form: string | null;
     status: string | null;

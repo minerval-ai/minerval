@@ -244,6 +244,10 @@ export interface ChatPageContext {
   claims: Array<{
     verbatim_text: string;
     verdict: string;
+    /** The one-line reason for the verdict, where there is one. */
+    why: string | null;
+    /** Whether the page affirms, denies or poses the claim. */
+    stance: string | null;
     claim_id: string | null;
     canonical_form: string | null;
     status: string | null;

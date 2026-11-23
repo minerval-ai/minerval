@@ -472,6 +472,8 @@ describe("what a permission guards", () => {
       "GET /outside/mandates/conversations": ["direct"],
       "GET /outside/mandates/conversations/:conversation_id": ["direct"],
       "POST /outside/requests/:public_request_id/adopt": ["direct"],
+      "POST /outside/requests/:public_request_id/pass": ["direct"],
+      "DELETE /outside/requests/:public_request_id/pass": ["direct"],
       "POST /outside/requests/adopted/:adoption_id/take-up": ["direct"],
       "POST /outside/requests/adopted/:adoption_id/decline": ["direct"],
       "POST /outside/mandates": ["direct"],

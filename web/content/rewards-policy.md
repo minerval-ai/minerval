@@ -19,7 +19,7 @@ date. Points counsel should settle before launch:
   repeat contributors paid at agent-set amounts.
 - Program parameters in 6.6 are placeholders: small caps and a small,
   fully-reserved budget, per the founder's instruction that total open
-  Offers never exceed the amount set aside for the Program (docs/rewards.md).
+  Offers never exceed the amount set aside for the Program (the rewards design, issue #1201).
 -->
 
 # Contributor Rewards Policy

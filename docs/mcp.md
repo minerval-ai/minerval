@@ -114,7 +114,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 
 | Tier | Tools | Cost |
 |------|-------|------|
-| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_argument`, `get_decomposition`, `get_dependents`, `list_graph_changes`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
+| Free reads | `search_claims`, `list_tags`, `get_claim`, `get_argument`, `get_decomposition`, `get_dependents`, `list_graph_changes`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_page_claims`, `get_text_analysis` | never metered |
 | Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap; `PLATFORM_FAULT` when a deployment fault kept the work from running (the platform's account with a model provider out of credits, or its key rejected: not the caller's balance, and nothing is charged). `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — capped at 10 an hour, 3 for new/low-reputation accounts (`CONTRIBUTION_RATE_LIMITED`), stated in the tool description; priced proposals (`propose_claim`, `submit_source`) are bounded by the caller's balance instead and don't count, and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony; in production each is also filed as a GitHub issue labelled `origin/external` |
@@ -449,6 +449,17 @@ read is free, an agent which signals allocation turns on.
   comes back with `shared: false` and no annotations. Statuses are read
   now. The URL is normalized and hashed on the server, as the extension
   does; a page with neither is `NOT_SHARED`. Free.
+- **`get_page_claims`** `{claim_ids}` — what the graph holds now on nodes
+  that passages of a page were matched to, in the shape a verdict on the
+  page's wording is judged from: each node's wording and kind, a claim's
+  status and the confidence in it, a quantity's definition and estimate, a
+  question's standing, the reader-facing summary of the current judgment,
+  and its subclaim count. It is what the Assistant is given when it marks a
+  page for the browser extension, so the Assistant in the extension's chat
+  (and any caller) can explain or re-examine a mark. It runs no model and
+  changes no mark; an id the graph does not hold comes back in `not_found`.
+  At most 50 ids a call. Registered only while the `extension` feature is
+  on. Free.
 - **`raise_issue`** `{kind, severity, title, body, surface?, context_refs?,
   joins?}` — report a problem with this server or its tools
   (`system_failure`, `tool_gap`) or a concrete improvement idea

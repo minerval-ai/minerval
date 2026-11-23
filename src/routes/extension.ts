@@ -7,7 +7,8 @@
  * finishes in time or was cached, 202 with the content hash otherwise — and
  * the extension polls GET /extension/analysis/:content_hash.
  *
- * POST endpoints are agentic (extractor + matcher + extension agent): they
+ * POST endpoints are agentic (Extractor, Matcher, and the Assistant's
+ * markup call, llm/agents/page-markup.ts): they
  * authenticate with an API key and pass the owl quota gate, charged at their
  * flat price (extension_analysis — src/services/owl.ts) when the work
  * starts, with LLM work inside runWithUsageContext so every
@@ -83,7 +84,7 @@ export async function extensionRoutes(app: FastifyInstance): Promise<void> {
       summary:
         "Start (or join) analysis of a web page: extract claims, match them " +
         "to the graph, and return markup annotations decided by the " +
-        "extension agent. Returns 202 + content_hash when the pipeline " +
+        "Assistant. Returns 202 + content_hash when the pipeline " +
         "outlasts the grace window; poll GET /extension/analysis/:hash.",
       body: {
         type: "object",

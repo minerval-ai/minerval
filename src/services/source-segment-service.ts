@@ -15,6 +15,13 @@
  * under a "References" or "Notes" heading are references or notes; every
  * other block is a passage. A heuristic, written down and testable, never
  * a model: the same document always divides the same way.
+ *
+ * A web page states its headings (`h1` to `h6`), and the readable text
+ * carries them as markdown lines. Where it does, those are the document's
+ * sections and nothing is guessed: on a page, a short capitalised line is
+ * as often a byline, a date or a button's label as a heading (#1127). The
+ * numbered and title-like readings are for plain text and PDFs, and for a
+ * page that marks no heading at all.
  */
 import { oneReadingForInstanceSql } from "./layer-service.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -22,7 +29,7 @@ import { rawQuery } from "../db/client.js";
 import { judgmentsInForce, severalInForceNote } from "./judgment-version-service.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
-import { htmlToText } from "./source-map-service.js";
+import { htmlToText, readableText } from "./html-text.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
 import { placePieces, quotePieces, quotedParts, type Span } from "./quote-elision.js";
@@ -67,12 +74,16 @@ function blocks(text: string): Block[] {
 const REFERENCE_HEADINGS = /^(references|bibliography|works cited|literature cited|citations|sources)$/i;
 const NOTE_HEADINGS = /^(notes|footnotes|endnotes)$/i;
 
-/** A heading's level and label, or null when the block is not a heading. */
-export function headingOf(block: string): { level: number; label: string } | null {
+/**
+ * A heading's level and label, or null when the block is not a heading.
+ * With `markedOnly`, only a markdown heading is one: the document states its
+ * own headings, so none is inferred from how a line looks.
+ */
+export function headingOf(block: string, markedOnly = false): { level: number; label: string } | null {
   if (block.includes("\n")) return null;
   const md = block.match(/^(#{1,6})\s+(.+?)\s*#*$/);
   if (md) return { level: md[1]!.length, label: md[2]!.trim() };
-  if (block.length > 120) return null;
+  if (markedOnly || block.length > 120) return null;
   const numbered = block.match(/^((?:\d+\.)*\d+)\.?\s+(\S.*)$/);
   if (numbered && !/[.!?;,]$/.test(numbered[2]!) && numbered[2]!.split(/\s+/).length <= 12) {
     return { level: numbered[1]!.split(".").length, label: block };
@@ -93,9 +104,10 @@ export function headingOf(block: string): { level: number; label: string } | nul
  * Divide readable text into segments. Pure: the same text always gives the
  * same segments. A section spans from its heading to the next heading at
  * its level or above; everything else is a leaf in the innermost open
- * section.
+ * section. `markedHeadingsOnly` is for text whose headings are the
+ * document's own, carried as markdown lines (a web page with `h1` to `h6`).
  */
-export function segmentText(text: string): DraftSegment[] {
+export function segmentText(text: string, opts: { markedHeadingsOnly?: boolean } = {}): DraftSegment[] {
   const out: DraftSegment[] = [];
   // Open sections, innermost last: index into `out`, level, and leaf kind.
   const open: Array<{ index: number; level: number; leafKind: SourceSegmentKind }> = [];
@@ -109,7 +121,7 @@ export function segmentText(text: string): DraftSegment[] {
   let lastEnd = 0;
   for (const b of blocks(text)) {
     if (out.length >= MAX_SEGMENTS) break;
-    const heading = headingOf(b.text);
+    const heading = headingOf(b.text, opts.markedHeadingsOnly === true);
     if (heading) {
       close(heading.level, lastEnd);
       lastEnd = b.end;
@@ -223,7 +235,7 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
     [sourceId]
   );
   if (!row?.raw_content?.trim()) return { segments: 0, anchored: 0 };
-  const text = htmlToText(row.raw_content);
+  const { text, headings } = readableText(row.raw_content);
   // A mirrored document's segments are the public graph's and arrive with
   // the mirror (docs/mirror.md). They are not replaced here: this label's
   // instances are anchored to them as they stand.
@@ -234,7 +246,7 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
     );
     return { segments: have?.n ?? 0, anchored: await anchorInstances(sourceId, text) };
   }
-  const drafts = segmentText(text);
+  const drafts = segmentText(text, { markedHeadingsOnly: headings > 0 });
 
   // An instance's anchor is a column of the instance, which is changed only
   // by work at the instance's own label (db/clearance.ts). An instance at
@@ -323,21 +335,55 @@ export async function anchorInstances(sourceId: string, knownText?: string): Pro
 }
 
 /**
- * Segment a source the first time it has text, and anchor any instances
- * recorded since. Swallows every failure: the hook the fetch and extraction
- * paths call, where losing the structure must never lose the document.
+ * Whether a source's stored segments no longer describe its readable text:
+ * the last of them runs past the end of the text, or its recorded hash is
+ * not that of the text now at its offsets. The offsets index the readable
+ * text, so they go stale when the stored copy changes and when the reading
+ * of it does (#1127 changed how a page's markup is read). The last segment
+ * is the one to test: a change anywhere before it moves it.
  */
-export async function segmentSourceOnce(sourceId: string): Promise<void> {
+export function segmentsStale(
+  text: string,
+  last: { char_start: number; char_end: number; text_hash: string } | undefined
+): boolean {
+  if (!last) return false;
+  return last.char_end > text.length || sha256(text.slice(last.char_start, last.char_end)) !== last.text_hash;
+}
+
+/**
+ * Segment a source the first time it has text (unless `onlyIfSegmented`,
+ * which the source page passes: reading a page does not start a document's
+ * segmentation), again when its segments have gone stale (segmentsStale),
+ * and otherwise anchor any instances recorded since. Swallows every failure: the hook the fetch and extraction paths
+ * call, where losing the structure must never lose the document.
+ *
+ * Segmenting again replaces every segment, and an examination's coverage of
+ * the old ones goes with them (its findings stay, unanchored, each with the
+ * evidence it quotes). Stale segments point at the wrong text, so coverage
+ * of them says nothing true. A mirrored document's segments are the public
+ * graph's and are left as they arrived.
+ */
+export async function segmentSourceOnce(
+  sourceId: string,
+  opts: { knownText?: string; onlyIfSegmented?: boolean } = {}
+): Promise<void> {
   try {
-    const [row] = await rawQuery<{ segmented: boolean; has_text: boolean }>(
-      `SELECT EXISTS (SELECT 1 FROM source_segments WHERE source_id = $1) AS segmented,
-              (raw_content IS NOT NULL AND raw_content <> '') AS has_text
-         FROM sources WHERE id = $1`,
+    const [row] = await rawQuery<{ raw_content: string | null; origin: string }>(
+      `SELECT raw_content, origin FROM sources WHERE id = $1`,
       [sourceId]
     );
-    if (!row?.has_text) return;
-    if (row.segmented) await anchorInstances(sourceId);
-    else await segmentSource(sourceId);
+    if (!row?.raw_content) return;
+    const [last] = await rawQuery<{ char_start: number; char_end: number; text_hash: string }>(
+      `SELECT char_start, char_end, text_hash FROM source_segments
+        WHERE source_id = $1 ORDER BY ordinal DESC LIMIT 1`,
+      [sourceId]
+    );
+    const text = opts.knownText ?? htmlToText(row.raw_content);
+    if (last ? row.origin === "mirror" || !segmentsStale(text, last) : opts.onlyIfSegmented) {
+      await anchorInstances(sourceId, text);
+    } else {
+      await segmentSource(sourceId);
+    }
   } catch (err) {
     console.error(
       `[source-segments] segmentation failed for ${sourceId}: ${err instanceof Error ? err.message : err}`
@@ -435,7 +481,9 @@ export async function getSourceDocument(
   if (!row) return null;
   const open = mayOpenRawSources(opts.rawSourceLabels ?? null, row.sensitivity_label);
   const text = htmlToText(row.raw_content ?? "");
-  await anchorInstances(sourceId, text).catch(() => 0);
+  // Anchors instances recorded since the last pass, and segments again
+  // where the stored segments no longer match the text. Never throws.
+  await segmentSourceOnce(sourceId, { knownText: text, onlyIfSegmented: true });
   const [segments, instances] = await Promise.all([
     rawQuery<{
       id: string;

@@ -560,6 +560,32 @@ describe("taking up a request in public", () => {
     expect(await pubRows(`SELECT 1 FROM request_work`)).toEqual([]);
   });
 
+  it("says which requests are this deployment's in particular, and lets a person who directs pass on one, which says nothing outside", async () => {
+    const list = async (who: string) => (await as(who, { url: `/outside/requests?node_id=${id.p}` })).json.requests[0];
+    // The node has work of this deployment's own at `a`: the request concerns this graph for a reader of `a`, and for nobody else.
+    expect(await list("reader")).toMatchObject({ concerns_this_graph: true, asked_of_this_graph: false, passed_on: null });
+    expect((await list("reader")).bears_on[0].worked_on_here).toBe(true);
+    expect(await list("releaserWhoDoesNotReadA")).toMatchObject({ concerns_this_graph: false });
+
+    expect((await as("funder", { method: "POST", url: `/outside/requests/${id.r1}/pass` })).status).toBe(403);
+    expect((await as("director", { method: "POST", url: `/outside/requests/${randomUUID()}/pass` })).json.code).toBe("REQUEST_NOT_FOUND");
+    const passed = await as("director", { method: "POST", url: `/outside/requests/${id.r1}/pass` });
+    expect(passed.status, JSON.stringify(passed.json)).toBe(200);
+    expect(passed.json).toMatchObject({ passed_on: true, already: false });
+    expect((await as("director", { method: "POST", url: `/outside/requests/${id.r1}/pass` })).json.already).toBe(true);
+    // One note for the whole deployment, read by every member, whatever they read besides.
+    expect((await list("releaserWhoDoesNotReadA")).passed_on.at).toBeTruthy();
+    expect((await list("reader")).passed_on.by).toBeTruthy();
+    // The mirror's row is as it was, and nothing was said outside.
+    expect((await list("reader")).state_on_the_public_graph).toBe("open");
+    expect(await pubRows(`SELECT 1 FROM request_work`)).toEqual([]);
+
+    expect((await as("funder", { method: "DELETE", url: `/outside/requests/${id.r1}/pass` })).status).toBe(403);
+    expect((await as("director", { method: "DELETE", url: `/outside/requests/${id.r1}/pass` })).json).toMatchObject({ passed_on: false });
+    expect((await as("director", { method: "DELETE", url: `/outside/requests/${id.r1}/pass` })).json.code).toBe("NOT_PASSED_ON");
+    expect((await list("reader")).passed_on).toBeNull();
+  });
+
   it("adopts a request silently: an ordinary request here at a label the person reads, and nothing outside", async () => {
     // Not without the permission to direct, and not without saying which label.
     expect((await as("funder", { method: "POST", url: `/outside/requests/${id.r1}/adopt`, payload: { label: A } })).status).toBe(403);
@@ -582,6 +608,8 @@ describe("taking up a request in public", () => {
     const forOutsider = await as("releaserWhoDoesNotReadA", { url: `/outside/requests?node_id=${id.p}` });
     expect(forOutsider.json.requests[0].here).toEqual([]);
     expect((await as("reader", { url: `/outside/requests?node_id=${id.p}` })).json.requests[0].here).toHaveLength(1);
+    // Adopted, it is this deployment's own request, and that one is what is closed.
+    expect((await as("director", { method: "POST", url: `/outside/requests/${id.r1}/pass` })).json.code).toBe("ALREADY_ADOPTED");
   });
 
   it("says in public that the graph is taking it up: a person who directs asks, the gate to outside lets it through under its setting, and the log says what went", async () => {

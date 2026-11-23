@@ -736,7 +736,7 @@ reader. For a reader with one judgment in force each is what it was.
 | A source's segments (`GET /sources/:id/document`) | The same, on the claim each instance is of |
 | Bounties (`GET /prizes`) | The same, on each listing |
 | Monitors: performed settling and empty chairs | The same, on each candidate. The candidate is still picked by the most recently made judgment, and now says so |
-| The extension's lookups | `judgments_in_force` and the sentence on an annotation's `claim`; the assessor that compares the page with the graph is given the sentence too |
+| The extension's lookups | `judgments_in_force` and the sentence on an annotation's `claim`; the Assistant's call that compares the page with the graph is given the sentence too |
 | A session's snapshot (what a paused run is told when it resumes) | One more sentence beside the status: "N judgments of this node are in force for this run, made at labels that do not read each other. The status given here is that of the most recently made, and none replaces another." |
 | Citations (`GET /claims/:id/citation`) | Not a count alone. The evidence record carries every assessment in force, whole, under `assessments_in_force` (most recently made first; `assessment` is the first), because a record is read away from the graph and its reader cannot come back for the others. The citation names one assessment by id and version and says how many there are. A premise's status carries the count |
 | The nanopublication | The assertion states the pinned assessment; the publication info names every one in force (`mv:assessmentInForce`) |
@@ -1349,6 +1349,16 @@ tool.
 the address and title of the page being read and the passages the
 extension marked on it, which the Assistant is told came from the page,
 with a section of the prompt for the narrow panel in place of the site's.
+The marks themselves are the Assistant's (#1132): when the extension
+analyzes a page, one structured call under the Assistant's prompt gives each
+matched claim its verdict (`src/llm/agents/page-markup.ts`). That call is
+not a turn of any conversation: it has no tools, runs on its own model
+(`ASSISTANT_MARKUP_MODEL`), is paid from the page analysis's charge and not
+a conversation's bill, and is saved nowhere. The verdict scale it works to
+is in the chat's prompt section as well, and `get_page_claims` returns what
+the graph holds on the marked nodes in the shape the verdicts are judged
+from, so the Assistant in the chat can say why a passage was marked and
+whether it would still mark it so. It cannot change a mark.
 The extension reads the conversation until the turn is idle, shows what the
 reply cost, and can stop it. It holds only an API key, so it cannot release
 a held action: the reply says one is waiting and links to the conversation

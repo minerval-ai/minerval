@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { NeedsPermission, can, viewer } from "@/components/admin/access";
+import { CheckAgain, HealthChecks } from "@/components/admin/HealthChecks";
 import { Icon } from "@/components/work/icons";
 import {
   Banner,
@@ -40,30 +41,16 @@ export const dynamic = "force-dynamic";
 // itself (GET /setup/checklist): whether agent work runs, what needs someone
 // and who puts it right, each area of the setup as a tile, and every one of
 // the deployment's own checks. Nothing is ticked by hand.
-
-const FILTERS: Array<{ key: string; label: string; status: PreflightCheck["status"] | null }> = [
-  { key: "all", label: "All", status: null },
-  { key: "failing", label: "Failing", status: "fail" },
-  { key: "to_do", label: "To do", status: "to_do" },
-  { key: "passing", label: "Passing", status: "pass" },
-  { key: "na", label: "Don't apply", status: "not_applicable" },
-];
-
-const CHECK_STATUS: Record<PreflightCheck["status"], { text: string; tone: Tone }> = {
-  fail: { text: "Fails", tone: "bad" },
-  to_do: { text: "To do", tone: "warn" },
-  pass: { text: "Passes", tone: "ok" },
-  not_applicable: { text: "Doesn't apply", tone: "neu" },
-};
-
-const ORDER: Record<PreflightCheck["status"], number> = { fail: 0, to_do: 1, pass: 2, not_applicable: 3 };
+//
+// The checks are run once for each read of this page. Their table
+// (components/admin/HealthChecks) filters and opens them in the browser over
+// that one reading, so looking at it differently never runs them again.
 
 export default async function HealthPage({ searchParams }: { searchParams: Promise<{ checks?: string }> }) {
   const who = await viewer();
   if (!who) return null;
   if (!can(who, "administer")) return <NeedsPermission title="Health" permission="administer" />;
   const { checks: filterParam } = await searchParams;
-  const filter = FILTERS.find((f) => f.key === filterParam) ?? FILTERS[0];
 
   let checklist: SetupChecklist;
   try {
@@ -86,22 +73,19 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
   const preflight = checklist.preflight;
   const checks = preflight?.checks ?? [];
   const n = checkCounts(checks);
-  const shown = checks
-    .filter((k) => !filter.status || k.status === filter.status)
-    .sort((a, b) => ORDER[a.status] - ORDER[b.status]);
-  const now = new Date().toISOString();
+  const checkedAt = new Date().toISOString().slice(11, 16);
 
   return (
     <WorkPage>
       <WorkHead
         title="Health"
-        sub={`Read from the deployment itself · checked ${now.slice(11, 16)} UTC`}
+        sub={`Read from the deployment itself · checked ${checkedAt} UTC`}
         actions={
           <>
             <ButtonLink href="/admin/activity" icon="log">
               Activity log
             </ButtonLink>
-            <ButtonLink href={filter.key === "all" ? "/admin" : `/admin?checks=${filter.key}`}>Check again</ButtonLink>
+            <CheckAgain />
           </>
         }
       />
@@ -171,53 +155,12 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
       </Section>
 
       {preflight && (
-        <Section
-          title="Checks"
-          aside={
-            <span className="w-row" style={{ gap: 6 }}>
-              {checks.length}
-              <Tip>The deployment&apos;s own preflight: its config file, environment and database, checked on every read of this page.</Tip>
-            </span>
-          }
-          actions={
-            <Seg
-              current={filter.key}
-              options={FILTERS.map((f) => ({
-                key: f.key,
-                href: f.key === "all" ? "/admin#checks" : `/admin?checks=${f.key}#checks`,
-                label: `${f.label} ${f.status ? n[f.status] : checks.length}`,
-              }))}
-            />
-          }
-          id="checks"
-        >
-          <Table label="The deployment's checks">
-            <thead>
-              <tr>
-                <th>Check</th>
-                <th>Status</th>
-                <th>
-                  <span className="w-row" style={{ gap: 6, flexWrap: "nowrap" }}>
-                    Blocks agent work <Tip>A failure here stops all agent work on the deployment.</Tip>
-                  </span>
-                </th>
-                <th>Message</th>
-                <th>Fix</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>
-                    <Empty>No check is {filter.label.toLowerCase()}.</Empty>
-                  </td>
-                </tr>
-              ) : (
-                shown.map((k) => <CheckRow key={k.name} check={k} owner={checkOwner(k, checklist)} />)
-              )}
-            </tbody>
-          </Table>
-        </Section>
+        <HealthChecks
+          checks={checks}
+          owners={Object.fromEntries(checks.map((k) => [k.name, checkOwner(k, checklist)]))}
+          checkedAt={checkedAt}
+          initialFilter={filterParam}
+        />
       )}
     </WorkPage>
   );
@@ -305,54 +248,17 @@ function AttentionRow({ item, first }: { item: AttentionItem; first: boolean }) 
       </div>
       <div className="w-item-r">
         <OwnerPill owner={item.owner} />
-        <ButtonLink href={item.href} small primary={first && item.tone === "bad"}>
-          {item.action}
-        </ButtonLink>
+        {item.href.startsWith("/admin#") ? (
+          // A check on this page: a plain link to its row, which opens it without reading the page (and running the checks) again.
+          <a href={item.href.slice("/admin".length)} className={first && item.tone === "bad" ? "w-btn w-sm w-pri" : "w-btn w-sm"}>
+            {item.action}
+          </a>
+        ) : (
+          <ButtonLink href={item.href} small primary={first && item.tone === "bad"}>
+            {item.action}
+          </ButtonLink>
+        )}
       </div>
     </div>
-  );
-}
-
-const ONE_LINE = { maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } as const;
-
-function CheckRow({ check, owner }: { check: PreflightCheck; owner: Owner }) {
-  const status = CHECK_STATUS[check.status];
-  const todo = preflightTodo(check);
-  const open = check.status === "fail" || check.status === "to_do";
-  return (
-    <tr id={`check-${check.name}`} className={check.status === "not_applicable" ? "w-muted-row" : undefined}>
-      <td style={{ whiteSpace: "nowrap" }}>{preflightTitle(check)}</td>
-      <td>
-        <Pill tone={status.tone}>{status.text}</Pill>
-      </td>
-      <td>
-        {check.blocking ? (
-          check.status === "fail" ? (
-            <Lock>Blocking</Lock>
-          ) : (
-            <span className="w-faint" title="Would stop agent work if it failed">
-              <Icon name="lock" size={13} />
-            </span>
-          )
-        ) : (
-          <span className="w-faint">—</span>
-        )}
-      </td>
-      <td className="w-muted w-small" title={check.message}>
-        <div style={ONE_LINE}>{check.message}</div>
-      </td>
-      <td className="w-small">
-        {open && (
-          <span className="w-row" style={{ flexWrap: "nowrap", gap: 6 }}>
-            <OwnerPill owner={owner} />
-            {todo && (
-              <span title={todo} style={{ ...ONE_LINE, maxWidth: 200 }}>
-                {todo}
-              </span>
-            )}
-          </span>
-        )}
-      </td>
-    </tr>
   );
 }
