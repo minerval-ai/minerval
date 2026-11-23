@@ -232,9 +232,8 @@ export class ApiStack extends cdk.Stack {
       // both on Opus 5.5. The Dispute Arbitrator resolves escalations and
       // appeals, the last word on a dispute and a handful of runs, so it
       // takes the frontier tier, Fable 5.2. The Contribution Reviewer stays
-      // on the Sonnet default (governanceModel). Refusal false-positives
-      // on either tier degrade to Opus 4.8 via the server-side fallback in
-      // src/llm/providers/anthropic.ts.
+      // on the Sonnet default (governanceModel). A refusal on either tier is
+      // shown as a refusal, not re-served on another model (#1044).
       CURATOR_MODEL: "claude-opus-5-5",
       AUDIT_MODEL: "claude-opus-5-5",
       ARBITRATION_MODEL: "claude-fable-5-2",
@@ -248,10 +247,9 @@ export class ApiStack extends cdk.Stack {
       // no knob; config.ts now requires this env in production.
       //
       // Bio-adjacent refusals are the known failure here (#78): Opus 5.5
-      // carries a bio classifier, and its server-side Opus fallback can
-      // refuse with it, so extraction retries on
-      // EXTRACTOR_FALLBACK_MODEL (Sonnet by default) rather than losing the
-      // document.
+      // carries a bio classifier. A refused document fails its ingest with
+      // the refusal as its reason; it is not retried on a weaker model
+      // (#1044).
       EXTRACTOR_MODEL: "claude-opus-5-5",
       // The Matcher's judgment is narrow (same proposition?) over candidates
       // it retrieves itself, so it runs the cheap tier: off Haiku 4.5 on

@@ -201,13 +201,11 @@ export const MAX_STEWARD_ATTEMPTS = 3;
  * Does this failure park the claim at once, whatever its attempt count?
  *
  * A model refusal does (#846). A refusal follows the claim and the model,
- * not chance: by the time LlmRefusalError is thrown the provider's fallback
- * chain has already been tried on the same request (llm/errors.ts), and all
- * eleven claims that refused in July 2026 refused on every one of their three
- * attempts. Two more passes buy the same refusal, each at whatever the pass
- * had spent before it was refused. Parking on the first leaves the retry to
- * someone who can change what is tried: a commission at another tier, or a
- * maintainer.
+ * not chance: all eleven claims that refused in July 2026 refused on every
+ * one of their three attempts. Two more passes buy the same refusal, each at
+ * whatever the pass had spent before it was refused. The claim parks with
+ * the refusal as its public reason (`model_refusal`), and nothing re-serves
+ * it on a weaker model (#1044): a person decides what happens next.
  */
 export function parksAtOnce(err: unknown): boolean {
   return err instanceof LlmRefusalError;

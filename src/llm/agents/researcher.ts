@@ -947,7 +947,6 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
         system,
         model,
         effort: (run.effort as "medium" | "high" | "max" | null) ?? "high",
-        fallbacks: "none",
         maxIterations: Math.min(MAX_TURNS_GUARD, maxTurns),
         maxWallMs,
         executeTool,

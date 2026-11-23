@@ -370,6 +370,20 @@ describe("what a file is refused for", () => {
     ]);
   });
 
+  it("skips a retired setting with a warning rather than refusing the file, and never writes one", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const settings = parse('[models]\nextractor = "claude-opus-5-5"\nextractor_fallback = "claude-sonnet-5-5"\n');
+      expect(settings).toEqual({ "models.extractor": "claude-opus-5-5" });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/models\.extractor_fallback is ignored and can be deleted/));
+    } finally {
+      warn.mockRestore();
+    }
+    expect(() => renderConfigFile({ "models.extractor_fallback": "claude-sonnet-5-5" }, configFieldProblem)).toThrow(
+      /is not a setting/
+    );
+  });
+
   it("says where a setting goes when the file uses its environment variable's name", () => {
     expect(problemsOf(() => parse('RUN_LOG_MODE = "record"\n'))).toEqual([
       "RUN_LOG_MODE is an environment variable's name, not a setting in the file. In the file it is run_log.mode.",

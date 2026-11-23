@@ -120,7 +120,6 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   model("steward_strong", "STEWARD_STRONG_MODEL", "stewardStrongModel"),
   model("curator", "CURATOR_MODEL", "curatorModel"),
   model("extractor", "EXTRACTOR_MODEL", "extractorModel"),
-  model("extractor_fallback", "EXTRACTOR_FALLBACK_MODEL", "extractorFallbackModel"),
   model("matcher", "MATCHER_MODEL", "matcherModel"),
   model("tagger", "TAGGER_MODEL", "taggerModel"),
   model("contribution_reviewer", "GOVERNANCE_MODEL", "governanceModel"),
@@ -428,6 +427,19 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
 
 const KEYS_BY_NAME = new Map(CONFIG_FILE_KEYS.map((k) => [k.key, k]));
 
+/**
+ * Keys a file may still hold from before they were removed, each with why it
+ * went. Reading a file skips one with a warning rather than refusing to
+ * start, since it set something that no longer exists, not something wrong.
+ * Writing one is refused like any other unknown key.
+ */
+export const RETIRED_FILE_KEYS: ReadonlyMap<string, string> = new Map([
+  [
+    "models.extractor_fallback",
+    "a model's refusal is no longer retried on another model (#1044); the Extractor's refusal is shown as one",
+  ],
+]);
+
 /** The group a setting is in; "" for a setting that is a group of its own at the top of the file. */
 function groupOf(key: string): string {
   const dot = key.lastIndexOf(".");
@@ -729,6 +741,10 @@ export function parseConfigFile(text: string, check: FieldCheck, path: string | 
       const full = prefix ? `${prefix}.${name}` : name;
       if (KEYS_BY_NAME.has(full)) {
         settings[full] = value as ConfigFileValue;
+      } else if (RETIRED_FILE_KEYS.has(full)) {
+        console.warn(
+          `[config] ${path ?? "the config file"}: ${full} is ignored and can be deleted: ${RETIRED_FILE_KEYS.get(full)}.`
+        );
       } else if (GROUPS.has(full)) {
         if (isGroupValue(value)) walk(value, full);
         else {

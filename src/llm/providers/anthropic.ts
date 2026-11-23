@@ -3,11 +3,10 @@
  *
  * Everything Anthropic-specific lives here and NOWHERE else: prompt caching via
  * ephemeral cache_control breakpoints (one per system block, one on the tool
- * list, and a moving one on the message history of a tool loop), the
- * server-side Opus refusal fallback (Opus 5.5, Fable/Mythos), container threading for
- * container-backed server tools, the temperature allowlist, `output_config`
- * (effort and native structured outputs), and the streamed long-run path with
- * its betas. None of it is abstracted into a cross-provider layer, and none of
+ * list, and a moving one on the message history of a tool loop), container
+ * threading for container-backed server tools, the temperature allowlist,
+ * `output_config` (effort and native structured outputs), and the streamed
+ * long-run path with its betas. No request opts into a refusal fallback. None of it is abstracted into a cross-provider layer, and none of
  * it is emulated by the other adapters — see providers/index.ts for what they
  * reject.
  */
@@ -15,11 +14,7 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
-import {
-  MODELS,
-  modelAcceptsTemperature,
-  modelRefusalFallbackForm,
-} from "../models.js";
+import { modelAcceptsTemperature } from "../models.js";
 import { logCacheUsage, recordCallUsage, type ProviderUsage } from "./metering.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
 import { ANTHROPIC_WEB_SEARCH_MICRO_USD } from "../pricing.js";
@@ -46,15 +41,8 @@ type ToolUnion = Anthropic.Messages.ToolUnion;
 type OutputConfig = Anthropic.Messages.OutputConfig;
 type BetaOutputConfig = Anthropic.Beta.Messages.BetaOutputConfig;
 // `stream()` takes any params extending the beta MessageCreateParamsBase; the
-// non-streaming beta type is that base plus `stream?: false`, and is the one
-// createMessage already casts to.
+// non-streaming beta type is that base plus `stream?: false`.
 type BetaStreamParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
-
-/** Beta id for the server-side refusal fallback, array form. */
-const SERVER_SIDE_FALLBACK_BETA = "server-side-fallback-2026-06-01";
-
-/** Beta id for the server-side refusal fallback, `"default"` form (Sonnet 5.5). */
-const SERVER_SIDE_FALLBACK_DEFAULT_BETA = "server-side-fallback-2026-07-01";
 
 /**
  * Beta id for task budgets. The installed SDK types `output_config.task_budget`
@@ -255,47 +243,26 @@ function toolMessages(req: ToolCompleteRequest): LlmMessage[] {
 }
 
 /**
- * Create one message, routing classifier-gated models (Opus 5.5, Sonnet 5.5
- * and the Fable/Mythos family — see modelRefusalFallbackForm) through the
- * beta endpoint with a server-side fallback: their safety classifiers can
- * decline a benign-adjacent request (HTTP 200, stop_reason "refusal"), and the
- * fallback re-serves it inside the same call instead of failing the agent run
- * — on Opus 4.8 for the array form, on Anthropic's routed choice (Sonnet 5)
- * for Sonnet 5.5's "default" form. Other models use the plain Messages
- * endpoint unchanged.
+ * Create one message on the plain Messages endpoint.
  *
- * The beta response/params are structural supersets of the non-beta types for
- * everything this client reads (content, usage, stop_reason, container), so
- * the casts below keep the beta surface contained to this one function.
+ * No request opts into a server-side refusal fallback (#1044). When a model's
+ * safety classifiers decline, the decline is the answer: it surfaces as
+ * LlmRefusalError and is shown as a refusal, never re-served on another,
+ * weaker model. What a frontier model declines to write is not something
+ * Minerval should publish from a model that was less careful about it.
  */
 async function createMessage(
   params: Anthropic.MessageCreateParamsNonStreaming
 ): Promise<Anthropic.Message> {
-  const client = getClient();
-  const form = modelRefusalFallbackForm(params.model);
-  if (form) {
-    const response = await client.beta.messages.create({
-      ...(params as unknown as Anthropic.Beta.Messages.MessageCreateParamsNonStreaming),
-      ...(form === "array"
-        ? { betas: [SERVER_SIDE_FALLBACK_BETA], fallbacks: [{ model: MODELS.opus }] }
-        : // The installed SDK types only the array form; the scalar is the
-          // documented wire shape for the -2026-07-01 header.
-          ({ betas: [SERVER_SIDE_FALLBACK_DEFAULT_BETA], fallbacks: "default" } as unknown as Pick<
-            Anthropic.Beta.Messages.MessageCreateParamsNonStreaming,
-            "betas"
-          >)),
-    });
-    return response as unknown as Anthropic.Message;
-  }
-  return client.messages.create(params);
+  return getClient().messages.create(params);
 }
 
 /**
  * Fail loudly on stop_reason "refusal" instead of returning empty content (or
  * schema-violating output from completeStructured — on a refusal the API does
  * not guarantee the output matches the requested schema, so this must run
- * before any parsing). On fallback-gated models this fires only when the Opus fallback
- * refused too.
+ * before any parsing). The refusal is the model's own: no fallback has been
+ * tried, and none will be (see createMessage).
  */
 function checkRefusal(response: Anthropic.Message, model: string): void {
   if (response.stop_reason === "refusal") {
@@ -366,11 +333,11 @@ function toolUsesOf(content: ContentBlock[]): ToolUse[] {
 }
 
 /**
- * Which model produced the turn. `fallbackRan` is judged by family, not by
+ * Which model produced the turn. `fallbackRan` is judged by prefix, not by
  * exact string: a served id that merely extends the requested alias (a dated
- * snapshot of it) is the same model, whereas the Opus id the refusal fallback
- * re-serves on is not. A fallback is sticky for about an hour, so later turns
- * carry it here without a fallback block in the content.
+ * snapshot of it) is the same model. No request asks for a fallback, so this
+ * is a record, not an expectation: a turn served by another model would be
+ * one the provider re-served on its own, and the record says so.
  */
 function servedModelFields(
   response: Anthropic.Message,
@@ -386,14 +353,11 @@ function servedModelFields(
  * use and its result arrive together in one turn, and the API rejects a
  * history turn holding a use without its result ("`code_execution` tool use
  * … was found without a corresponding `code_execution_tool_result` block").
- * A turn can still come back with one: the refusal fallback keeps the
- * declined model's output ahead of the `fallback` block, cut off wherever
- * the classifier stopped it, and a max_tokens cutoff can end a turn
+ * A turn can still come back with one: a max_tokens cutoff can end a turn
  * mid-tool. `web_search_20260209` runs inside `code_execution`, so any agent
- * with web search on a fallback-gated model can hit either.
+ * with web search can hit it.
  *
- * Such a use is dropped; everything else, the `fallback` block included,
- * is kept in place. A cut-off use is the last block of its model's output,
+ * Such a use is dropped; everything else is kept in place. A cut-off use is the last block of its model's output,
  * so dropping it never joins two thinking runs. A paused turn is left
  * whole: its pending use is what the continuation resumes.
  */
@@ -438,14 +402,11 @@ function toolCompletionResult(
 }
 
 /**
- * The beta ids one long-run request opts into: the refusal fallback only when
- * the request asked for it, task budgets only when a budget is set, plus
- * whatever the caller passed, deduplicated in order.
+ * The beta ids one long-run request opts into: task budgets only when a
+ * budget is set, plus whatever the caller passed, deduplicated in order.
  */
 function longRunBetas(req: LongRunRequest): string[] {
   const betas: string[] = [];
-  if (req.fallbacks === "server") betas.push(SERVER_SIDE_FALLBACK_BETA);
-  if (req.fallbacks === "default") betas.push(SERVER_SIDE_FALLBACK_DEFAULT_BETA);
   if (req.taskBudgetTokens !== undefined) betas.push(TASK_BUDGETS_BETA);
   for (const beta of req.betas ?? []) {
     if (!betas.includes(beta)) betas.push(beta);
@@ -551,9 +512,8 @@ export const anthropicAdapter: ProviderAdapter = {
    * One streamed turn of a long-running loop, on the long-run client. The
    * stream is consumed to its final message here — the seam has no use for
    * partial events — so the caller sees exactly the shape completeWithTools
-   * returns, plus the served model. The refusal fallback is opt-in per
-   * request rather than keyed off the model family as createMessage does: a
-   * loop that must not be silently re-served on another tier says so.
+   * returns, plus the served model. Like createMessage, it asks for no
+   * refusal fallback: a decline surfaces as LlmRefusalError.
    */
   async completeWithToolsStreaming(req: LongRunRequest): Promise<ToolCompletionResult> {
     const output: BetaOutputConfig = {
@@ -572,15 +532,11 @@ export const anthropicAdapter: ProviderAdapter = {
       ...systemParam(req.system),
       ...(req.container ? { container: req.container } : {}),
     };
-    // Same structural-superset cast as createMessage: the beta params only add
-    // fields to the non-beta shape for everything built above.
+    // A structural-superset cast: the beta params only add fields to the
+    // non-beta shape for everything built above.
     const params: BetaStreamParams = {
       ...(base as unknown as BetaStreamParams),
       ...(Object.keys(output).length > 0 ? { output_config: output } : {}),
-      ...(req.fallbacks === "server" ? { fallbacks: [{ model: MODELS.opus }] } : {}),
-      // The scalar form, as createMessage sends it; the installed SDK types
-      // only the array form.
-      ...(req.fallbacks === "default" ? ({ fallbacks: "default" } as unknown as object) : {}),
       ...(betas.length > 0 ? { betas } : {}),
     };
 

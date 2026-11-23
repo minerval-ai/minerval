@@ -33,11 +33,7 @@ type ToolUnion = Anthropic.Messages.ToolUnion;
 type ToolResultBlockParam = Anthropic.ToolResultBlockParam;
 
 import { checkBudget } from "./budget-tracker.js";
-import {
-  DEFAULT_MODEL,
-  modelRefusalFallbackForm,
-  modelSupportsLongRun,
-} from "./models.js";
+import { DEFAULT_MODEL, modelSupportsLongRun } from "./models.js";
 import { currentLabel, getUsageContext, runBudget } from "./usage-context.js";
 import { spendLine } from "./budget-line.js";
 import { markRunPrivate, recordAgentStep, type AgentTrace } from "../services/trace-service.js";
@@ -761,7 +757,6 @@ export async function toolUseLoop(options: {
     options.stream && streamAdapter.completeWithToolsStreaming
       ? streamAdapter.completeWithToolsStreaming.bind(streamAdapter)
       : null;
-  const fallbackForm = modelRefusalFallbackForm(streamModel);
   const maxIter = options.maxIterations ?? 5;
   const notice = options.iterationBudgetNotice ?? DEFAULT_ITERATION_BUDGET_NOTICE;
   const turnCounter = options.turnCounter ?? true;
@@ -820,9 +815,6 @@ export async function toolUseLoop(options: {
             temperature: options.temperature,
             effort: options.effort,
             container: containerId,
-            // The same refusal fallback the non-streaming path gives this model.
-            fallbacks:
-              fallbackForm === "array" ? "server" : fallbackForm === "default" ? "default" : "none",
             ...(options.onText ? { onText: (delta: string) => options.onText!(delta, turn) } : {}),
           });
         })()
@@ -1117,8 +1109,6 @@ export async function longRunToolLoop(options: {
   temperature?: number;
   effort?: EffortLevel;
   taskBudgetTokens?: number;
-  /** Defaults to "none": a long run says explicitly when it may be re-served elsewhere. */
-  fallbacks?: "none" | "server";
   betas?: string[];
   maxIterations?: number;
   /** Wall-clock cap for the whole loop; checked before each turn. */
@@ -1222,7 +1212,6 @@ export async function longRunToolLoop(options: {
       temperature: options.temperature,
       effort: options.effort,
       taskBudgetTokens: options.taskBudgetTokens,
-      fallbacks: options.fallbacks ?? "none",
       betas: options.betas,
       container: containerId,
     });

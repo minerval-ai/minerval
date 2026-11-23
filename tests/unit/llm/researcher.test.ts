@@ -319,7 +319,7 @@ describe("toolset by model", () => {
     expect(mocks.longRunCalls).toHaveLength(1);
     const opts = mocks.longRunCalls[0]!;
     expect(opts.effort).toBe("high");
-    expect(opts.fallbacks).toBe("none");
+    expect(opts).not.toHaveProperty("fallbacks");
     // The dollar ceiling is the only budget: a token countdown the task
     // message never explains ended runs at a fraction of it (#897).
     expect(opts.taskBudgetTokens).toBeUndefined();
