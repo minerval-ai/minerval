@@ -2,7 +2,8 @@
 # workers, the web app built members-only, and the sandbox.
 # docs/self-hosting.md has the steps, in order.
 #
-#   cp env.example .env        # then fill it in; it is never committed
+#   install -m 600 env.example .env   # readable by you alone; then fill
+#                                     # it in. It is never committed
 #   docker compose build
 #   docker compose up -d
 #
@@ -98,6 +99,8 @@ services:
       # One that is not set there is not set here, and the API's own
       # starting value holds. env.example says what each is.
       - FIRST_ADMINISTRATOR
+      - MEMBERS_LABEL
+      - PUBLISHED_LABEL
       - SIGN_IN_VALID_HOURS
       - CLEARED_ROLE_PASSWORD
       - MINERVAL_OPERATOR_KEY
@@ -121,7 +124,6 @@ services:
       - STEWARD_STRONG_MODEL=${STEWARD_STRONG_MODEL:?Set STEWARD_STRONG_MODEL in .env, the model the Steward's strong tier runs on}
       - CURATOR_MODEL=${CURATOR_MODEL:?Set CURATOR_MODEL in .env, the model the Curator runs on}
       - EXTRACTOR_MODEL=${EXTRACTOR_MODEL:?Set EXTRACTOR_MODEL in .env, the model the Extractor runs on}
-      - EXTRACTOR_FALLBACK_MODEL
       - MATCHER_MODEL
       - TAGGER_MODEL
       - GOVERNANCE_MODEL

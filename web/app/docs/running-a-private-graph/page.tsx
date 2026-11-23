@@ -77,9 +77,10 @@ export default function Page() {
             <tr>
               <td>Label</td>
               <td>
-                Who may read something. Everything the graph holds carries one. <code>public</code> always exists; you define the
-                rest. A label can read other labels: one that reads <code>public</code> sees the public graph as well as its own
-                material
+                Who may read something. Everything the graph holds carries one. Three always exist: <code>public</code>, the public
+                graph&rsquo;s own material; <code>published</code>, what your organisation has released outside; and{" "}
+                <code>members</code>, your organisation&rsquo;s own material that every member reads. You define the rest. Every label
+                reads the first two, and a label you define reads <code>members</code> unless you say otherwise
               </td>
             </tr>
             <tr>
@@ -129,10 +130,12 @@ export default function Page() {
 
       <h2 id="labels">2. Decide your labels</h2>
       <p>
-        On <b>Labels</b> (<code>/admin/labels</code>), <b>Add label</b>. Start with one label for the organisation&rsquo;s own material, say{" "}
-        <code>internal</code>, and tick that its holders may also read <code>public</code>. Most organisations need nothing more at
-        first. Add a second only for material that a narrower group must not share with the rest of the organisation, such as
-        security findings, personnel matters or a partner&rsquo;s confidential data. A label&rsquo;s name cannot be changed, and labels
+        <b>Labels</b> (<code>/admin/labels</code>) already lists three. <code>members</code> is your organisation&rsquo;s own material:
+        every member reads it, nobody outside does, and work that names no other label is done there. <code>published</code> holds what you
+        release outside, and <code>public</code> the public graph&rsquo;s own material, which nothing here writes. Most organisations need
+        nothing more at first. <b>Add label</b> only for material that a narrower group must not share with the rest of the organisation,
+        such as security findings, personnel matters or a partner&rsquo;s confidential data. The form ticks that its holders may also read{" "}
+        <code>members</code>; untick it for a label that should see none of the members&rsquo; material. A label&rsquo;s name cannot be changed, and labels
         are never removed, so take a minute over it.
       </p>
       <div className="dc-callout">

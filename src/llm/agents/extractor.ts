@@ -8,7 +8,6 @@ import {
 import { knownDomains, listSkills } from "../prompts/skills.js";
 import { runBudget, withAgent, withSkills } from "../usage-context.js";
 import { loadConfig } from "../../config.js";
-import { LlmRefusalError } from "../errors.js";
 import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
@@ -298,8 +297,7 @@ async function extractClaimsImpl(input: {
   focus?: string | null;
   /**
    * Called with every claim recorded so far, each time more are recorded,
-   * for a caller showing the extraction as it goes. A retry on the fallback
-   * model starts the list over.
+   * for a caller showing the extraction as it goes.
    */
   onClaims?: (claims: ExtractedClaim[]) => void;
   /**
@@ -311,8 +309,7 @@ async function extractClaimsImpl(input: {
   matchMicroUsd?: number;
   /**
    * Called when the Extractor reports, on finish_extraction, that the
-   * document is not what it should be (#740). A retry on the fallback model
-   * reports afresh.
+   * document is not what it should be (#740).
    */
   onDocumentProblem?: (problem: DocumentProblem) => void;
   /**
@@ -331,9 +328,8 @@ async function extractClaimsImpl(input: {
 }): Promise<ExtractedClaim[]> {
   const config = loadConfig();
   const cap = input.maxClaims && input.maxClaims > 0 ? input.maxClaims : 0;
-  // The run's budget, read when each attempt starts so the fallback model's
-  // retry is told what the first attempt left. A run with no budget (an
-  // ingest job) states none; its spend is metered all the same.
+  // The run's budget, read when the extraction starts. A run with no budget
+  // (an ingest job) states none; its spend is metered all the same.
   const userPrompt = (): string => {
     const budget = runBudget();
     return (
@@ -579,33 +575,13 @@ async function extractClaimsImpl(input: {
     return recorded;
   };
 
-  // The chosen tier decides which propositions become claims and how they are
-  // worded, so it is worth the strongest model available. But a REFUSAL is not
-  // a judgment about the document's claims — it is the model declining the
-  // subject matter, and this graph's live work includes a virology cluster
-  // the strong tier has refused before (#78). LlmRefusalError means the server-side
-  // Opus fallback refused too, so the retry must leave the family.
-  //
-  // Without this, a mandate that funds "ingest this pathogen paper" pays for
-  // the fetch and gets a cancelled ingest with no claims and no explanation.
+  // A refusal is the model declining the document's subject matter. It is
+  // not retried on another model (#1044): it surfaces as LlmRefusalError and
+  // the caller shows it as a refusal. What the chosen model declines to
+  // write is not something the graph should take from a weaker one.
   const primary = input.model ?? config.extractorModel;
   return withSkills(
     skills.map((s) => s.name),
-    async (): Promise<ExtractedClaim[]> => {
-      try {
-        return await run(primary);
-      } catch (err) {
-        if (!(err instanceof LlmRefusalError)) throw err;
-        const fallback = config.extractorFallbackModel;
-        if (!fallback || fallback === primary) throw err;
-        console.warn(
-          `[extractor] ${primary} refused the document` +
-            (err.category ? ` (category: ${err.category})` : "") +
-            `; retrying extraction on ${fallback}.`
-        );
-        // A fresh reading: claims the refusing model recorded are dropped.
-        return await run(fallback);
-      }
-    }
+    (): Promise<ExtractedClaim[]> => run(primary)
   );
 }

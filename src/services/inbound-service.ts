@@ -37,11 +37,11 @@
  */
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 
-const atPublic = <T>(what: string, fn: () => Promise<T>) => runAtLabel(PUBLIC_LABEL, what, fn);
+const atPublished = <T>(what: string, fn: () => Promise<T>) => runAtLabel(publishedLabel(), what, fn);
 
 const REASON_DELIVER =
   "A contribution made on the public graph about a published page is public text, read at `public`, and is delivered to the node's Steward at the label the page came from, which `public` does not read; and where that label's reassessment stands is copied back in fixed words for the outside.";
@@ -55,7 +55,7 @@ const REASON_DELIVER =
  */
 export async function takeInPublicContributions(): Promise<number> {
   if (oneLabelOnly()) return 0;
-  return atPublic("taking in what the public said about published pages", async () => {
+  return atPublished("taking in what the public said about published pages", async () => {
     const arrived = await rawQuery<{
       id: string; contribution_type: string; submitted_at: Date; about_published_page_id: string; release_id: string; node_id: string;
     }>(
@@ -81,7 +81,7 @@ export async function takeInPublicContributions(): Promise<number> {
       await rawQuery(
         `INSERT INTO inbound_contributions (public_contribution_id, public_page_id, release_id, node_id, contribution_type, submitted_at, state, repeats, sensitivity_label)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (public_contribution_id) DO NOTHING`,
-        [c.id, c.about_published_page_id, c.release_id, c.node_id, c.contribution_type, c.submitted_at, same ? "repeat" : "received", same?.id ?? null, PUBLIC_LABEL]
+        [c.id, c.about_published_page_id, c.release_id, c.node_id, c.contribution_type, c.submitted_at, same ? "repeat" : "received", same?.id ?? null, publishedLabel()]
       );
     }
     return arrived.length;
@@ -141,7 +141,7 @@ export async function deliverPublicContributions(): Promise<{ delivered: number;
       // recorded once, as a message on the node at `public`, and reaches a pass on the node at each label that
       // reads `public` by the path any message from a label below takes (inbox-service.ts, waitsForPassAt): the
       // label the page came from, and any other that holds a judgment of the node.
-      await atPublic(`what the public said about the page of node ${c.node_id}`, async () => {
+      await atPublished(`what the public said about the page of node ${c.node_id}`, async () => {
         const { postMessage } = await import("./inbox-service.js");
         await postMessage({
           nodeId: c.node_id,

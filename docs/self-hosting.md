@@ -70,8 +70,13 @@ starts with public Minerval's own settings and you change the ones you need.
 
    ```
    cd deploy
-   cp env.example .env
+   install -m 600 env.example .env
    ```
+
+   `install -m 600` copies the file and makes it readable by your account
+   alone. A plain `cp` leaves it readable by every account on the machine,
+   and it is about to hold every secret of the deployment. If you made
+   `.env` (or `api.env`) another way, run `chmod 600 .env api.env`.
 
    Open `.env`. Every setting has a comment saying what it is. The lines
    that are not commented out have no starting value and must be filled in:
@@ -83,7 +88,11 @@ starts with public Minerval's own settings and you change the ones you need.
 
    `.env` is the one place this deployment's secrets live. It is ignored by
    git and is in no Docker volume, so keep a copy off the machine ("No
-   backups", below, says which values cannot be made again). A setting in
+   backups", below, says which values cannot be made again). The file's
+   mode keeps other accounts out of it, and nothing more: an account that
+   may run `docker` on this machine can read the same values out of the
+   running containers, so who is in the `docker` group is who holds the
+   secrets. A setting in
    your shell's environment with the same name wins over `.env`, so run
    the commands below from a shell that does not carry, say, an
    `OPENAI_API_KEY` meant for something else.
@@ -259,6 +268,10 @@ is a guide of its own: `/docs/running-a-private-graph` on the site.
 - `deploy/api.env` (optional): any other setting the API reads, such as a
   budget, an interval, Stripe's keys, or a connection's credential
   (`CONNECTION_...`). `.env.example` at the repository's root lists them.
+  It holds secrets too, so make it closed to other accounts before you
+  write in it: `install -m 600 /dev/null api.env`. `docker compose` reads
+  both files as the account that runs it, so that account alone needs to
+  read them.
 - Fixed by the Compose file: that the deployment is members-only, where the
   database and the sandbox are, where uploaded file sets are kept, and that
   connections to the packaged database are not encrypted, because it is on
@@ -318,7 +331,8 @@ sandbox, and an administrator registers directories under it as file sets.
   four yourself, and keep the two files somewhere off the machine, such as
   a password manager or a secrets store: they hold the deployment's
   secrets, and a restored database is started with the settings it was
-  run with. What each secret costs when it is lost:
+  run with. A copy kept as a file on another shared machine needs the
+  same mode, 600. What each secret costs when it is lost:
   - **Made again, with a restart:** `AUTH_SECRET` (everyone is signed
     out), `WEB_API_KEY`, `SANDBOX_TOKEN`, `CLEARED_ROLE_PASSWORD` (the API
     gives the role the new password when it starts and its login is

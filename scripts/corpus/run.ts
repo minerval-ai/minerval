@@ -92,7 +92,7 @@ function formatActivity(stats: DrainStats): string {
 }
 
 // Exact run cost, read back from llm_usage — the durable meter every provider
-// adapter writes at raw, per-model rates (including refusal fallbacks and
+// adapter writes at raw, per-model rates (including
 // OpenRouter provider-reported cost). A context-carried cost meter can NOT
 // see this run's drained work: the steward pipeline and engine executor wrap
 // each operation in their own withCostMeter for cap-and-settle, and nested
@@ -566,7 +566,7 @@ async function main(): Promise<void> {
   writeFileSync(join(runDir, "trace.jsonl"), trace.map((e) => JSON.stringify(e)).join("\n"));
 
   // Close the fingerprint with what actually ran: the models llm_usage saw
-  // per agent (a second model under an agent means a fallback fired), and
+  // per agent (a second model under an agent means something other than its pin served it), and
   // whether any drain hit its cap. run.json is the file-side copy; the
   // registry row is what corpus:score reads.
   const observed = await observedSinceStart().catch(() => ({}) as Record<string, string[]>);
@@ -602,7 +602,7 @@ async function main(): Promise<void> {
   }
   for (const [agent, models] of Object.entries(observed)) {
     if (models.length > 1) {
-      console.log(`  note: ${agent} ran on more than one model (${models.join(", ")}) — a fallback fired.`);
+      console.log(`  note: ${agent} ran on more than one model (${models.join(", ")}) — not its pin alone.`);
     }
   }
 

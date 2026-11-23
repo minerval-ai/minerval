@@ -21,6 +21,10 @@
  *  - a run's log (GET /runs/:run_id/steps and one step): a step in which
  *    an agent was handed a source's text, or a tool returned it
  *    (services/run-view-service.ts; llm/run-visibility.ts lists which).
+ *  - an administrator's list of the calls that wrote through a connection
+ *    (GET /connections/:connection_id/writes): what the system answered to
+ *    each, which is that system's own text as much as a reading's is
+ *    (services/connection-service.ts, listConnectionWrites).
  *
  * Read-only SQL returns no source text: no public_read view selects
  * sources.raw_content, and tests/unit/db/raw-source-text.test.ts fails if
@@ -36,10 +40,11 @@
  * passage the agents chose to record from it. An agent's own run is not
  * held to this at all: it reads what its label reads, sources included.
  *
- * `public` sources are open to every member, and on the public graph none
- * of this applies.
+ * Sources at a label every member reads (what anyone may read, and the base
+ * label) are open to every member, and on the public graph none of this
+ * applies.
  */
-import { PUBLIC_LABEL } from "./labels.js";
+import { isMemberLabel } from "./labels.js";
 import { membersOnly, standingOf, type Standing } from "./permissions.js";
 
 /**
@@ -53,7 +58,7 @@ export function rawSourceLabelsOf(auth: { standing?: Standing } | null | undefin
 
 /** Whether sources at `label` may be opened with `rawSourceLabels` (null: nothing is held). */
 export function mayOpenRawSources(rawSourceLabels: readonly string[] | null, label: string): boolean {
-  return rawSourceLabels === null || label === PUBLIC_LABEL || rawSourceLabels.includes(label);
+  return rawSourceLabels === null || isMemberLabel(label) || rawSourceLabels.includes(label);
 }
 
 /** What a response carries in place of text it withholds. */
@@ -83,6 +88,20 @@ export function withheldSourceText(label: string): WithheldSourceText {
       `at the label "${label}", which this account does not hold. An administrator of this ` +
       `deployment grants it. What the agents recorded from the source is shown: the passages ` +
       `they quoted and how they read them.`,
+  };
+}
+
+/** The notice in place of what an organization's system answered to a call through a connection. */
+export function withheldCallResult(label: string): WithheldSourceText {
+  return {
+    withheld: "source_text",
+    permission: "read_sources",
+    labels: [label],
+    message:
+      `What the system answered is withheld. It is that system's own text, and opening it takes the ` +
+      `permission to open raw sources at the label "${label}", which this account does not hold. An ` +
+      `administrator of this deployment grants it. What was sent, how the call ended, and the size and ` +
+      `SHA-256 of what came back are shown.`,
   };
 }
 

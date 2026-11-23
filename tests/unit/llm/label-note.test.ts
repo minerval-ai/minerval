@@ -4,7 +4,8 @@
  * a conversation. That the LLM client adds it to agent runs, and adds
  * nothing where `public` is the only label, is in client-label-note.test.ts.
  */
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
+import { noteLabelLayers, resetLabelLayers } from "../../../src/labels.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { FEATURES_OFF_NOTE_SEPARATOR, featuresOffNote, withFeaturesOffNote } from "../../../src/llm/features-off-note.js";
 import { LABEL_NOTE_HEADING, MIRROR_NOTE_HEADING, labelNote, mirrorNote, withLabelNote } from "../../../src/llm/label-note.js";
@@ -226,5 +227,53 @@ describe("on a deployment that mirrors the public graph", () => {
       expect(note).not.toMatch(/[—–]/);
       expect(note).not.toMatch(/labelled/);
     }
+  });
+});
+
+// #1203: on a members-only deployment whose `public` was split into its
+// bottom layers, a run is told what each of the two labels below it holds.
+describe("labelNote, where the bottom layers are labels of their own", () => {
+  const split = () =>
+    noteLabelLayers([
+      { name: "members", layer: "base" },
+      { name: "published", layer: "published" },
+      { name: "public", layer: "public_graph" },
+    ]);
+  afterEach(() => resetLabelLayers());
+
+  it("tells a run at the base label who reads what it writes, and what the published and public labels are", () => {
+    split();
+    const note = labelNote("members", ["members", "public", "published"]);
+    expect(note).toContain("This run works at one label, fixed before it started: `members`.");
+    // The bottom layers are named last, from the top down.
+    expect(note).toContain("What you can read: what is labeled `members`, and what is labeled `published` or `public`, which `members` reads.");
+    expect(note).toContain(
+      "What is labeled `published` is what this organization has released outside this deployment: the pages its gate to outside let through, what was sent, and what came back about it. Anyone may read it. It is the organization's own account and not the public graph's judgment of anything."
+    );
+    expect(note).toContain("`public` is the label of the public graph's own material. This deployment keeps no copy of the public graph, so nothing is labeled so here.");
+    expect(note).toContain("Every member of this deployment may read it, and nobody outside it does unless it is released.");
+    expect(note).not.toContain("Every reader of this graph may read it.");
+    // A report a run at the members' label files stays in the deployment: it leaves through the gate.
+    expect(note).toContain("A problem report this run files (raise_issue) is kept in this deployment");
+  });
+
+  it("says that what is labeled public is the public graph itself, and that no run here works there", () => {
+    split();
+    const note = labelNote("internal", ["internal", "members", "public", "published"], {
+      writesJudgments: true,
+      mirror: { publicGraphAsOf: "2026-11-12T17:08:00.000Z" },
+    });
+    expect(note).toContain("what is labeled `members`, `published` or `public`, which `internal` reads.");
+    expect(note).toContain(
+      "What is labeled `public` is the public graph itself, copied here by a mirror that follows it, and nothing of this deployment's own is labeled so. The copy shows the public graph as of 2026-11-12 17:08 UTC, not as of now"
+    );
+    expect(note).toContain(
+      "On a mirrored node the judgment at `public` is the public graph's own. No run in this deployment works at `public`, so none is made here: what this deployment concludes about the node is a judgment at one of its own labels, beside the public graph's."
+    );
+    expect(note).not.toContain("Part of what is labeled");
+  });
+
+  it("is word for word what it was where they are not", () => {
+    expect(labelNote("internal", ["internal", "public"])).toBe(INTERNAL);
   });
 });

@@ -140,8 +140,8 @@ on them; the rest are under "Open to anyone".
 (`POST /outside/requests/:public_request_id/pass`): it is set aside here and
 stops waiting on anyone in this deployment. That is the deployment's own
 note about a row of the mirror, one for the whole deployment
-(`passed_public_requests`, kept at `public`, where every member reads who
-passed and when). It says nothing outside and the request stays open on the
+(`passed_public_requests`, kept at the deployment's base label, `members`,
+where every member reads who passed and when). It says nothing outside and the request stays open on the
 public graph for whoever else can do it. `DELETE` on the same address puts
 it back. A request already adopted is not passed on: it is this
 deployment's own request by then, and that one is closed.
@@ -152,7 +152,8 @@ request's own words and the nodes it bears on, linked to the public one
 (`adopted_requests`). It says nothing outside. Where the deployment holds
 more than one label the label is one of its own and not `public`: the
 request is about the public graph's nodes, whose assessment at `public` is
-the public graph's to make, so no work on it is run here at that label
+the public graph's to make, so no work on it is run here at that label. On a
+members-only deployment `members` is one of its own, and the usual choice
 ([mirror.md](mirror.md), "Beside a deployment's own rows"). The work is an ordinary
 request and action: it runs when it is funded. Taking up a request filed
 at a label of the deployment's own, at a label that reads it, is the same

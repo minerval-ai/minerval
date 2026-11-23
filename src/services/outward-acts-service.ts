@@ -41,7 +41,7 @@
 import { loadConfig } from "../config.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, publishedLabel } from "../labels.js";
 import type { PermissionName } from "../permissions.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
@@ -137,7 +137,7 @@ export async function logOutwardAct(row: {
         JSON.stringify(row.sent),
         row.result,
         row.said ? row.said.slice(0, 1000) : null,
-        PUBLIC_LABEL,
+        publishedLabel(),
       ]
     );
     return r!.id;
@@ -350,7 +350,7 @@ export async function adoptRequest(input: { publicRequestId: string; label?: str
   );
   if (!pub) throw new OutwardError("REQUEST_NOT_FOUND", "The mirror holds no public request with that id.", 404);
   const single = oneLabelOnly();
-  const label = single ? PUBLIC_LABEL : (input.label ?? "");
+  const label = single ? baseLabel() : (input.label ?? "");
   if (!single) {
     if (!label) throw new OutwardError("LABEL_NEEDED", "Say which label the work on this request is to be done at: one you read. GET /labels/mine lists them.", 422);
     if (label === PUBLIC_LABEL) {
@@ -393,7 +393,7 @@ export async function passOnRequest(input: { publicRequestId: string; actor: Gat
     const made = await rawQuery<{ public_request_id: string }>(
       `INSERT INTO passed_public_requests (public_request_id, passed_by, sensitivity_label) VALUES ($1, $2, $3)
        ON CONFLICT (public_request_id) DO NOTHING RETURNING public_request_id`,
-      [pub.id, input.actor.id, PUBLIC_LABEL]
+      [pub.id, input.actor.id, baseLabel()]
     );
     return { public_request_id: pub.id, passed_on: true as const, already: made.length === 0 };
   });

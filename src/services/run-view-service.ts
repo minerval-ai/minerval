@@ -36,7 +36,7 @@
  * read only public sources and nothing in it is withheld.
  */
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { isMemberLabel } from "../labels.js";
 import {
   AGENTS_GIVEN_SOURCE_TEXT,
   labelCoversReason,
@@ -213,8 +213,8 @@ function withheld(run: RunRow): WithheldRun {
  */
 async function sourceTextNotice(run: RunRow, reader: RunReader): Promise<WithheldSourceText | null> {
   const held = reader.rawSourceLabels;
-  if (held === null || held === undefined || run.sensitivity_label === PUBLIC_LABEL) return null;
-  const couldOpen = (await labelsReadableFrom([run.sensitivity_label])).filter((l) => l !== PUBLIC_LABEL);
+  if (held === null || held === undefined || isMemberLabel(run.sensitivity_label)) return null;
+  const couldOpen = (await labelsReadableFrom([run.sensitivity_label])).filter((l) => !isMemberLabel(l));
   const missing = couldOpen.filter((l) => !held.includes(l));
   return missing.length > 0 ? withheldRunSourceText(run.sensitivity_label, missing) : null;
 }

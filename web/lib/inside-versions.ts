@@ -2,6 +2,7 @@
 // deployment (lib/inside-node.ts reads them; this file decides, with no
 // reading of its own, which the page opens on and how one judgment is put
 // where the ordinary page reads its judgment from).
+import { ONE_LAYER, anAssessmentAt, layerRank, type LabelLayers } from "./label-layers";
 import type { Assessment, ClaimDetail, LeftStanding, NodeVersion } from "./types";
 
 /** Which of a node's judgments the page opens on. */
@@ -17,22 +18,26 @@ export type Opened =
  * the one in force; else, where several are in force, all of them, in the
  * order of their labels' names.
  */
-export function whichToOpen(versions: readonly NodeVersion[], at?: string | null): Opened {
+export function whichToOpen(versions: readonly NodeVersion[], at?: string | null, layers: LabelLayers = ONE_LAYER): Opened {
   const wanted = at ? versions.find((v) => v.label === at) : undefined;
   if (wanted) return { kind: "version", version: wanted };
-  const inForce = versions.filter((v) => v.in_force).sort(byLabelName);
+  const inForce = versions.filter((v) => v.in_force).sort(byLabelName(layers));
   if (inForce.length > 1) return { kind: "several", versions: inForce };
   if (inForce.length === 1) return { kind: "version", version: inForce[0]! };
   return { kind: "none" };
 }
 
-/** Labels in the order a reader meets them where nothing else orders them: by name, with `public` last. */
-export function byLabelName(a: { label: string }, b: { label: string }): number {
-  if (a.label === b.label) return 0;
-  if (a.label === "public") return 1;
-  if (b.label === "public") return -1;
-  return a.label < b.label ? -1 : 1;
-}
+/**
+ * Labels in the order a reader meets them where nothing else orders them:
+ * by name, with the bottom layers last (the members' own, what was
+ * published, then the public graph's).
+ */
+export const byLabelName =
+  (layers: LabelLayers = ONE_LAYER) =>
+  (a: { label: string }, b: { label: string }): number => {
+    if (a.label === b.label) return 0;
+    return layerRank(b.label, layers) - layerRank(a.label, layers) || (a.label < b.label ? -1 : 1);
+  };
 
 /** A version of a claim's judgment as the claim page's own assessment. */
 export function assessmentOf(version: NodeVersion, served: Assessment | null): Assessment | null {
@@ -92,8 +97,8 @@ export function detailWithoutJudgment(detail: ClaimDetail): ClaimDetail {
 
 
 /** An assessment named in the middle of a sentence. */
-export function versionRef(label: string): string {
-  return label === "public" ? "the public assessment" : `the assessment at ${label}`;
+export function versionRef(label: string, layers: LabelLayers = ONE_LAYER): string {
+  return anAssessmentAt(label, layers);
 }
 
 function listOf(names: string[]): string {
@@ -108,9 +113,9 @@ function listOf(names: string[]): string {
  * put a link to the run between them. `on` is the date as the page writes
  * dates.
  */
-export function leftStandingLines(e: LeftStanding, on: string): { examined: string; since: string } {
+export function leftStandingLines(e: LeftStanding, on: string, layers: LabelLayers = ONE_LAYER): { examined: string; since: string } {
   const one = e.judgments.length === 1;
-  const stood = listOf(e.judgments.map((j) => versionRef(j.label)));
+  const stood = listOf(e.judgments.map((j) => versionRef(j.label, layers)));
   return {
     examined: `This node was examined at ${e.label} on ${on}, and ${stood} ${one ? "was" : "were"} left standing: its Steward at ${e.label} made no separate assessment.`,
     since: e.open_again

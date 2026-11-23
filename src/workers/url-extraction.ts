@@ -43,7 +43,9 @@ import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 import {
   DOCUMENT_MAX_DOWNLOAD_BYTES,
   DOCUMENT_MAX_DOWNLOAD_MB,
+  HttpStatusError,
   ResponseTooLargeError,
+  UnsafeUrlError,
   fetchPublicUrl,
 } from "../services/url-guard.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
@@ -211,7 +213,8 @@ export async function handleUrlExtraction(
     // left 'running' it would strand its funders' allocations, and a
     // reconcile reopen would re-submit (and re-charge) the same URL.
     // Cancelling retires the group; the plan cursor skips cancelled items.
-    await cancelIngestAction(group);
+    // The row says why, and the money on it goes back to its payers (#1045).
+    await cancelIngestAction(group, ingestFailureReason(err, message.url));
     throw err;
   }
   // Escrow-funded ingestions were never cap-charged; nothing to settle.
@@ -291,13 +294,10 @@ async function holdIngestAction(group: string, err: unknown): Promise<boolean> {
   }
 }
 
-async function cancelIngestAction(group: string): Promise<void> {
+async function cancelIngestAction(group: string, reason: string): Promise<void> {
   try {
-    await rawQuery(
-      `UPDATE actions SET status = 'cancelled', updated_at = now()
-        WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
-      [group]
-    );
+    const { cancelActionGroup } = await import("../services/action-service.js");
+    await cancelActionGroup(group, reason);
   } catch (err) {
     console.error(
       "[url-extraction] ingest action cancellation failed:",
@@ -860,6 +860,52 @@ async function fetchUrlContent(url: string): Promise<string> {
     if (err instanceof ResponseTooLargeError) throw new Error(tooLargeToIngest(err.url));
     throw err;
   }
+}
+
+/**
+ * Why an ingest failed, for its ledger row and the plan item that asked for
+ * it (#1045): what a Grantmaker needs to decide whether to plan another URL
+ * for the same text. The row is on the public ledger, so this is the
+ * platform's own words, never a provider's or the database's text; a failure
+ * this does not recognize says only that it was the platform's, and the
+ * job's record keeps the error for maintainers.
+ */
+export function ingestFailureReason(err: unknown, url: string): string {
+  if (err instanceof HttpStatusError) {
+    const { status } = err;
+    if (status === 401 || status === 403 || status === 451) {
+      return (
+        `the site refused to serve ${url} (HTTP ${status}): it may block automated readers, sit behind a ` +
+        `paywall or need a sign-in. An archived copy, or another publication of the same text, can be ingested instead.`
+      );
+    }
+    if (status === 404 || status === 410) {
+      return `${url} is not there (HTTP ${status}). An archived copy, or the text's new address, can be ingested instead.`;
+    }
+    if (status === 429 || status >= 500) {
+      return (
+        `the site did not serve ${url} when it was fetched (HTTP ${status}: rate-limited or unavailable). ` +
+        `Planning it again later may succeed.`
+      );
+    }
+    return `the site answered the fetch of ${url} with HTTP ${status}, so there was nothing to read.`;
+  }
+  if (err instanceof UnsafeUrlError) {
+    return `${url} is not an address the platform fetches (${err.message}).`;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  // Already the platform's words, naming the address it was refused at.
+  if (message.includes(`over ${DOCUMENT_MAX_DOWNLOAD_MB} MB and was not ingested`)) return message;
+  if (/prompt is too long|maximum context length|context window/i.test(message)) {
+    return (
+      `the document at ${url} is too long for the Extractor to read in one pass. Its parts, ingested ` +
+      `separately, or a focused ingest of the part that matters, can be read instead.`
+    );
+  }
+  return (
+    `the extraction of ${url} failed on the platform's side, not because of anything about the source; ` +
+    `the error is kept on the extraction job for the platform's maintainers. Planning it again may succeed.`
+  );
 }
 
 /** Why an ingest of a document over the limit failed, and what to ingest instead. */

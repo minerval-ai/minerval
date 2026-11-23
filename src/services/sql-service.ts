@@ -51,7 +51,7 @@ import pg from "pg";
 import { loadConfig } from "../config.js";
 import { currentReadClearance, databaseSsl, rawQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { isOpenLabel, byLayerThenName } from "../labels.js";
 import { ASK_AN_ADMINISTRATOR_FOR_OWLS, owlsCreatedHere } from "./owl.js";
 
 /** The views callers and agents may read (migration 0093). */
@@ -301,7 +301,7 @@ function sqlClearanceKey(): Promise<string> {
  * A clearance for one connection: "expiry.pid.labels.signature". The
  * database returns the labels only for a token whose signature is right,
  * that has not expired, on the backend it names (minerval_sql_clearance).
- * `public` is read by every session and is left out.
+ * What anyone may read is read by every session and is left out.
  */
 export function sqlClearanceToken(input: {
   key: string;
@@ -309,7 +309,7 @@ export function sqlClearanceToken(input: {
   backendPid: number;
   expiresAtEpochSeconds: number;
 }): string {
-  const labels = [...new Set(input.labels)].filter((l) => l !== PUBLIC_LABEL).sort();
+  const labels = [...new Set(input.labels)].filter((l) => !isOpenLabel(l)).sort();
   const signed = `${Math.floor(input.expiresAtEpochSeconds)}.${input.backendPid}.${labels.join(",")}`;
   return `${signed}.${sha256Hex(input.key + sha256Hex(input.key + signed))}`;
 }
@@ -340,7 +340,7 @@ async function askerClearance(): Promise<string[] | null> {
  * a node in force (migration 0159).
  */
 export function sqlClearanceNote(clearance: readonly string[]): string {
-  const read = [...clearance].sort((a, b) => (a === PUBLIC_LABEL ? -1 : b === PUBLIC_LABEL ? 1 : a < b ? -1 : 1));
+  const read = [...clearance].sort(byLayerThenName);
   const names = read.map((l) => `\`${l}\``);
   const list =
     names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
@@ -443,7 +443,7 @@ export async function runReadOnlyQuery(
     await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
     await client.query("SET LOCAL lock_timeout = 1000");
     await client.query("SET LOCAL search_path = public_read");
-    if (clearance && clearance.some((l) => l !== PUBLIC_LABEL)) {
+    if (clearance && clearance.some((l) => !isOpenLabel(l))) {
       const [backend] = (await client.query(`SELECT pg_backend_pid() AS pid`)).rows as Array<{ pid: number }>;
       const token = sqlClearanceToken({
         key: await sqlClearanceKey(),

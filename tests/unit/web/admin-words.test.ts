@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { SetupChecklist } from "../../../web/lib/admin-api";
 import {
   checklistItems,
+  callOutcome,
   grantText,
   itemsNeedingSomeone,
   labelClearanceFacts,
@@ -371,6 +372,38 @@ describe("the log, as sentences", () => {
       logSentence({ event: "connection_tool_withdrawn", at, by: null, connection: "Finance warehouse", tool: "report", reason: "changed" })
     ).toBe('The tool report on the connection "Finance warehouse" was withdrawn from agents, because it changed at the system.');
     expect(
+      logSentence({
+        event: "connection_tool_write_granted",
+        at,
+        by: "Alice",
+        connection: "Tickets",
+        tool: "file_ticket",
+        write_reason: "So a Steward can file what it finds.",
+        held: true,
+      })
+    ).toBe(
+      'Alice granted the tool file_ticket on the connection "Tickets" to write, each call to wait for an administrator. Reason: So a Steward can file what it finds.'
+    );
+    expect(logSentence({ event: "connection_tool_write_revoked", at, by: "Alice", connection: "Tickets", tool: "file_ticket" })).toBe(
+      'Alice revoked the write grant of the tool file_ticket on the connection "Tickets".'
+    );
+    expect(
+      logSentence({
+        event: "connection_tool_terms_changed",
+        at,
+        by: "Alice",
+        connection: "Tickets",
+        tool: "file_ticket",
+        changed: ["held", "owls_per_call"],
+        held: false,
+        owls_per_call: 2,
+      })
+    ).toBe(
+      'Alice changed how the tool file_ticket on the connection "Tickets" is offered: its calls no longer wait for an administrator, and a call now costs a run 2 owls.'
+    );
+    expect(callOutcome("held")).toBe("Waiting for an administrator");
+    expect(callOutcome("not_sent")).toBe("Approved, not sent");
+    expect(
       logSentence({ event: "owls_created", at, by: "Alice", amount_owls: 100, account: "Dave", note: "For the first mandates" })
     ).toBe("Alice created 100 owls into Dave's balance. Note: For the first mandates");
     expect(
@@ -403,6 +436,6 @@ describe("small words", () => {
   it("gives a server's marking of a tool as the hint it is", () => {
     expect(toolMarking({ read_only_hint: true, marked_as_writing: false })).toMatch(/a hint\.$/);
     expect(toolMarking({ read_only_hint: null, marked_as_writing: false })).toMatch(/your judgment of the system\.$/);
-    expect(toolMarking({ read_only_hint: false, marked_as_writing: true })).toMatch(/cannot be picked\.$/);
+    expect(toolMarking({ read_only_hint: false, marked_as_writing: true })).toMatch(/can be picked only under a write grant\.$/);
   });
 });

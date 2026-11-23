@@ -1091,9 +1091,10 @@ export interface MandateSubscriptionRow {
 /**
  * What a mandate's Grantmaker waits on: its session's state, its next
  * scheduled check-in, and every standing interest its session and the
- * mandate's inbox hold. Only subscriptions at the public label are shown, as
- * the mandate itself is public; one made by a run at another label is left
- * out, and so is the check-in it sets.
+ * mandate's inbox hold. Only subscriptions at a label every reader of the
+ * page reads are shown (memberLabels in src/labels.ts: `public` on the public
+ * graph, where the mandate itself is public); one made by a run at another
+ * label is left out, and so is the check-in it sets.
  */
 export interface MandateWatching {
   grantmaker_session: { id: string; status: string } | null;
@@ -1103,7 +1104,7 @@ export interface MandateWatching {
 
 async function mandateWatching(grantId: string): Promise<MandateWatching> {
   const { describeSubscription } = await import("./subscription-service.js");
-  const { PUBLIC_LABEL } = await import("../labels.js");
+  const { memberLabels } = await import("../labels.js");
   const [session] = await rawQuery<{ id: string; status: string }>(
     `SELECT s.id, s.status FROM grants g JOIN agent_sessions s ON s.id = g.grantmaker_session_id
       WHERE g.id = $1`,
@@ -1126,11 +1127,11 @@ async function mandateWatching(grantId: string): Promise<MandateWatching> {
     `SELECT id, subscriber_kind, filter, condition, due_at::text AS due_at, delivery, once, reason,
             created_by, deliveries, last_delivered_at::text AS last_delivered_at, created_at::text AS created_at
        FROM subscriptions
-      WHERE active AND sensitivity_label = $3
+      WHERE active AND sensitivity_label = ANY($3::text[])
         AND ((subscriber_kind = 'session' AND subscriber_ref = $2)
              OR (subscriber_kind = 'mandate_inbox' AND subscriber_ref = $1))
       ORDER BY due_at NULLS LAST, created_at`,
-    [grantId, session?.id ?? "", PUBLIC_LABEL]
+    [grantId, session?.id ?? "", memberLabels()]
   );
   const subscriptions = rows.map((r) => ({
     id: r.id,

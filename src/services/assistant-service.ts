@@ -29,6 +29,7 @@ import { and, desc, eq, getTableColumns, gt, isNull, lt, or, sql } from "drizzle
 import type { FastifyInstance } from "fastify";
 import { deploymentHoldsLabels, getDb, rawQuery } from "../db/client.js";
 import { membersOnly } from "../permissions.js";
+import { deploymentFacts, deploymentNote } from "../llm/deployment-note.js";
 import {
   assistantAllowances,
   assistantConversations,
@@ -49,6 +50,7 @@ import {
   guestSection,
   NODE_SECTION,
   WEB_SECTION,
+  webSection,
 } from "../llm/prompts/assistant.js";
 import { RUN_TURN_GUARD } from "../llm/prompts/turn-budget.js";
 import {
@@ -681,6 +683,7 @@ async function runTurn(
       ...((await assistantShowsLabels()) ? { label: convo.sensitivityLabel } : {}),
     });
 
+    const deployment = deploymentFacts();
     const turn = await runWithUsageContext({ userId: payer }, () =>
       runAssistantTurn({
         transcript: transcriptOf(convo),
@@ -688,7 +691,15 @@ async function runTurn(
         sections: [
           ...(convo.surface === "extension"
             ? [EXTENSION_SECTION]
-            : [WEB_SECTION, ...((convo.origin as Origin)?.node_id ? [NODE_SECTION] : [])]),
+            : [
+                // A private deployment's own address, where minerval.ai would be wrong.
+                deployment ? webSection(deployment.webBase.replace(/^https?:\/\//, "")) : WEB_SECTION,
+                ...((convo.origin as Origin)?.node_id ? [NODE_SECTION] : []),
+              ]),
+          // On a private deployment, what differs from the public graph the
+          // role and the skills describe (llm/deployment-note.ts). Part of
+          // the system prompt, so a delegated copy is told too.
+          ...(deployment ? [`\n\n${deploymentNote(deployment)}`] : []),
           ...(isGuestExternalId(user.externalId)
             ? [guestSection(loadConfig().guestAskOwls, loadConfig().signupGrantOwls)]
             : []),

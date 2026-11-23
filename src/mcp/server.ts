@@ -93,6 +93,7 @@ import {
 import { nativeToolRoute, organizationRefusal, registerRouteTools, withheldRouteTools } from "./route-tools.js";
 import { memberStanding } from "../services/organization-service.js";
 import { permissionsNote } from "../llm/permissions-note.js";
+import { deploymentNote, skillTextHere } from "../llm/deployment-note.js";
 import { membersOnly } from "../permissions.js";
 import { enforcementLastKnown } from "../db/clearance.js";
 import { REQUEST_LABELS } from "../server/request-labels.js";
@@ -430,6 +431,10 @@ export function connectionLabelNote(label: string): string {
 
 function withPermissions(instructions: string, ctx: McpRequestContext): string {
   const notes = [
+    // On a private deployment, that it is one: its own addresses, who reads
+    // it, and what the instructions above say of the public graph that does
+    // not hold here (llm/deployment-note.ts, #1120).
+    deploymentNote(),
     ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "",
     // The members-only hook asked whether labels are held before this
     // request got here, so what this process last learned is current.
@@ -1463,7 +1468,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       if (!skill) throw new Error(`Skill not found: ${String(name)}`);
       return {
         contents: [
-          { uri: uri.href, mimeType: "text/markdown", text: skill.text },
+          // Headed, on a private deployment, by what differs there.
+          { uri: uri.href, mimeType: "text/markdown", text: skillTextHere(skill.text) },
         ],
       };
     }

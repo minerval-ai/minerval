@@ -43,7 +43,8 @@ export interface ScorecardConfig {
   /**
    * Models actually observed in llm_usage during the run window, per agent,
    * most-called first. Normally one per agent; a second entry means a
-   * fallback fired (refusal → EXTRACTOR_FALLBACK_MODEL, server-side Opus).
+   * model served the agent besides the one pinned (no refusal is retried on
+   * another model, #1044, so that is worth a look).
    */
   observed?: Record<string, string[]>;
   /** The spend caps in force — a capped run is a partial baseline. */

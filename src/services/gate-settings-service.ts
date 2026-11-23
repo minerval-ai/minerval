@@ -23,7 +23,7 @@
  */
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import {
   GATE_MODES,
   GATE_SCOPES,
@@ -64,7 +64,7 @@ export interface GateRow {
 }
 
 /** The label the destination side's rows are kept at. */
-export const destinationOfGate = (g: Pick<GateRow, "to_label">): string => g.to_label ?? PUBLIC_LABEL;
+export const destinationOfGate = (g: Pick<GateRow, "to_label">): string => g.to_label ?? publishedLabel();
 
 /**
  * The gate of a boundary, with the row for the gate as a whole made the
@@ -78,7 +78,7 @@ export async function gateOf(boundaryId: string): Promise<GateRow | null> {
       [boundaryId]
     );
     if (!pair) return null;
-    const destination = pair.to_label ?? PUBLIC_LABEL;
+    const destination = pair.to_label ?? publishedLabel();
     await rawQuery(
       `INSERT INTO gates (boundary_id, sensitivity_label) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [boundaryId, destination]
@@ -104,7 +104,7 @@ export async function gateOf(boundaryId: string): Promise<GateRow | null> {
 export async function faceOfGate(boundaryId: string): Promise<string | null> {
   return asOwner(async () => {
     const [row] = await rawQuery<{ name: string }>(
-      `SELECT f.name FROM redaction_policies p JOIN label_faces f ON f.for_label = p.from_label AND f.sensitivity_label = COALESCE(p.to_label, 'public')
+      `SELECT f.name FROM redaction_policies p JOIN label_faces f ON f.for_label = p.from_label AND f.sensitivity_label = COALESCE(p.to_label, minerval_published_label())
         WHERE p.boundary_id = $1 AND p.side = 'page' AND f.withdrawn_at IS NULL LIMIT 1`,
       [boundaryId]
     ).catch(() => []);
