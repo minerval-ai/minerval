@@ -60,6 +60,24 @@ judge = "claude-sonnet-5-5"
 # "latency". Left out, OpenRouter decides.
 # openrouter_provider_sort = "throughput"
 
+# The model providers this deployment may call at all. Left out, every one
+# may be. A deployment that runs every agent on its own cloud account names
+# that one alone, and a role whose model is elsewhere stops the server at
+# start.
+# allowed = ["bedrock"]
+
+# Claude on Amazon Bedrock, for roles whose model is "bedrock:<Bedrock's id>":
+# the region its calls go to (AWS_REGION is used when this is not set). The
+# credentials are AWS's own: a role, or a Bedrock API key in
+# AWS_BEARER_TOKEN_BEDROCK.
+# bedrock_region = "us-east-1"
+
+# Claude on Google Vertex AI, for roles whose model is "vertex:<Vertex's id>":
+# the region ("global" for the global endpoint) and the Google Cloud
+# project. The credentials are Google's application default credentials.
+# vertex_region = "global"
+# vertex_project_id = "my-project"
+
 # A model server this deployment runs itself (vLLM, llama.cpp's server, TGI,
 # Ollama), one group for each. Public Minerval declares none. A role's model
 # "endpoint:local/<model>" is served by the endpoint named "local". key_env

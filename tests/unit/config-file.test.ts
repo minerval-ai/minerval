@@ -115,6 +115,7 @@ describe("the table of settings", () => {
       [
         "ANTHROPIC_API_KEY",
         "API_KEYS",
+        "AWS_BEARER_TOKEN_BEDROCK",
         "CLEARED_ROLE_PASSWORD",
         "LEAN_CHECKER_TOKEN",
         "MIRROR_SIGNING_KEY",
@@ -156,6 +157,11 @@ const SAMPLES: Record<string, { file: ConfigFileValue; loads?: unknown }> = {
   "models.solver": { file: MODELS.strong },
   "models.researcher_strong": { file: MODELS.strong },
   "model_providers.openrouter_provider_sort": { file: "latency" },
+  // Every provider the samples' models are on must be allowed, or the load stops.
+  "model_providers.allowed": { file: ["anthropic", "openrouter", "bedrock"] },
+  "model_providers.bedrock_region": { file: "eu-west-1" },
+  "model_providers.vertex_region": { file: "global" },
+  "model_providers.vertex_project_id": { file: "an-evaluator-project" },
   "outside_services.elicit.use": { file: false, loads: "false" },
   "outside_services.pangram.use": { file: true, loads: "true" },
   "outside_services.payments.use": { file: false, loads: "false" },

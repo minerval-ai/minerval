@@ -69,10 +69,11 @@ import {
   ENDPOINT_ID_PREFIX,
   endpointProviderName,
   parseEndpointModelId,
+  resolveProvider,
 } from "./llm/providers/routing.js";
 
 /** The hosted model APIs, by the names routing gives them. */
-export const HOSTED_PROVIDERS = ["anthropic", "openai", "openrouter"] as const;
+export const HOSTED_PROVIDERS = ["anthropic", "openai", "openrouter", "bedrock", "vertex"] as const;
 
 interface OutsideServiceDefinition {
   name: string;
@@ -146,6 +147,12 @@ export const HOSTED_PROVIDER_DESCRIPTIONS: Record<(typeof HOSTED_PROVIDERS)[numb
     "tools (web search, code execution) do inside a turn.",
   openai: "OpenAI's API, which is sent every prompt of a model it serves.",
   openrouter: "OpenRouter's API, which is sent every prompt of a model routed through it.",
+  bedrock:
+    "Claude on Amazon Bedrock, in the AWS account and region this deployment configures, which " +
+    "is sent every prompt of a model it serves.",
+  vertex:
+    "Claude on Google Vertex AI, in the Google Cloud project and region this deployment " +
+    "configures, which is sent every prompt of a model it serves.",
 };
 
 function endpointDescription(endpoint: ModelEndpoint): string {
@@ -167,6 +174,8 @@ function endpointDescription(endpoint: ModelEndpoint): string {
 export interface ProviderLabelsConfig {
   providerLabels?: Readonly<Record<string, readonly string[]>> | null;
   modelEndpoints?: readonly ModelEndpoint[];
+  /** MODEL_PROVIDERS_ALLOWED: the model providers that may be called at all. Empty allows every one. */
+  modelProvidersAllowed?: readonly string[];
 }
 
 /** Whether PROVIDER_LABELS (or [provider_labels]) is set, and so fixes the clearance. */
@@ -212,6 +221,8 @@ export interface ProviderKeysConfig extends ProviderLabelsConfig {
   anthropicApiKey?: string;
   openaiApiKey?: string;
   openrouterApiKey?: string;
+  bedrockRegion?: string;
+  vertexRegion?: string;
   elicitApiKey?: string;
   elicitEnabled?: "true" | "false";
   pangramApiKey?: string;
@@ -234,10 +245,14 @@ export interface ProviderDescription {
  */
 export function describeProviders(config: ProviderKeysConfig = loadConfig()): ProviderDescription[] {
   const keyed = (key: string | undefined, enabled?: "true" | "false") => enabled !== "false" && !!key;
+  // Bedrock and Vertex take the cloud's own credentials, which cannot be
+  // seen without a call: set up is where a region is set for them.
   const hostedKey: Record<(typeof HOSTED_PROVIDERS)[number], string | undefined> = {
     anthropic: config.anthropicApiKey,
     openai: config.openaiApiKey,
     openrouter: config.openrouterApiKey,
+    bedrock: config.bedrockRegion,
+    vertex: config.vertexRegion,
   };
   const serviceOn: Record<OutsideServiceName, boolean> = {
     embeddings: keyed(config.openaiApiKey),
@@ -385,6 +400,93 @@ export function providerSettingProblems(
     if (!/Model$/.test(field) || typeof value !== "string") continue;
     const problem = undeclaredEndpointMessage(value, endpoints, envName(field));
     if (problem) problems.push(problem);
+  }
+  problems.push(...allowedProviderProblems(config));
+  return problems;
+}
+
+// ---------------------------------------------------------------------------
+// Which model providers may be called at all (MODEL_PROVIDERS_ALLOWED)
+// ---------------------------------------------------------------------------
+
+/** Every model provider this deployment knows: the hosted ones and its declared endpoints. */
+function modelProviderNames(config: ProviderLabelsConfig): string[] {
+  return [
+    ...HOSTED_PROVIDERS,
+    ...(config?.modelEndpoints ?? []).map((e) => endpointProviderName(e.name)),
+  ];
+}
+
+/**
+ * Whether the deployment allows calls to a model provider at all. Where
+ * MODEL_PROVIDERS_ALLOWED is empty (the default) every provider is
+ * allowed, and which labels each may be sent is the clearance's
+ * (clearedLabels). Where it names providers, no other is called, at any
+ * label: a deployment that runs every agent on a cloud account it controls
+ * says so once, and a role or a lookout pointed elsewhere is refused before
+ * anything is sent rather than relying on a clearance line for each
+ * provider it does not use.
+ */
+export function providerAllowed(provider: string, config: ProviderLabelsConfig = loadConfig()): boolean {
+  const allowed = config?.modelProvidersAllowed ?? [];
+  return allowed.length === 0 || allowed.includes(provider);
+}
+
+/** What a refused call, and a role on a provider that is not allowed, are told. */
+function notAllowedMessage(provider: string, allowed: readonly string[]): string {
+  return (
+    `This deployment calls only the model providers MODEL_PROVIDERS_ALLOWED names ` +
+    `(${allowed.join(", ")}), and ${provider} is not one of them`
+  );
+}
+
+/** A call to a model provider the deployment does not allow. Thrown before anything is sent. */
+export class ProviderNotAllowedError extends Error {
+  readonly code = "PROVIDER_NOT_ALLOWED";
+  constructor(readonly provider: string, allowed: readonly string[]) {
+    super(
+      `${notAllowedMessage(provider, allowed)}, so nothing was sent. Use a model on an allowed ` +
+        `provider, or add ${provider} to MODEL_PROVIDERS_ALLOWED.`
+    );
+    this.name = "ProviderNotAllowedError";
+  }
+}
+
+/** Refuse a call to a provider the deployment does not allow. */
+export function assertProviderAllowed(provider: string, config: ProviderLabelsConfig = loadConfig()): void {
+  if (!providerAllowed(provider, config)) {
+    throw new ProviderNotAllowedError(provider, config?.modelProvidersAllowed ?? []);
+  }
+}
+
+/**
+ * What config loading finds wrong with MODEL_PROVIDERS_ALLOWED: a name that
+ * is not a model provider here, and a model field whose model is on a
+ * provider it does not name. Either would otherwise wait for a run to be
+ * refused.
+ */
+export function allowedProviderProblems(
+  config: ProviderLabelsConfig & Readonly<Record<string, unknown>>
+): string[] {
+  const allowed = config.modelProvidersAllowed ?? [];
+  if (allowed.length === 0) return [];
+  const known = modelProviderNames(config);
+  const problems: string[] = [];
+  for (const name of allowed) {
+    if (known.includes(name)) continue;
+    problems.push(
+      `MODEL_PROVIDERS_ALLOWED names "${name}", which is not a model provider here. ` +
+        `They are: ${known.join(", ")}.`
+    );
+  }
+  for (const [field, value] of Object.entries(config)) {
+    if (!/Model$/.test(field) || typeof value !== "string" || value.length === 0) continue;
+    const provider = resolveProvider(value);
+    if (!provider || providerAllowed(provider, config)) continue;
+    problems.push(
+      `${envName(field)} is "${value}", on ${provider}. ${notAllowedMessage(provider, allowed)}: ` +
+        `point ${envName(field)} at a model on an allowed provider, or add ${provider} to the list.`
+    );
   }
   return problems;
 }

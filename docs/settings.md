@@ -307,6 +307,11 @@ still fix it. A machine setting always applies at a restart.
 | `model_providers.anthropic_api_key` | `ANTHROPIC_API_KEY` | administrators (sealed) | live |  | Anthropic's key. |
 | `model_providers.openai_api_key` | `OPENAI_API_KEY` | administrators (sealed) | live |  | OpenAI's key, for its models and for embeddings. |
 | `model_providers.openrouter_api_key` | `OPENROUTER_API_KEY` | administrators (sealed) | live |  | OpenRouter's key. |
+| `model_providers.allowed` | `MODEL_PROVIDERS_ALLOWED` | administrators | live | empty | The model providers this deployment may call at all. Empty allows every one. |
+| `model_providers.bedrock_region` | `BEDROCK_REGION` | administrators | live | empty | The region calls to Claude on Amazon Bedrock go to. Empty, it is the machine's AWS region. |
+| `model_providers.vertex_region` | `VERTEX_REGION` | administrators | live | empty | The region calls to Claude on Google Vertex go to. |
+| `model_providers.vertex_project_id` | `VERTEX_PROJECT_ID` | administrators | live | empty | The Google Cloud project calls to Claude on Vertex are made in. |
+| `model_providers.bedrock_api_key` | `AWS_BEARER_TOKEN_BEDROCK` | administrators (sealed) | live |  | A Bedrock API key, used in place of the machine's AWS credentials. |
 | `model_providers.endpoints` | `MODEL_ENDPOINTS` | administrators | live | empty | Model servers this deployment runs itself: each one's address and what a call costs. |
 
 #### `outside_services.elicit`

@@ -8,6 +8,14 @@
  *                       (providers/endpoint-config.ts); what follows the
  *                       first slash is the model as that endpoint knows it,
  *                       e.g. "endpoint:local/meta-llama/Llama-3.3-70B-Instruct"
+ *   ^bedrock:         → bedrock     (Claude on Amazon Bedrock; what follows the
+ *                                    prefix is Bedrock's own model or
+ *                                    inference-profile id, e.g.
+ *                                    "bedrock:us.anthropic.claude-opus-5-5-v1:0")
+ *   ^vertex:          → vertex      (Claude on Google Vertex AI; what follows
+ *                                    is Vertex's model id, e.g.
+ *                                    "vertex:claude-sonnet-5-5" or
+ *                                    "vertex:claude-sonnet-4-5@20250929")
  *   ^claude-          → anthropic   (Anthropic direct, e.g. "claude-sonnet-5-5")
  *   ^gpt- | ^o\d      → openai      (OpenAI direct, e.g. "gpt-5-nano", "o3")
  *   contains "/"      → openrouter  (their vendor/model convention,
@@ -22,6 +30,14 @@
  * An id that begins with "endpoint:" and is not well formed resolves to
  * nothing; it never falls through to OpenRouter.
  *
+ * Bedrock and Vertex carry a prefix for the same reason as endpoints: their
+ * own ids are ambiguous without one (a Vertex id begins "claude-", which is
+ * Anthropic's shape). Each serves Claude through the Anthropic Messages API,
+ * so what follows the prefix must name a Claude model (models.ts,
+ * claudeModelName); an id that does not resolves to nothing, with a message
+ * saying what was expected. Other vendors' models on Bedrock or Vertex speak
+ * other APIs and are not served here.
+ *
  * This module is deliberately DEPENDENCY-FREE (no adapters, no config) so that
  * src/config.ts can validate model-id fields at load time without dragging in
  * SDK clients. It therefore knows the shape of an endpoint id and not which
@@ -30,7 +46,7 @@
  * providers/index.ts, where a resolved provider becomes a live adapter,
  * checks again at call time.
  */
-import { isAnthropicModelId } from "../models.js";
+import { claudeModelName, isAnthropicModelId } from "../models.js";
 import type { ProviderName } from "./types.js";
 
 /** What an endpoint model id begins with, before the endpoint's name. */
@@ -48,12 +64,43 @@ export const ENDPOINT_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
  * its own below.
  */
 export const ACCEPTED_MODEL_ID_SHAPES =
-  'an Anthropic ID ("claude-…"), an OpenAI ID ("gpt-…" or "o3"), or an ' +
-  'OpenRouter "vendor/model" ID (e.g. "qwen/qwen3-235b-a22b")';
+  'an Anthropic ID ("claude-…"), an OpenAI ID ("gpt-…" or "o3"), an ' +
+  'OpenRouter "vendor/model" ID (e.g. "qwen/qwen3-235b-a22b"), or Claude on ' +
+  'Amazon Bedrock or Google Vertex ("bedrock:us.anthropic.claude-…", ' +
+  '"vertex:claude-…")';
 
-/** Bedrock/Vertex-prefixed Anthropic IDs — a recurring foot-gun (issue #11). */
+/** What a Claude-on-Bedrock model id begins with. */
+export const BEDROCK_ID_PREFIX = "bedrock:";
+/** What a Claude-on-Vertex model id begins with. */
+export const VERTEX_ID_PREFIX = "vertex:";
+
+/** A bare Bedrock-style Anthropic id, without the prefix — a recurring foot-gun (issue #11). */
 function isBedrockStyleId(id: string): boolean {
-  return /^([a-z]{2,4}\.)?anthropic\./.test(id);
+  return /^([a-z]{2,6}(-[a-z]{2,4})?\.)?anthropic\./.test(id);
+}
+
+/** A bare Vertex-style Anthropic id ("claude-…@20250929"), without the prefix. */
+function isVertexStyleId(id: string): boolean {
+  return /^claude-[^@]*@/.test(id);
+}
+
+/** The model as its platform knows it: a Bedrock or Vertex id without its prefix, anything else unchanged. */
+export function platformModelId(modelId: string): string {
+  const id = modelId.trim();
+  if (id.startsWith(BEDROCK_ID_PREFIX)) return id.slice(BEDROCK_ID_PREFIX.length);
+  if (id.startsWith(VERTEX_ID_PREFIX)) return id.slice(VERTEX_ID_PREFIX.length);
+  return id;
+}
+
+/**
+ * True for the providers that speak the Anthropic Messages API: Anthropic
+ * itself, and Claude on Bedrock and on Vertex. What that API accepts and
+ * rejects in a request (an empty assistant turn, for one) is the same on
+ * all three. The server tools Anthropic runs (web search, code execution)
+ * are not part of this: they are Anthropic's own, and checked by name.
+ */
+export function speaksMessagesApi(provider: string | null): boolean {
+  return provider === "anthropic" || provider === "bedrock" || provider === "vertex";
 }
 
 /**
@@ -93,8 +140,15 @@ export function resolveProvider(modelId: string): ProviderName | null {
     const parsed = parseEndpointModelId(id);
     return parsed ? endpointProviderName(parsed.endpoint) : null;
   }
-  // Anthropic next: a Bedrock-style "us.anthropic.claude-…" id contains no
-  // slash and does not start with "claude-", so it falls through to null.
+  // Bedrock and Vertex, also conclusively: what follows the prefix names a
+  // Claude model, or the id resolves to nothing.
+  if (id.startsWith(BEDROCK_ID_PREFIX)) return claudeModelName(id) ? "bedrock" : null;
+  if (id.startsWith(VERTEX_ID_PREFIX)) return claudeModelName(id) ? "vertex" : null;
+  // Anthropic next: a bare Bedrock-style "us.anthropic.claude-…" id contains
+  // no slash and does not start with "claude-", so it falls through to null.
+  // A bare Vertex-style "claude-…@20250929" is refused here: Anthropic's API
+  // 404s on it, and it is meant for Vertex.
+  if (isVertexStyleId(id)) return null;
   if (isAnthropicModelId(id)) return "anthropic";
   if (/^gpt-/.test(id) || /^o\d/.test(id)) return "openai";
   // OpenRouter's convention is vendor/model — checked last so that a bare
@@ -113,10 +167,34 @@ export function isSupportedModelId(id: string): boolean {
  * again at call time. Keeps the historically helpful Bedrock hint (issue #11).
  */
 export function unresolvableModelIdMessage(id: string): string {
-  if (isBedrockStyleId(id)) {
+  const trimmed = id.trim();
+  if (isBedrockStyleId(trimmed)) {
     return (
-      `"${id}" is a Bedrock/Vertex-style model ID, which 404s against the ` +
-      `Anthropic API. Use ${ACCEPTED_MODEL_ID_SHAPES}.`
+      `"${id}" is a Bedrock-style model ID, which 404s against the Anthropic API. ` +
+      `To reach Claude on Amazon Bedrock, write it with the prefix "bedrock:" ` +
+      `("bedrock:${trimmed}"). Otherwise use ${ACCEPTED_MODEL_ID_SHAPES}.`
+    );
+  }
+  if (isVertexStyleId(trimmed)) {
+    return (
+      `"${id}" is a Vertex-style model ID, which 404s against the Anthropic API. ` +
+      `To reach Claude on Google Vertex AI, write it with the prefix "vertex:" ` +
+      `("vertex:${trimmed}"). Otherwise use ${ACCEPTED_MODEL_ID_SHAPES}.`
+    );
+  }
+  if (trimmed.startsWith(BEDROCK_ID_PREFIX)) {
+    return (
+      `"${id}" does not name a Claude model on Amazon Bedrock. Write "bedrock:" and then ` +
+      `Bedrock's id for a Claude model or its inference profile, for example ` +
+      `"bedrock:us.anthropic.claude-opus-5-5-v1:0". Other vendors' models on Bedrock ` +
+      `are not served here.`
+    );
+  }
+  if (trimmed.startsWith(VERTEX_ID_PREFIX)) {
+    return (
+      `"${id}" does not name a Claude model on Google Vertex AI. Write "vertex:" and then ` +
+      `Vertex's id for a Claude model, for example "vertex:claude-sonnet-5-5" or ` +
+      `"vertex:claude-sonnet-4-5@20250929". Other vendors' models on Vertex are not served here.`
     );
   }
   if (id.trim().startsWith(ENDPOINT_ID_PREFIX)) {

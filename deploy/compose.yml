@@ -127,6 +127,15 @@ services:
       - OPENROUTER_API_KEY
       - MODEL_ENDPOINTS
       - PROVIDER_LABELS
+      - MODEL_PROVIDERS_ALLOWED
+      # Claude on the deployment's own Amazon Bedrock or Google Vertex
+      # account. The cloud credentials themselves (AWS's, or a Google
+      # service account file named by GOOGLE_APPLICATION_CREDENTIALS) go in
+      # api.env with the other secrets.
+      - BEDROCK_REGION
+      - AWS_BEARER_TOKEN_BEDROCK
+      - VERTEX_REGION
+      - VERTEX_PROJECT_ID
       - STEWARD_MODEL
       - STEWARD_STRONG_MODEL
       - CURATOR_MODEL

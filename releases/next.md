@@ -14,6 +14,16 @@ settings:
       note: "The name of the label for the organization's own material that every member reads (MEMBERS_LABEL). Leave it unset unless the deployment had already defined a label named members."
     - key: accounts.published_label
       note: "The name of the label for what the organization released outside (PUBLISHED_LABEL). Leave it unset unless the deployment had already defined a label named published."
+    - key: model_providers.allowed
+      note: "The model providers the deployment may call at all (MODEL_PROVIDERS_ALLOWED). Empty, the starting value, allows every one."
+    - key: model_providers.bedrock_region
+      note: "The region for Claude on Amazon Bedrock (BEDROCK_REGION). Needed only where a role's model is a bedrock: one."
+    - key: model_providers.vertex_region
+      note: "The region for Claude on Google Vertex (VERTEX_REGION). Needed only where a role's model is a vertex: one."
+    - key: model_providers.vertex_project_id
+      note: "The Google Cloud project for Claude on Vertex (VERTEX_PROJECT_ID)."
+    - key: model_providers.bedrock_api_key
+      note: "A Bedrock API key (AWS_BEARER_TOKEN_BEDROCK), used in place of the machine's AWS credentials. A secret: given on Settings or in the environment."
   retired:
     - key: models.extractor_fallback
       replaced_by: "nothing: a model's refusal is no longer retried on another model, and the Extractor's refusal is shown as one"

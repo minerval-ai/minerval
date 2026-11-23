@@ -68,6 +68,7 @@ on the machine. The secrets are:
 | Environment variable | What it is |
 |---|---|
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | The model providers' keys. The OpenAI key also makes the embeddings. |
+| `AWS_BEARER_TOKEN_BEDROCK` | A Bedrock API key, for Claude on Amazon Bedrock. Optional: without one, calls to Bedrock are signed with the AWS credentials the server runs with (a task or instance role, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, a profile). Claude on Google Vertex takes Google's application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, or the machine's service account), which are not set through Minerval at all. |
 | `DB_PASSWORD`, or `DATABASE_URL` whole | The database password. A connection string carries one, so it is a secret too. |
 | `SQL_AGENT_DB_PASSWORD`, `SQL_CALLER_DB_PASSWORD`, `SQL_AGENT_DATABASE_URL`, `SQL_CALLER_DATABASE_URL` | The two read-only database roles that SQL queries run as. |
 | `CLEARED_ROLE_PASSWORD` | The password of the role every connection held to a clearance logs in as. Left out, it is derived from the owner's password. |
@@ -117,6 +118,25 @@ OpenRouter; the provider's key must be in the environment. An id of the form
 `endpoint:<name>/<model>` is served by a model endpoint the deployment
 declares under `[[model_providers.endpoints]]`, below.
 
+Claude on a cloud account the deployment holds is an id with the cloud's
+prefix, then the cloud's own id for the model: `bedrock:` for Amazon
+Bedrock (`"bedrock:us.anthropic.claude-opus-5-5-v1:0"`, a model or an
+inference profile), and `vertex:` for Google Vertex AI
+(`"vertex:claude-opus-5-5"`, or a pinned version,
+`"vertex:claude-sonnet-4-5@20250929"`). Only Claude is served this way:
+both clouds serve it through the same API as Anthropic, so a role behaves
+the same on all three, except that Anthropic's own server tools (its web
+search and its code-execution sandbox) are not offered there, as on every
+provider but Anthropic: a run searches through the `web_search` outside
+service where that is set up and cleared, and has no sandbox. The search goes
+through OpenRouter, so a deployment that keeps everything in its own cloud
+sets no OpenRouter key, or does not clear `web_search` for its labels, and
+its runs then have no web search.
+A Bedrock or Vertex call is metered at Anthropic's price for the same
+model, which is what both clouds list on their global endpoints; a regional
+endpoint, or a rate negotiated with the cloud, is stated in
+`[pricing] model_prices` against the id as written here.
+
 | Name | The role | Environment variable |
 |---|---|---|
 | `steward` | The Steward's standard pass: assessing and decomposing claims. | `STEWARD_MODEL` |
@@ -145,6 +165,10 @@ declares under `[[model_providers.endpoints]]`, below.
 | Name | What it sets | Environment variable |
 |---|---|---|
 | `openrouter_provider_sort` | How OpenRouter picks among a model's hosts: `"price"`, `"throughput"` or `"latency"`. Left out, OpenRouter decides. | `OPENROUTER_PROVIDER_SORT` |
+| `allowed` | The model providers this deployment may call at all: a list of their names (`"anthropic"`, `"openai"`, `"openrouter"`, `"bedrock"`, `"vertex"`, `"endpoint:<name>"`). Left out, every one may be. Set, a call to any other is refused before anything is sent, at every label, and a role whose model is on another stops the server at start, naming the role. It is how a deployment that runs every agent on a cloud account it controls says so once, rather than with a `[provider_labels]` line for each provider it does not use. It covers model calls only: the outside services (embeddings, web search, and the rest) are switched and cleared on their own. | `MODEL_PROVIDERS_ALLOWED` (comma-separated) |
+| `bedrock_region` | The AWS region calls to Claude on Amazon Bedrock go to. Left out, `AWS_REGION`. A role on a `bedrock:` model with neither set fails the preflight's `models` check. | `BEDROCK_REGION` |
+| `vertex_region` | The Google Cloud region calls to Claude on Vertex AI go to, `"global"` for the global endpoint. Left out, `CLOUD_ML_REGION`. A role on a `vertex:` model with neither set fails the preflight's `models` check. | `VERTEX_REGION` |
+| `vertex_project_id` | The Google Cloud project those calls are made in. Left out, `ANTHROPIC_VERTEX_PROJECT_ID` or `GOOGLE_CLOUD_PROJECT`, and then the project of the credentials. | `VERTEX_PROJECT_ID` |
 
 The providers' keys are secrets (above).
 
@@ -195,7 +219,7 @@ anthropic = ["public", "published", "members", "internal"]
 embeddings = ["public", "published", "members", "internal"]
 ```
 
-The names are `anthropic`, `openai` and `openrouter`; `"endpoint:<name>"`
+The names are `anthropic`, `openai`, `openrouter`, `bedrock` and `vertex`; `"endpoint:<name>"`
 for each declared endpoint, in quotes because of the colon; and the outside
 services `embeddings`, `web_search`, `web_pages`, `elicit` and `pangram`.
 
@@ -495,7 +519,7 @@ at that label does not run at all.
 | `models_chosen` | In production, the model of every load-bearing role is one somebody chose, in the app or on the machine, and not the code's default. | yes |
 | `database` | The database can be reached, has the pgvector extension, and has applied every migration the code has. It also fails when the database was migrated by newer code, and when a migration is waiting that the migrator would pass over. | yes |
 | `run_log` | A test run is written to the run log, sealed, checked against its seal and removed. Where private material is held, the log must also be in record mode. | yes |
-| `models` | Every role's model resolves to a provider whose key is set. A model on one of the deployment's own endpoints needs the endpoint declared, and the variable its `key_env` names set if it has one. Roles of a feature that is off are left out. No provider is called. | no |
+| `models` | Every role's model resolves to a provider whose key is set; for Claude on Bedrock or Vertex, whose region is set (their credentials are the cloud's own, and only a call tries them). A model on one of the deployment's own endpoints needs the endpoint declared, and the variable its `key_env` names set if it has one. Roles of a feature that is off are left out. No provider is called. | no |
 | `provider_labels` | Every label `[provider_labels]` names is a defined label. A name that is not refuses every model call and every call to an outside service, at every label, so nothing is lost by holding agent work back until it is put right. On a members-only deployment the group must also name `members` and `published` for some provider: the organization's own work is at those two labels, a provider is sent neither until a line says so, and the check fails with the lines to change until one does. Where the group is not written it does not apply: the choice is the labels page's, which can name only a defined label. | yes |
 | `model_clearance` | For each label besides `public`, the provider of every role's model is cleared for it. It fails naming the label, the provider and the roles whose runs there would be refused. It does not block: there is one gate for the whole deployment, so closing it would also stop the work at the labels that are served, and a refused run sends nothing. | no |
 | `embeddings` | `OPENAI_API_KEY` is set. | no |

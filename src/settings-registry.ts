@@ -163,6 +163,17 @@ export const SETTINGS: readonly Setting[] = [
   issuedKey("model_providers.anthropic_api_key", "ANTHROPIC_API_KEY", "Anthropic's key."),
   issuedKey("model_providers.openai_api_key", "OPENAI_API_KEY", "OpenAI's key, for its models and for embeddings."),
   issuedKey("model_providers.openrouter_api_key", "OPENROUTER_API_KEY", "OpenRouter's key."),
+  live("model_providers.allowed", "MODEL_PROVIDERS_ALLOWED", "list", "modelProvidersAllowed",
+    "The model providers this deployment may call at all. Empty allows every one."),
+  // Claude on the deployment's own cloud account (src/llm/providers/bedrock.ts, vertex.ts).
+  // The cloud's own credentials are the machine's: its role, or a file it names.
+  live("model_providers.bedrock_region", "BEDROCK_REGION", "text", "bedrockRegion",
+    "The region calls to Claude on Amazon Bedrock go to. Empty, it is the machine's AWS region."),
+  live("model_providers.vertex_region", "VERTEX_REGION", "text", "vertexRegion",
+    "The region calls to Claude on Google Vertex go to."),
+  live("model_providers.vertex_project_id", "VERTEX_PROJECT_ID", "text", "vertexProjectId",
+    "The Google Cloud project calls to Claude on Vertex are made in."),
+  issuedKey("model_providers.bedrock_api_key", "AWS_BEARER_TOKEN_BEDROCK", "A Bedrock API key, used in place of the machine's AWS credentials."),
   // The deployment's own model endpoints (src/llm/providers/endpoint-config.ts).
   // Written last in its group: a [[...]] heading ends the plain settings above it.
   live("model_providers.endpoints", "MODEL_ENDPOINTS", "groups", "modelEndpoints",
@@ -552,6 +563,10 @@ export const OTHER_VARIABLES: Readonly<Record<string, string>> = {
   PUBLIC_API_URL: "the web app's",
   GIT_SHA: "the older name of MINERVAL_COMMIT, still read",
   PGOPTIONS: "the database client's",
+  CLOUD_ML_REGION: "Google's own name for the Vertex region, read where VERTEX_REGION is not set",
+  ANTHROPIC_VERTEX_PROJECT_ID: "the Vertex client's own name for the project, read where VERTEX_PROJECT_ID is not set",
+  GOOGLE_CLOUD_PROJECT: "Google's own name for the project, read where VERTEX_PROJECT_ID is not set",
+  GOOGLE_APPLICATION_CREDENTIALS: "Google's own name for the file of its credentials",
   LLM_LOG_CACHE: "a developer's switch on the providers' cache logging",
 };
 

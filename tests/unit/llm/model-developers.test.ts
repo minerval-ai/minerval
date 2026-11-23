@@ -12,6 +12,8 @@ describe("modelDeveloper", () => {
 
   it("resolves direct, Bedrock-style and vendor/model ids", () => {
     expect(modelDeveloper("us.anthropic.claude-opus-5-5")?.key).toBe("anthropic");
+    expect(modelDeveloper("bedrock:global.anthropic.claude-opus-5-5-v1:0")?.key).toBe("anthropic");
+    expect(modelDeveloper("vertex:claude-sonnet-4-5@20250929")?.key).toBe("anthropic");
     expect(modelDeveloper("gpt-5-nano")?.key).toBe("openai");
     expect(modelDeveloper("o3")?.key).toBe("openai");
     expect(modelDeveloper("z-ai/glm-5.3-flash")?.key).toBe("zhipu");

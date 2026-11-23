@@ -264,6 +264,32 @@ describe("models", () => {
   });
 });
 
+describe("models on Claude on Bedrock or Vertex", () => {
+  const onClouds = {
+    ...ALL_ANTHROPIC,
+    matcherModel: "bedrock:us.anthropic.claude-haiku-5-5-v1:0",
+    taggerModel: "vertex:claude-haiku-5-5",
+  };
+
+  it("passes when each cloud has its region, saying its credentials are tried by the first call", () => {
+    expect(
+      check("models", { config: config({ ...onClouds, bedrockRegion: "us-east-1", vertexRegion: "global" }) })
+    ).toMatchObject({
+      status: "pass",
+      message: expect.stringMatching(
+        /^Each of the \d+ roles names a model whose provider has what it needs: Anthropic has its key set; Bedrock has its region set \(.*\); Vertex has its region set \(.*\)\.$/
+      ),
+    });
+  });
+
+  it("fails naming the region that is missing and the roles that need it", () => {
+    expect(check("models", { config: config({ ...onClouds, bedrockRegion: "", vertexRegion: "global" }) })).toMatchObject({
+      status: "fail",
+      message: "BEDROCK_REGION is not set, and 1 role runs on Bedrock models (matcher).",
+    });
+  });
+});
+
 describe("models on an endpoint the deployment runs itself", () => {
   const onLocal = { ...ALL_ANTHROPIC, matcherModel: "endpoint:local/org/model", taggerModel: "endpoint:local/org/model" };
 

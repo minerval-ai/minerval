@@ -81,7 +81,7 @@ describe("the registry of settings", () => {
 
   it("seals the keys someone else issued, and nothing else", () => {
     expect(SETTINGS.filter((s) => s.where === "app_secret").map((s) => s.env).sort()).toEqual([
-      "ANTHROPIC_API_KEY", "ELICIT_API_KEY", "GITHUB_APP_PRIVATE_KEY", "GITHUB_TOKEN", "OPENAI_API_KEY",
+      "ANTHROPIC_API_KEY", "AWS_BEARER_TOKEN_BEDROCK", "ELICIT_API_KEY", "GITHUB_APP_PRIVATE_KEY", "GITHUB_TOKEN", "OPENAI_API_KEY",
       "OPENROUTER_API_KEY", "PANGRAM_API_KEY", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
     ]);
     for (const row of SETTINGS) if (row.where === "app_secret") expect(row.secret, row.key).toBe(true);

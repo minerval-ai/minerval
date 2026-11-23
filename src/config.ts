@@ -313,6 +313,40 @@ const configSchema = z.object({
   // day). Any value still routes only to data_collection: deny hosts.
   openrouterProviderSort: z.enum(["price", "throughput", "latency"]).optional(),
 
+  // Claude on Amazon Bedrock (src/llm/providers/bedrock.ts): the region its
+  // calls go to, from BEDROCK_REGION, else AWS_REGION. Empty, a
+  // "bedrock:…" model has nowhere to go and the preflight says so. The
+  // credentials are AWS's own (the default credential chain: an instance or
+  // task role, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, a profile), or a
+  // Bedrock API key in AWS_BEARER_TOKEN_BEDROCK, which is used instead when set.
+  bedrockRegion: z.string().default(""),
+  bedrockApiKey: z.string().default(""),
+  // Claude on Google Vertex AI (src/llm/providers/vertex.ts): the region
+  // ("global" for the global endpoint), from VERTEX_REGION, else
+  // CLOUD_ML_REGION; and the Google Cloud project, from VERTEX_PROJECT_ID,
+  // else ANTHROPIC_VERTEX_PROJECT_ID or GOOGLE_CLOUD_PROJECT, else the
+  // project of the credentials. Credentials are Google's application default
+  // credentials (GOOGLE_APPLICATION_CREDENTIALS, or the machine's service
+  // account).
+  vertexRegion: z.string().default(""),
+  vertexProjectId: z.string().default(""),
+
+  // The model providers this deployment may call at all, by name
+  // (src/provider-labels.ts, allowedProviderProblems): a comma-separated
+  // list. Empty, the default, allows every one. Set, a call to any other is
+  // refused before anything is sent, and a role whose model is on another
+  // stops the server at start. A deployment that runs every agent on a
+  // cloud account it controls names that one ("bedrock").
+  modelProvidersAllowed: z
+    .string()
+    .transform((raw) =>
+      raw
+        .split(",")
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+    )
+    .prefault(""),
+
   // Endpoints this deployment serves models from itself (vLLM, llama.cpp's
   // server, TGI, Ollama): a JSON list, one object per endpoint, with its
   // name, its base URL, the name of the environment variable that holds its
@@ -1796,6 +1830,15 @@ function buildConfig(env: NodeJS.ProcessEnv): Config {
     anthropicApiKey: env.ANTHROPIC_API_KEY,
     openrouterApiKey: env.OPENROUTER_API_KEY,
     openrouterProviderSort: env.OPENROUTER_PROVIDER_SORT || undefined,
+    bedrockRegion: env.BEDROCK_REGION || env.AWS_REGION || undefined,
+    bedrockApiKey: env.AWS_BEARER_TOKEN_BEDROCK,
+    vertexRegion: env.VERTEX_REGION || env.CLOUD_ML_REGION || undefined,
+    vertexProjectId:
+      env.VERTEX_PROJECT_ID ||
+      env.ANTHROPIC_VERTEX_PROJECT_ID ||
+      env.GOOGLE_CLOUD_PROJECT ||
+      undefined,
+    modelProvidersAllowed: env.MODEL_PROVIDERS_ALLOWED,
     awsRegion: env.AWS_REGION,
     owlPriceMicroUsd: env.OWL_PRICE_MICRO_USD,
     capClaimProposalOwls: env.CAP_CLAIM_PROPOSAL_OWLS,
