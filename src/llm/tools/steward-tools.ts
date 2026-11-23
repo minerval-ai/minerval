@@ -981,7 +981,8 @@ export function getStewardToolDefinitions(): Tool[] {
         "pages and never enters propagation or your assessment. Use it instead of " +
         "stretching 'assumes' or leaving the connection in prose. If the other " +
         "claim being false would make yours false, ill-posed, or less credible, " +
-        "that is a decomposition edge, not a link.",
+        "that is a decomposition edge, not a link. A link that already exists is left as it " +
+        "is: correct its note or kind with set_related_link.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -2908,7 +2909,8 @@ export async function executeStewardTool(
           message: linked
             ? `Linked ${claimId} <-> ${otherClaimId} (${kind}); it now shows as a ` +
               `see-also on both claims.`
-            : `A ${kind} link between these claims already existed; nothing was written.`,
+            : `A ${kind} link between these claims already existed; nothing was written, and its ` +
+              `reasoning is unchanged (to correct its note or its kind, call set_related_link).`,
         });
       }
 

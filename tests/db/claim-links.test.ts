@@ -11,7 +11,9 @@ import { seedClaim, pgCode } from "./helpers.js";
 import {
   linkClaims,
   listRelatedClaims,
+  getLinksBetween,
   orderPair,
+  reviseLink,
   unlinkClaims,
 } from "../../src/services/claim-link-service.js";
 import {
@@ -74,6 +76,22 @@ describe("claim_links (#436)", () => {
     const removed = await unlinkClaims({ claimId: y, otherClaimId: x });
     expect(removed).toHaveLength(2);
     expect(await linkIds(x)).toEqual([]);
+  });
+
+  it("rewrites a link's note in place, and folds it into a link of the kind it is changed to (#1189)", async () => {
+    const x = await seedClaim("x");
+    const y = await seedClaim("y");
+    const first = await linkClaims({ claimId: x, otherClaimId: y, kind: "related", reasoning: "a cap on it", createdBy: "dbtest" });
+    expect(await reviseLink(first.id, "related", "a neighbouring forecast")).toEqual({ id: first.id, merged: false });
+    // Read from either side, the pair in either order.
+    expect(await getLinksBetween(y, x)).toMatchObject([{ id: first.id, kind: "related", reasoning: "a neighbouring forecast", own: true }]);
+
+    expect(await reviseLink(first.id, "rival_explanation", "competing accounts")).toEqual({ id: first.id, merged: false });
+    const second = await linkClaims({ claimId: x, otherClaimId: y, kind: "related", reasoning: "also related", createdBy: "dbtest" });
+    expect(second.created).toBe(true);
+    expect(await reviseLink(second.id, "rival_explanation", "one account against the other")).toEqual({ id: first.id, merged: true });
+    expect(await getLinksBetween(x, y)).toMatchObject([{ id: first.id, kind: "rival_explanation", reasoning: "one account against the other" }]);
+    expect((await listRelatedClaims(x)).map((r) => r.reasoning)).toEqual(["one account against the other"]);
   });
 
   it("rejects self-links, unknown kinds, and missing claims at the database", async () => {

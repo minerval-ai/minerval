@@ -47,6 +47,12 @@ vi.mock("../../../../src/services/relationship-service.js", async (importOrigina
   detachEdgeFromArgument: vi.fn(async () => ({ detached: true })),
 }));
 
+vi.mock("../../../../src/services/claim-link-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../src/services/claim-link-service.js")>()),
+  getLinksBetween: vi.fn(),
+  reviseLink: vi.fn(async (id: string) => ({ id, merged: false })),
+}));
+
 import {
   executeStewardStructureTool,
   getStewardStructureToolDefinitions,
@@ -61,6 +67,22 @@ import {
   retypeEdge,
   setEdgeReasoning,
 } from "../../../../src/services/relationship-service.js";
+
+import { getLinksBetween, reviseLink } from "../../../../src/services/claim-link-service.js";
+
+const LINK = "66666666-6666-6666-6666-666666666666";
+const link = (kind: string, over: Record<string, unknown> = {}) => ({
+  id: LINK,
+  claim_a_id: OWN,
+  claim_b_id: CHILD,
+  kind,
+  reasoning: "the forecast caps the quantity",
+  created_by: "claim_steward",
+  sensitivity_label: "public",
+  origin: "local",
+  own: true,
+  ...over,
+});
 
 const edge = (relation: string, argumentIds: string[] = []) => ({
   id: EDGE,
@@ -237,5 +259,86 @@ describe("steward structure tools", () => {
     vi.mocked(getArgument).mockResolvedValue({ ...liveArgument, retiredAt: new Date() } as never);
     const out = await run("retire_argument", { argument_id: ARG, reasoning: "x" });
     expect(out.success).toBe(false);
+  });
+
+  it("rewrite a lateral link's note when the kind is unchanged, logging the old note (#1189)", async () => {
+    vi.mocked(getLinksBetween).mockResolvedValue([link("related")]);
+    const out = await run("set_related_link", {
+      claim_id: OWN,
+      other_claim_id: CHILD,
+      kind: "related",
+      reasoning: "a forecast of a neighbouring event, not nested in this one",
+    });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/stays related/);
+    expect(reviseLink).toHaveBeenCalledWith(LINK, "related", "a forecast of a neighbouring event, not nested in this one", expect.anything());
+    expect(audit[0]).toMatchObject({ claimId: OWN, action: "set_related_link" });
+    expect(String(audit[0]!.reasoning)).toContain('old link reasoning: "the forecast caps the quantity"');
+  });
+
+  it("change a lateral link's kind, and say when it joined a link of that kind", async () => {
+    vi.mocked(getLinksBetween).mockResolvedValue([link("related")]);
+    let out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "RIVAL_EXPLANATION", reasoning: "competing accounts" });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/is now rival_explanation, with your note/);
+    expect(reviseLink).toHaveBeenCalledWith(LINK, "rival_explanation", "competing accounts", expect.anything());
+
+    vi.mocked(getLinksBetween).mockResolvedValue([link("related"), link("rival_explanation", { id: "l2" })]);
+    vi.mocked(reviseLink).mockResolvedValueOnce({ id: "l2", merged: true });
+    out = await run("set_related_link", {
+      claim_id: OWN,
+      other_claim_id: CHILD,
+      kind: "rival_explanation",
+      from_kind: "related",
+      reasoning: "competing accounts",
+    });
+    expect(out.message).toMatch(/merged into the rival_explanation link/);
+    expect(String(audit[1]!.reasoning)).toContain("from related to rival_explanation (merged");
+  });
+
+  it("change nothing when a link's kind and note are both unchanged", async () => {
+    vi.mocked(getLinksBetween).mockResolvedValue([link("related")]);
+    const out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "related", reasoning: "the forecast caps the quantity" });
+    expect(out.success).toBe(true);
+    expect(out.message).toMatch(/nothing changed/);
+    expect(reviseLink).not.toHaveBeenCalled();
+    expect(audit).toHaveLength(0);
+  });
+
+  it("refuse a link that is not there, another node's link, an unknown kind, and an ambiguous pair", async () => {
+    vi.mocked(getLinksBetween).mockResolvedValue([]);
+    let out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "related", reasoning: "x" });
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/add_related_claim/);
+
+    out = await run("set_related_link", { claim_id: OTHER, other_claim_id: CHILD, kind: "related", reasoning: "x" });
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/escalate_to_curator/);
+
+    out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "assumes", reasoning: "x" });
+    expect(out.success).toBe(false);
+
+    vi.mocked(getLinksBetween).mockResolvedValue([link("related"), link("rival_explanation", { id: "l2" })]);
+    out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "related", reasoning: "x" });
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/pass from_kind/);
+    out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "related", from_kind: "counterpart_position", reasoning: "x" });
+    expect(out.success).toBe(false);
+    expect(reviseLink).not.toHaveBeenCalled();
+    expect(audit).toHaveLength(0);
+  });
+
+  it("leave a link at a layer below as it is, and say where it is", async () => {
+    vi.mocked(getLinksBetween).mockResolvedValue([link("related", { origin: "mirror", own: false })]);
+    let out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "related", reasoning: "x" });
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/^Not changed\. What this would change \(the link's kind and note\) belongs to the public graph/);
+
+    // Its own link is not folded into a kind a layer below already holds.
+    vi.mocked(getLinksBetween).mockResolvedValue([link("related"), link("rival_explanation", { id: "l2", sensitivity_label: "internal", own: false })]);
+    out = await run("set_related_link", { claim_id: OWN, other_claim_id: CHILD, kind: "rival_explanation", from_kind: "related", reasoning: "x" });
+    expect(out.success).toBe(false);
+    expect(out.message).toMatch(/is at `internal`/);
+    expect(reviseLink).not.toHaveBeenCalled();
   });
 });

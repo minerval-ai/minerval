@@ -193,7 +193,7 @@ The Steward's tools against a mirrored node, for a run at a private label that r
 | `log_stewardship_decision`, `escalate_to_curator`, `notify_steward`, `file_request` | Works at the run's label. A note to a mirrored node's Steward at the node's own label is refused: nobody here runs that pass. |
 | `update_canonical_form`, `set_claim_importance`, `set_claim_domains`, `set_quantity_definition` | Refused with the one message. |
 | `record_cut` | Records the run's cut at its label, beside any the public graph later records for the claim. Refused with the one message once the public graph holds the claim's cut. |
-| `write_argument`, `revise_argument`, `retire_argument`, `update_claim_instance`, `detach_claim_instance`, `set_instance_order`, `remove_subclaim_edge`, `set_edge_relation`, `ungroup_subclaim`, on a row the public graph recorded | Refused with the one message. On a row the run's own label recorded, they work as anywhere. |
+| `write_argument`, `revise_argument`, `retire_argument`, `update_claim_instance`, `detach_claim_instance`, `set_instance_order`, `remove_subclaim_edge`, `set_edge_relation`, `set_related_link`, `ungroup_subclaim`, on a row the public graph recorded | Refused with the one message. On a row the run's own label recorded, they work as anywhere. |
 
 The tools are offered as on any node. A tool is refused when it is used on what the public graph holds, and the run's brief says so beforehand.
 

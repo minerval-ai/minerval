@@ -135,6 +135,7 @@ const ARTIFACT_WITHHELD_TOOLS = new Set([
   "add_parent_claim",
   "propose_parent_edge",
   "add_related_claim",
+  "set_related_link",
   "update_claim_instance",
   "detach_claim_instance",
   "reattach_claim_instance",

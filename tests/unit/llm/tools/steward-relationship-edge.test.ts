@@ -215,6 +215,20 @@ describe("steward add_related_claim (#436)", () => {
     );
   });
 
+  it("reports a link that already existed and points at set_related_link (#1189)", async () => {
+    vi.mocked(linkClaims).mockResolvedValueOnce({ linked: false, linkId: "dddddddd-dddd-dddd-dddd-dddddddddddd" });
+    const out = JSON.parse(
+      await executeStewardTool("add_related_claim", {
+        claim_id: PARENT_ID,
+        other_claim_id: CHILD_ID,
+        kind: "related",
+        reasoning: "a corrected note",
+      })
+    );
+    expect(out).toMatchObject({ success: true, linked: false });
+    expect(out.message).toContain("set_related_link");
+  });
+
   it("bounces a hallucinated counterpart, an unknown kind, and a self-link", async () => {
     childRows.length = 0;
     let out = JSON.parse(

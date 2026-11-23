@@ -176,6 +176,9 @@ async function seedPublicGraph(): Promise<void> {
     reasoning: "The public graph's reason.",
     confidence: 0.9,
   });
+  // A lateral link the public graph holds, for the tool that would rewrite its note (set_related_link).
+  const [linkA, linkB] = [id.parent, id.child].sort();
+  await ins(pub, "claim_links", { claim_a_id: linkA, claim_b_id: linkB, kind: "related", reasoning: "The public graph's see-also.", created_by: "claim_steward" });
   await ins(pub, "sources", { id: id.paper, url: `https://journal.example/${tag}/wetland-carbon`, title: "Wetland carbon", raw_content: "Wetlands store carbon." });
   await ins(pub, "claim_instances", { id: id.instance, claim_id: id.parent, source_id: id.paper, verbatim_text: "Wetlands store carbon.", stance: "affirms" });
   await ins(pub, "arguments", {
@@ -749,6 +752,7 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       expectRefused("update_claim_instance", await tool("update_claim_instance", { claim_id: id.parent, instance_id: id.instance, stance: "denies", reasoning: "It reads otherwise." }));
       expectRefused("detach_claim_instance", await tool("detach_claim_instance", { claim_id: id.parent, instance_id: id.instance, reason: "Not about this." }));
       expectRefused("ungroup_subclaim", await tool("ungroup_subclaim", { argument_id: id.argument, child_id: id.child, reasoning: "It is not a premise of it." }));
+      expectRefused("set_related_link", await tool("set_related_link", { claim_id: id.parent, other_claim_id: id.child, kind: "related", reasoning: "A note from a." }), "the link's kind and note");
       expectRefused("set_instance_order", await tool("set_instance_order", { claim_id: id.parent, instance_ids: [id.instance], reasoning: "The page should lead with it." }));
 
       // What the label holds differently for its own readers is a row of its own over the public graph's row
@@ -781,6 +785,10 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       expectWritten("add_argument", await tool("add_argument", { claim_id: id.parent, name: "From our own cores", stance: "for", description: "Our cores show continued accumulation." }));
       expectWritten("add_relationship_edge", await tool("add_relationship_edge", { parent_id: id.parent, child_id: id.survivor, relation: "supports", reasoning: "Marsh soils are one case." }));
       expectWritten("add_related_claim", await tool("add_related_claim", { claim_id: id.parent, other_claim_id: id.other, kind: "related", reasoning: "The upland comparison." }));
+      // The link it recorded itself is its own to correct.
+      const relinked = await tool("set_related_link", { claim_id: id.parent, other_claim_id: id.other, kind: "rival_explanation", reasoning: "The upland account competes with this one." });
+      expectWritten("set_related_link (its own)", relinked);
+      expect(relinked.message).toContain("is now rival_explanation");
       expectWritten("log_stewardship_decision", await tool("log_stewardship_decision", { claim_id: id.parent, action_taken: "no_change", reasoning: "Looked, and the version at a stands." }));
       expectWritten("escalate_to_curator", await tool("escalate_to_curator", { claim_id: id.parent, defect: "duplicate", concern: "Two of our nodes under it look like one." }));
       expectWritten("record_argument_instance", await tool("record_argument_instance", { argument_id: id.argument, url: `https://intranet.example/${tag}/field-notes`, verbatim_text: "Our cores show the soil still accumulating.", stance: "advances", reading: "full" }));
@@ -836,6 +844,7 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       update_claim_instance: "refused",
       detach_claim_instance: "refused",
       ungroup_subclaim: "refused",
+      set_related_link: "refused",
       set_instance_order: "refused",
       set_claim_importance: "at the run's label",
       retire_argument: "at the run's label",
@@ -847,6 +856,7 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       add_argument: "at the run's label",
       add_relationship_edge: "at the run's label",
       add_related_claim: "at the run's label",
+      "set_related_link (its own)": "at the run's label",
       log_stewardship_decision: "at the run's label",
       escalate_to_curator: "at the run's label",
       record_argument_instance: "at the run's label",

@@ -334,6 +334,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   set_reserve: { reads: "public", why: "confirms the run's own write; the reserve and its reason are public on the mandate's page" },
   amend_pace: { reads: "public", why: "confirms the run's own write; the pace is public on the mandate's page" },
   set_edge_relation: { reads: "public", why: "confirms the run's own write to public graph records" },
+  set_related_link: { reads: "public", why: "confirms the run's own write to public graph records" },
   set_feed_rule: { reads: "public", why: "lookout records, public on the mandate's lookout route" },
   set_instance_order: { reads: "public", why: "confirms the run's own write to public graph records" },
   set_quantity_definition: { reads: "public", why: "confirms the run's own write to public graph records" },
