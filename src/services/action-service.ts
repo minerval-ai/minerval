@@ -20,7 +20,7 @@
  *    allocations.
  */
 import { oneSourceForAddressSql } from "./layer-service.js";
-import { rawQuery, withTransaction } from "../db/client.js";
+import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { currentLabel, labelInContext, runAtLabel } from "../llm/usage-context.js";
 import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
@@ -556,6 +556,150 @@ export async function closeRequestActions(requestId: string): Promise<void> {
 }
 
 /**
+ * Cancel a group's live rows and settle the money on it, with the reason
+ * (#1045). Work that will not run must not keep holding its payers' money:
+ * every allocation still live on the group is released, as completeAction
+ * settles a run's unspent remainder. A person gets their unspent owls back
+ * on the owl ledger, money a lookout's fund put on the run goes back to the
+ * fund, and a mandate's placement stops counting against its escrow and
+ * its pace. Nothing is consumed: what a stopped run had already metered
+ * stays on the job it ran under, which the escrow counts as spend outside
+ * the ledger (regrant-service.ts, ESCROW_TERMS_SQL), so the mandate is not
+ * charged twice and the spend does not vanish.
+ *
+ * `reason` is written on the row (actions.closed_reason) and is public on
+ * the ledger, so it is the platform's words for what happened, never a
+ * provider's or the database's text. `only` narrows the cancel to one row
+ * of the group; with it, the group's money is settled only once no other
+ * row of the group is live. Returns the ids of the rows it cancelled.
+ */
+export async function cancelActionGroup(
+  group: string,
+  reason: string,
+  opts: { only?: string; statuses?: readonly ("open" | "running")[] } = {}
+): Promise<string[]> {
+  const statuses = opts.statuses ?? ["open", "running"];
+  return withTransaction(async (tx) => {
+    const cancelled = await tx.query<{ id: string }>(
+      `UPDATE actions SET status = 'cancelled', closed_reason = $3, updated_at = now()
+        WHERE exclusion_group = $1 AND status = ANY($2::text[])
+          AND ($4::uuid IS NULL OR id = $4::uuid)
+        RETURNING id`,
+      [group, [...statuses], reason.slice(0, 1000), opts.only ?? null]
+    );
+    if (cancelled.length === 0) return [];
+    const [live] = await tx.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM actions WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
+      [group]
+    );
+    if (Number(live?.n ?? 0) === 0) await releaseGroupHolds(tx, group);
+    // A subscriber waiting on the run (a session that commissioned it,
+    // spend-tools.ts) hears that it closed, and why, as it would hear that
+    // it settled.
+    const { recordEvent } = await import("./event-service.js");
+    for (const { id } of cancelled) {
+      const [r] = await tx.query<{ kind: string; claim_id: string | null; target_ref: string | null; label: string; grants: string[] }>(
+        `SELECT a.kind, a.claim_id, a.target_ref, a.label,
+                ARRAY(SELECT DISTINCT al.grant_id::text FROM minerval_whole.allocation_money al
+                       WHERE al.action_id = a.id AND al.grant_id IS NOT NULL) AS grants
+           FROM actions a WHERE a.id = $1`,
+        [id]
+      );
+      if (!r) continue;
+      await recordEvent(
+        {
+          kind: "run_closed",
+          actionId: id,
+          nodeId: r.claim_id,
+          grantId: r.grants[0] ?? null,
+          refs: { work_kind: r.kind, target_ref: r.target_ref, grants: r.grants },
+          summary: `${r.label} was cancelled: ${reason}`,
+          payload: { reason },
+        },
+        tx
+      );
+    }
+    return cancelled.map((r) => r.id);
+  });
+}
+
+/**
+ * Release every live allocation on a group no row of which will run:
+ * returned, not spent. The caller holds the transaction and has checked
+ * that nothing on the group is open or running.
+ */
+async function releaseGroupHolds(tx: TxQuery, group: string): Promise<number> {
+  const live = await tx.query<{
+    id: string;
+    grant_id: string | null;
+    user_id: string | null;
+    claim_id: string | null;
+    commissioned_by: string | null;
+    created_at: Date;
+    unspent: number;
+  }>(
+    `SELECT id, grant_id, user_id, claim_id, commissioned_by, created_at,
+            (amount_micro_usd - spent_micro_usd)::bigint AS unspent
+       FROM minerval_whole.allocation_money
+      WHERE exclusion_group = $1 AND released_at IS NULL
+      ORDER BY created_at ASC
+      FOR UPDATE`,
+    [group]
+  );
+  for (const r of live) {
+    await tx.query(`UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`, [r.id]);
+    const unspent = Number(r.unspent);
+    if (unspent <= 0) continue;
+    if (await returnUnspentToFund(tx, { ...r, unspent, exclusion_group: group })) continue;
+    if (r.user_id) {
+      await tx.query(
+        `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, claim_id, idempotency_key)
+         VALUES ($1, $2, 'refund', $3, $4)
+         ON CONFLICT (idempotency_key) DO NOTHING`,
+        [r.user_id, unspent, r.claim_id, `release:${r.id}`]
+      );
+    }
+  }
+  return live.length;
+}
+
+/**
+ * Settle the money still held on ingest groups that ended cancelled (#1045).
+ * Until cancelActionGroup, an ingest that failed was cancelled with a bare
+ * status write and its allocations stayed live: a mandate's escrow held the
+ * money of a row that would never run, with no tool to free it. Run by the
+ * reconcile sweep, so the holds left before the fix are released, and any
+ * cancel that still skips the settlement is caught at the next sweep. Only
+ * groups every row of which is cancelled: a group with a finished row was
+ * settled by its run, and one with a live row is still owed its money.
+ * Returns how many allocations it released.
+ */
+export async function releaseCancelledIngestHolds(): Promise<number> {
+  const groups = await rawQuery<{ exclusion_group: string }>(
+    `SELECT DISTINCT al.exclusion_group
+       FROM minerval_whole.allocation_money al
+      WHERE al.released_at IS NULL
+        AND EXISTS (SELECT 1 FROM actions a WHERE a.exclusion_group = al.exclusion_group AND a.kind = 'ingest')
+        AND NOT EXISTS (SELECT 1 FROM actions a
+                         WHERE a.exclusion_group = al.exclusion_group AND a.status <> 'cancelled')`
+  );
+  let released = 0;
+  for (const { exclusion_group: group } of groups) {
+    released += await withTransaction(async (tx) => {
+      // Checked again under the lock of the group's rows: a row reopened
+      // since the read above is owed the money.
+      const rows = await tx.query<{ status: string }>(
+        `SELECT status FROM actions WHERE exclusion_group = $1 FOR UPDATE`,
+        [group]
+      );
+      if (rows.length === 0 || rows.some((r) => r.status !== "cancelled")) return 0;
+      return releaseGroupHolds(tx, group);
+    });
+  }
+  return released;
+}
+
+/**
  * Sweep the whole ledger into sync:
  *  - open assess/reassess groups for every pending claim;
  *  - open ingest actions for unexecuted grant-plan ingest items, and
@@ -648,6 +792,11 @@ export async function reconcileActions(): Promise<{
   );
 
   await openDueAgentRuns();
+
+  // Money still held on ingests that ended cancelled goes back (#1045).
+  await releaseCancelledIngestHolds().catch((err) =>
+    console.warn(`[reconcile] releasing cancelled ingests' holds failed: ${err instanceof Error ? err.message : err}`)
+  );
 
   // Consistency sweeps (#330): an exclusive set of a standard and a strong
   // variant per partition due a sweep (#756). Off (and any open rows
@@ -1594,12 +1743,14 @@ async function groupLedger(
   exclusion_group: string;
   /** The row's wait on a platform fault, when it is open and has one. */
   fault?: FaultWait;
+  /** Why the row was cancelled, when it was and the cancel gave a reason (#1045). */
+  closed_reason?: string;
 } | null> {
-  type Row = { id: string; status: string; exclusion_group: string } & FaultWaitRow;
+  type Row = { id: string; status: string; exclusion_group: string; closed_reason: string | null } & FaultWaitRow;
   const rows =
     "group" in where
       ? await rawQuery<Row>(
-          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after FROM actions
+          `SELECT id, status, exclusion_group, closed_reason, fault_reason, fault_since, fault_attempts, retry_after FROM actions
             WHERE exclusion_group = $1
             ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'open' THEN 1
                                  WHEN 'done' THEN 2 WHEN 'superseded' THEN 3
@@ -1608,7 +1759,7 @@ async function groupLedger(
           [where.group]
         )
       : await rawQuery<Row>(
-          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after
+          `SELECT id, status, exclusion_group, closed_reason, fault_reason, fault_since, fault_attempts, retry_after
              FROM actions WHERE id = $1`,
           [where.actionId]
         );
@@ -1619,7 +1770,14 @@ async function groupLedger(
       ? row.status
       : "done";
   const fault = status === "open" ? faultWait(row) : null;
-  return { status, action_id: row.id, exclusion_group: row.exclusion_group, ...(fault ? { fault } : {}) };
+  const closed = status === "cancelled" && row.closed_reason ? row.closed_reason : null;
+  return {
+    status,
+    action_id: row.id,
+    exclusion_group: row.exclusion_group,
+    ...(fault ? { fault } : {}),
+    ...(closed ? { closed_reason: closed } : {}),
+  };
 }
 
 interface ClaimStanding {
@@ -1669,12 +1827,22 @@ const nowIso = () => new Date().toISOString();
 const waiting = (reason: string): PlanItemLedger => ({ status: "waiting", reason, checked_at: nowIso() });
 const blocked = (reason: string): PlanItemLedger => ({ status: "blocked", reason, checked_at: nowIso() });
 const fromRow = (
-  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string; fault?: FaultWait },
+  row: {
+    status: PlanItemLedgerStatus;
+    action_id: string;
+    exclusion_group: string;
+    fault?: FaultWait;
+    closed_reason?: string;
+  },
   reason?: string
 ): PlanItemLedger => {
   // An open row a platform fault is holding says so (#971): the item reads
-  // open, with the reason a payer would otherwise have to guess.
-  const why = reason ?? (row.status === "open" && row.fault ? faultWaitSentence(row.fault) : undefined);
+  // open, with the reason a payer would otherwise have to guess. A cancelled
+  // row says why it was cancelled, when its cancel gave a reason (#1045).
+  const why =
+    reason ??
+    (row.status === "open" && row.fault ? faultWaitSentence(row.fault) : undefined) ??
+    (row.status === "cancelled" ? row.closed_reason : undefined);
   return {
     status: row.status,
     action_id: row.action_id,

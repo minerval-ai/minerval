@@ -1224,11 +1224,12 @@ unit test pins both the model and the bypass of the queue. Direct
 invocation also removes the latency question: a prize review never waits
 behind the drain.
 
-The Steward keeps the server-side refusal fallback
-(`src/llm/providers/anthropic.ts:118-122`), and a fallback is sticky for
-about an hour. `decide_prize_claim` records `served_model` and
-`fallback_ran` on `steward_decision`; the Audit agent treats a
-fallback-served acceptance as a send-back for fresh review. The adapter
+No agent, the Steward included, asks for a server-side refusal fallback: a
+refusal is shown as one (docs/architecture.md, "Refusals are shown as
+refusals"). `decide_prize_claim` still records `served_model` and
+`fallback_ran` on `steward_decision`, so a decision the provider served
+on another model of its own accord would show; the Audit agent treats such
+an acceptance as a send-back for fresh review. The adapter
 exposes both fields on `ToolCompletionResult` (section 7.8).
 
 ### 6.5 Lean on the ledger
@@ -1410,7 +1411,8 @@ select.
   action with the metered amount, keeps its notebook and transcript, and
   records `cancelled`. The checker gets its own daily CPU-hour cap and
   per-job limit.
-- **Fallbacks off.** The solver runs with `fallbacks: "none"`. A refusal on
+- **No refusal fallback.** As with every agent, nothing re-serves a refused
+  turn on another model. A refusal on
   a mathematics problem is a signal to inspect, and a max-effort attempt
   silently continued on a different model for an hour would be a different
   product than the mandate funded. A refused attempt records `status =
@@ -1542,11 +1544,11 @@ the provider-neutral contract every other agent depends on
 | Where | Change |
 |---|---|
 | `providers/types.ts` (`CompleteRequest`) | Add `effort?: "low" \| "medium" \| "high" \| "xhigh" \| "max"`. This is also the hook the strong Steward variant can use later. |
-| `providers/types.ts` | Add `LongRunRequest extends ToolCompleteRequest` with `effort`, `taskBudgetTokens?`, `compaction?`, `fallbacks: "none" \| "server"`, `betas?`. |
+| `providers/types.ts` | Add `LongRunRequest extends ToolCompleteRequest` with `effort`, `taskBudgetTokens?`, `compaction?`, `betas?`. |
 | `providers/types.ts` (`ToolCompletionResult`) | Add `servedModel`, `fallbackRan`, `usage.cacheReadTokens`, `usage.cacheCreationTokens`, `compacted`. |
 | `providers/types.ts` (`ProviderAdapter`) | Optional `completeWithToolsStreaming(req: LongRunRequest)`; only the Anthropic adapter implements it; the other adapters reject the request with a capability message, as they reject server tools today (`src/llm/providers/openai.ts:16`). |
 | `providers/anthropic.ts:38-55` | Add `getLongRunClient()` memoizing a second client with `timeout` from `LLM_LONG_RUN_TIMEOUT_MS` (3,600,000) and `maxRetries` 2. The 180-second default with four retries would abort and re-issue a fifteen-minute turn up to five times, each billable server-side; this may already be re-issuing long Steward turns and should be measured before the solver lands. |
-| `providers/anthropic.ts:113-126` | Add `createMessageStreaming` using the beta streaming call and `finalMessage()`, assembling betas from the request (task budgets, compaction, context management, and the server-side fallback beta only when `fallbacks === "server"`). |
+| `providers/anthropic.ts:113-126` | Add `createMessageStreaming` using the beta streaming call and `finalMessage()`, assembling betas from the request (task budgets, compaction, context management). |
 | `providers/anthropic.ts` (`complete`, `completeWithTools`, `completeStructured`) | Spread `output_config.effort` into each request. |
 | `providers/anthropic.ts:80-100` and the message path | Widen `system` to blocks; add a moving `cache_control` breakpoint on the last user message so a 100-turn loop pays cache-read rates for history rather than the full input price every turn. This is the single largest cost lever and precedes any multi-hour run. |
 | `providers/types.ts:25-28` (`TokenUsage`) | Add `cacheReadTokens` and `cacheCreationTokens`; the Anthropic adapter already normalizes them (`anthropic.ts:141-148`) and keeps pricing on `response.model`, the served model. |

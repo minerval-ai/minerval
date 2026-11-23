@@ -1,5 +1,5 @@
 {
-  "id": "98f34288-21aa-4d38-b351-9f93825f4c4f",
+  "id": "f5b2fd6a-544a-4d26-8fa3-9f3bd75ecb37",
   "prevId": "99e173e6-a835-45cd-9040-f9e765600afe",
   "version": "7",
   "dialect": "postgresql",
@@ -642,6 +642,12 @@
         "retry_after": {
           "name": "retry_after",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closed_reason": {
+          "name": "closed_reason",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -2698,7 +2704,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_base_label()"
+          "default": "'public'"
         },
         "acting_for": {
           "name": "acting_for",
@@ -16411,45 +16417,14 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "layer": {
-          "name": "layer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
-      "indexes": {
-        "uq_labels_layer": {
-          "name": "uq_labels_layer",
-          "columns": [
-            {
-              "expression": "layer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"labels\".\"layer\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_labels_layer": {
-          "name": "ck_labels_layer",
-          "value": "\"labels\".\"layer\" IN ('public_graph', 'published', 'base')"
-        },
-        "ck_labels_public_graph_is_public": {
-          "name": "ck_labels_public_graph_is_public",
-          "value": "(\"labels\".\"layer\" = 'public_graph') IS NOT TRUE OR \"labels\".\"name\" = 'public'"
-        },
         "labels_name_plain": {
           "name": "labels_name_plain",
           "value": "\"labels\".\"name\" ~ '^[a-z][a-z0-9_-]{0,62}$' AND \"labels\".\"name\" <> 'null'"
@@ -20075,7 +20050,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "minerval_base_label()"
+          "default": "'public'"
         },
         "acting_for": {
           "name": "acting_for",

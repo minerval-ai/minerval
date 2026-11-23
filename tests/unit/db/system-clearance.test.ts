@@ -394,6 +394,11 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
         "A mandate's events are collected inside runAtLabel at the mandate's label, by statements that read the judgments and flags there. " +
         "Settlement reads and updates money through the whole views (src/db/money.ts), which hold no text.",
     ],
+    [
+      "The ledger's housekeeping reads and moves work at every label (events to route, holds to release, rows to fund); each delivery runs at its subscriber's label.",
+      "The same housekeeping the engine lane runs under the clearance above, on a timer of its own (#1028): each subscription is delivered inside runAtLabel at its subscriber's label, " +
+        "a mandate's events are collected inside runAtLabel at the mandate's label, and holds, fault markers and funding move status and money through the whole views, which hold no text.",
+    ],
   ],
   "src/workers/lookout-triggers.ts": [
     [

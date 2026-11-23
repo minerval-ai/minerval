@@ -1467,10 +1467,10 @@ worker exits its loop when false), a `solver_paused` row in
 `platform_flags` polled every turn so an operator halts a run without a
 deploy, and `POST /admin/attempts/:id/cancel`, also polled per turn. A
 halted attempt completes its action with the metered amount and keeps its
-notebook and transcript. The solver runs with server-side fallbacks off: a
-refusal records `refused` and stops, since a maximum-effort attempt
-silently continued on a different model would be a different product than
-the mandate funded.
+notebook and transcript. Like every agent, the solver has no refusal
+fallback: a refusal records `refused` and stops, since a maximum-effort
+attempt silently continued on a different model would be a different
+product than the mandate funded.
 
 **Execution.** A dedicated worker (`src/workers/solver-executor.ts`, its own
 process, `npm run worker:solver`) claims `attempt_proof` actions, runs the
@@ -1767,7 +1767,7 @@ Model choice follows the value of the judgment, not a single default:
 | Claim Steward (standard pass) · Curator · Audit Agent | Claude Opus 5.5 |
 | Claim Steward (strong pass, money triggers) · Dispute Arbitrator · Grantmaker | Claude Fable 5.2 |
 | Assistant | Claude Fable 5.2 (`ASSISTANT_MODEL`); the user may pick Claude Opus 5.5 for a conversation (`ASSISTANT_STANDARD_MODEL`) |
-| Solver (`math_solver`) | Claude Fable 5.2 at effort `max` (`SOLVER_MODEL`), fallbacks off |
+| Solver (`math_solver`) | Claude Fable 5.2 at effort `max` (`SOLVER_MODEL`) |
 | Researcher (`researcher`) | Chosen per launch by the administrator: Claude Fable 5.2 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5.5 (`RESEARCHER_STANDARD_MODEL`), or GPT-6 Luna (`RESEARCHER_CHEAP_MODEL`) |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
@@ -1783,8 +1783,22 @@ one lookout whose brief warrants it. The load-bearing epistemic work
 judgments that are final or bought deliberately (arbitration, the Steward's
 strong pass, the Grantmaker) and the long runs whose budget already bounds
 them (the solver, the researcher's strong tier) run on Fable 5.2, at twice
-the price per token. Both tiers carry a server-side fallback to Opus 4.8 so a
-safety-classifier refusal degrades gracefully instead of failing the job. Background assessments carry a
+the price per token.
+
+**Refusals are shown as refusals.** A model's safety classifiers can decline
+a request (Opus 5.5, Sonnet 5.5, Fable and Haiku 5.5 all have them). No
+request opts into a server-side fallback, and nothing retries a refused
+request on another model: what a frontier model declines to write is not
+something Minerval should publish from a model that was less careful about
+it (#1044). The refusal surfaces as `LlmRefusalError` with the provider's
+category, and each place shows it as what it is: a Steward pass parks the
+claim with the public reason `model_refusal` (a person decides what
+happens next); an ingest or a text analysis fails with the refusal as its
+reason; the researcher and the solver end `refused`; a REST call answers
+422 `MODEL_REFUSED`. The adapter still records the model that served each
+turn, so a turn the provider re-served on its own would show.
+
+Background assessments carry a
 standard-model and a strong-model variant on the action ledger, and whoever
 commissions a pass chooses the tier (docs/allocation.md), the strong one
 where the node is contested and important; what no one commissions is the
@@ -2189,13 +2203,13 @@ at the 128,000-token output ceiling), `effort` up to `max`, a moving cache
 breakpoint on the last user message so a hundred-turn loop pays cache-read
 rates for its history rather than the full input price every turn,
 per-turn hooks (`beforeTurn`, `afterTurn`, `reminder`) through which the
-solver's dollar ceiling, wrap-up notice, and kill switches act, and
-`fallbacks: "none"`. The history is append-only, which the
+solver's dollar ceiling, wrap-up notice, and kill switches act, and no
+refusal fallback. The history is append-only, which the
 preserved-thinking rule requires and a test pins. A second client with an
 hour-long timeout serves it, because the default 180-second timeout with
 retries would abort and re-issue a fifteen-minute turn several times, each
-billable. The adapter reports the served model, whether a fallback ran, and
-cache-read and cache-creation tokens on every result; the money decisions
+billable. The adapter reports the served model, whether it differs from the
+requested one, and cache-read and cache-creation tokens on every result; the money decisions
 record the first two.
 
 
@@ -2230,6 +2244,16 @@ DB-claimed lanes, which is safe for the same reason several tasks are. Money
 bounds how much work runs; this ceiling bounds how much runs at once, which
 money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
+
+The ledger's housekeeping does not wait for a slot (#1028). Routing
+subscriptions and due check-ins, releasing petition holds, closing deployment
+faults that are over and funding mandates' and lookouts' own rows is database
+work with no model in it (`ledgerHousekeeping`, `src/workers/engine-executor.ts`).
+The engine lane runs it before it picks each row, so a row opened a moment ago
+is funded at once, and the runner also runs it every five seconds on a timer
+of its own, one pass at a time, so it goes on while every slot is inside a long
+unit. Until that timer, a process whose slots were all held did no
+housekeeping at all, and a check-in arrived seventeen hours late.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget, rejected credentials, a
