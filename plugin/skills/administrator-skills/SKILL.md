@@ -32,13 +32,14 @@ Three layers, in order of authority:
 `CATALOG.md` lists every skill and role with a one-line summary. Open it
 to find the file you need.
 
-Two agents you may meet have no role here, because they decide nothing
+One agent you may meet has no role here, because it decides nothing
 about the graph. The tagger labels each claim with topic tags (the slugs
 `search_claims` and `list_tags` filter on): tags say what a claim is
 about, never whether it holds, so the tagger runs without the
-constitution. The browser extension's agents read a page against the
-graph for the person reading it and write nothing to the graph; an MCP
-client is itself that conversation, with the graph's tools in hand.
+constitution. The browser extension has no agent of its own: the marks
+it draws on a page and its chat are both the Assistant's
+(`roles/assistant.md`), which reads a page against the graph for the
+person reading it.
 
 ## How to use them
 

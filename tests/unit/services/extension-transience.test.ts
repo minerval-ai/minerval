@@ -36,7 +36,7 @@ vi.mock("../../../src/config.js", () => ({
     // The public graph's log is best-effort; the last tests switch to a record.
     runLogMode: mocks.runLogMode,
     publicWebBaseUrl: "https://minerval.ai",
-    extensionModel: "test-model",
+    assistantMarkupModel: "test-model",
     extensionMaxClaims: 10,
     matcherBudgetUsd: 0.1,
   }),
@@ -92,14 +92,14 @@ vi.mock("../../../src/llm/agents/matcher.js", async () => {
   };
 });
 
-vi.mock("../../../src/llm/agents/extension-agent.js", async () => {
+vi.mock("../../../src/llm/agents/page-markup.js", async () => {
   const { withAgent, getUsageContext } = await import(
     "../../../src/llm/usage-context.js"
   );
   return {
-    EXTENSION_VERDICTS: ["egregious", "contested", "oversimplified", "noteworthy", "fine"],
+    PAGE_VERDICTS: ["egregious", "contested", "oversimplified", "noteworthy", "fine"],
     assessPageClaims: () =>
-      withAgent("extension", async () => {
+      withAgent("assistant", async () => {
         mocks.seen.push({ ...getUsageContext() });
         return [{ index: 0, verdict: "fine", why: "", confidence: 0.9 }];
       }),
@@ -124,7 +124,7 @@ import {
 } from "../../../src/services/extension-service.js";
 import { extractClaims } from "../../../src/llm/agents/extractor.js";
 import { matchClaim } from "../../../src/llm/agents/matcher.js";
-import { assessPageClaims } from "../../../src/llm/agents/extension-agent.js";
+import { assessPageClaims } from "../../../src/llm/agents/page-markup.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 import { traceLevel } from "../../../src/services/trace-service.js";
 
@@ -160,9 +160,9 @@ describe("extension transience (#356)", () => {
     expect(mocks.insertValues).not.toHaveBeenCalled();
     expect(mocks.updateWhere).not.toHaveBeenCalled();
 
-    // Extractor, matcher, and extension agent all ran, all untraced, and all
-    // still attributed to the calling account for metering.
-    expect(mocks.seen.map((c) => c.agent)).toEqual(["extractor", "matcher", "extension"]);
+    // Extractor, Matcher, and the Assistant's markup call all ran, all
+    // untraced, and all still attributed to the calling account for metering.
+    expect(mocks.seen.map((c) => c.agent)).toEqual(["extractor", "matcher", "assistant"]);
     for (const ctx of mocks.seen) {
       expect(ctx.untraced).toBe(true);
       expect(ctx.trace).toBeUndefined();
@@ -185,12 +185,17 @@ describe("extension transience (#356)", () => {
     );
     expect(agents).toEqual(["extractor", "matcher"]);
 
-    // The extension agent is untraced by name, whoever calls it.
+    // The markup call is the Assistant's, and no agent is kept off the log
+    // by name (#1132): it is the pipeline's untraced() that covers it. A
+    // caller outside the pipeline opens an Assistant run, as a conversation
+    // does.
     mocks.insertValues.mockClear();
     await asUser(() =>
       assessPageClaims({ pageUrl: PAGE.url, pageTitle: PAGE.title, claims: [] })
     );
-    expect(mocks.insertValues).not.toHaveBeenCalled();
+    expect(
+      mocks.insertValues.mock.calls.map((c) => (c[0] as unknown as { agent: string }).agent)
+    ).toEqual(["assistant"]);
   });
 });
 
@@ -214,9 +219,9 @@ describe("the extension in record mode", () => {
       expect.objectContaining({ agent: "extractor", userId: "user-1", privateReasons: ["input:readers-own-content"] }),
       expect.objectContaining({ agent: "matcher", userId: "user-1", privateReasons: ["input:readers-own-content"] }),
       expect.objectContaining({
-        agent: "extension",
+        agent: "assistant",
         userId: "user-1",
-        privateReasons: ["agent:extension", "input:readers-own-content"],
+        privateReasons: ["agent:assistant", "input:readers-own-content"],
       }),
     ]);
     // Each run was closed (and sealed) before the pipeline moved on.

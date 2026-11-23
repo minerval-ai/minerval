@@ -188,10 +188,11 @@ details is free and unmetered.
 ## How it works
 
 Capture the page's readable text → extract claims (Extractor) → match each
-against the graph (Matcher) → a dedicated **extension agent** judges how each
-on-page phrasing relates to what the graph knows and decides the markup
-(issue #72). The popup chat is the Assistant (`/assistant/conversations`),
-the same agent as minerval.ai/ask.
+against the graph (Matcher) → the **Assistant** judges how each on-page
+phrasing relates to what the graph knows and decides the markup, in one
+call made for the page (issues #72, #1132). The popup chat is the Assistant
+too (`/assistant/conversations`), the same agent as minerval.ai/ask, so the
+agent a reader asks about a mark is the one that gives the marks.
 
 Analysis is asynchronous (#93): the API answers 202 + a content hash once its
 grace window passes and the extension polls until the result is ready.

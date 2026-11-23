@@ -296,7 +296,7 @@ const PROVIDER_NEEDS: Record<string, { name: string; env: string; present: (conf
 
 /** Roles whose model is never called while a feature is off. */
 const ROLE_FEATURE: Readonly<Record<string, FeatureName>> = {
-  extension: "extension",
+  assistant_markup: "extension",
   solver: "mathematics",
 };
 

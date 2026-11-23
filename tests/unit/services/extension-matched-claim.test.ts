@@ -30,7 +30,7 @@ vi.mock("../../../src/db/client.js", () => ({
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => ({ publicWebBaseUrl: "https://minerval.ai" }),
 }));
-vi.mock("../../../src/llm/agents/extension-agent.js", () => ({
+vi.mock("../../../src/llm/agents/page-markup.js", () => ({
   assessPageClaims: vi.fn(),
 }));
 

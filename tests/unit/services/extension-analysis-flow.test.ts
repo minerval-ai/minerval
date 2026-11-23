@@ -16,7 +16,7 @@ vi.mock("../../../src/llm/agents/extractor.js", () => ({
 vi.mock("../../../src/llm/agents/matcher.js", () => ({
   matchClaim: mocks.matchClaim,
 }));
-vi.mock("../../../src/llm/agents/extension-agent.js", () => ({
+vi.mock("../../../src/llm/agents/page-markup.js", () => ({
   assessPageClaims: vi.fn(async () => []),
   EXTENSION_VERDICTS: ["egregious", "contested", "oversimplified", "noteworthy", "fine"],
 }));

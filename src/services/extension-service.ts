@@ -4,7 +4,7 @@
  * Orchestrates the browser extension's page analysis: extract claims from the
  * page text, match each against the graph (the Matcher is the single decider
  * of claim identity), pull the matched claims' graph state, and let the
- * extension agent decide what markup each claim deserves.
+ * Assistant decide what markup each claim deserves (agents/page-markup.ts).
  *
  * Results are cached in-memory by url + content hash: pages are re-analyzed
  * only when their content actually changes, and concurrent requests for the
@@ -49,7 +49,8 @@ import {
   assessPageClaims,
   type ClaimForAssessment,
   type ClaimVerdict,
-} from "../llm/agents/extension-agent.js";
+  type PageClaimGraphState,
+} from "../llm/agents/page-markup.js";
 import { getClaimById } from "./claim-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import {
@@ -79,7 +80,7 @@ export interface PageAnnotation {
   verdict: AnnotationVerdict;
   /** One-line reader-facing explanation (hover card). */
   why: string;
-  /** The assessor's confidence in the verdict; null where no verdict was judged (a claim the graph doesn't hold). */
+  /** The Assistant's confidence in the verdict; null where no verdict was judged (a claim the graph doesn't hold). */
   confidence: number | null;
   /** Whether the page affirms, denies, or merely poses the canonical claim. */
   stance: MatchedInstanceStance;
@@ -417,6 +418,32 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
   return matched;
 }
 
+/**
+ * A matched node's state as a verdict on a page's wording is judged from it:
+ * what the markup call is given, and what get_page_claims returns to a
+ * conversation about the marks (mcp/server.ts).
+ */
+export function graphStateOf(matched: MatchedClaim): PageClaimGraphState {
+  return {
+    kind: matched.kind,
+    status: matched.status,
+    confidence: matched.statusConfidence,
+    summary: matched.summary,
+    ...(matched.kind === "quantity" ? { definition: matched.definition, estimate: matched.estimate } : {}),
+    ...(matched.kind === "question" ? { standing: matched.standing } : {}),
+    ...(matched.judgmentsInForce ? { several_judgments: severalInForceNote(matched.judgmentsInForce) } : {}),
+    subclaim_count: matched.subclaimCount,
+  };
+}
+
+/**
+ * The most ids one get_page_claims call takes: what the extension lists for
+ * one page when it opens a chat (extension/popup.tsx, chatContext). A caller
+ * waits on the read, and each id is a handful of queries; a longer list is
+ * read in more calls. Stated in the tool's description and schema.
+ */
+export const PAGE_CLAIMS_MAX_IDS = 50;
+
 async function getSubclaimCount(claimId: string): Promise<number> {
   const rows = await rawQuery<{ count: string }>(
     `SELECT COUNT(*) AS count FROM claim_relationships WHERE parent_claim_id = $1`,
@@ -608,7 +635,7 @@ async function analyzePageUncached(
     return { ...base, matched: await loadMatchedClaim(decision.matched_claim_id) };
   });
 
-  // Only matched claims go to the assessor — for unknown claims there is no
+  // Only matched claims are given a verdict: for unknown claims there is no
   // graph state to judge against.
   const forAssessment: ClaimForAssessment[] = [];
   matchStages.forEach((s, i) => {
@@ -619,18 +646,7 @@ async function analyzePageUncached(
       canonical_form: s.matched.canonicalForm,
       stance: s.stance,
       match_confidence: s.matchConfidence,
-      graph: {
-        kind: s.matched.kind,
-        status: s.matched.status,
-        confidence: s.matched.statusConfidence,
-        summary: s.matched.summary,
-        ...(s.matched.kind === "quantity"
-          ? { definition: s.matched.definition, estimate: s.matched.estimate }
-          : {}),
-        ...(s.matched.kind === "question" ? { standing: s.matched.standing } : {}),
-        ...(s.matched.judgmentsInForce ? { several_judgments: severalInForceNote(s.matched.judgmentsInForce) } : {}),
-        subclaim_count: s.matched.subclaimCount,
-      },
+      graph: graphStateOf(s.matched),
     });
   });
 
@@ -640,7 +656,7 @@ async function analyzePageUncached(
           pageUrl: input.url,
           pageTitle: input.title ?? null,
           claims: forAssessment,
-          model: config.extensionModel,
+          model: config.assistantMarkupModel,
         })
       : [];
   const verdicts = new Map(verdictList.map((v) => [v.index, v]));

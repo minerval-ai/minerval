@@ -89,6 +89,7 @@ const mocks = vi.hoisted(() => ({
   getRequest: vi.fn(async () => null as unknown),
   getSharedAnalysis: vi.fn(async () => null as unknown),
   getRecordedPage: vi.fn(async () => null as unknown),
+  loadMatchedClaim: vi.fn(async (_id: string) => null as unknown),
   usageContexts: [] as unknown[],
 }));
 
@@ -189,6 +190,10 @@ vi.mock("../../../src/services/request-service.js", () => ({
 }));
 vi.mock("../../../src/services/shared-analysis-service.js", () => ({
   getSharedAnalysis: mocks.getSharedAnalysis,
+}));
+vi.mock("../../../src/services/extension-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/services/extension-service.js")>()),
+  loadMatchedClaim: mocks.loadMatchedClaim,
 }));
 vi.mock("../../../src/services/recorded-page-service.js", () => ({
   getRecordedPage: mocks.getRecordedPage,
@@ -514,6 +519,7 @@ describe("MCP tools", () => {
       "get_decomposition",
       "get_dependents",
       "get_page_analysis",
+      "get_page_claims",
       "get_text_analysis",
       "list_graph_changes",
       "list_tags",
@@ -1267,6 +1273,100 @@ describe("MCP tools", () => {
     });
     expect(missing.isError).toBe(true);
     expect((parseText(missing).error as { code: string }).code).toBe("NOT_SHARED");
+    await client.close();
+  });
+
+  // #1132: what a verdict on a page's wording is judged from, for the
+  // Assistant in the extension's chat and any other caller.
+  it("get_page_claims returns each node's state in the shape a verdict is judged from", async () => {
+    const CLAIM = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const QUANTITY = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const MISSING = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const estimate = { kind: "point", value: 3 };
+    const definition = { measures: "deaths", population: null, conditions: null, unit: { name: "count" } };
+    mocks.loadMatchedClaim.mockImplementation(async (id: string) =>
+      id === CLAIM
+        ? {
+            claimId: CLAIM,
+            kind: "claim",
+            canonicalForm: "Lockdowns did more harm than good.",
+            status: "inconclusive",
+            assessed: true,
+            statusConfidence: 0.7,
+            summary: "The evidence examined does not come down on either side.",
+            definition: null,
+            estimate: null,
+            standing: null,
+            subclaimCount: 4,
+            claimUrl: `https://minerval.ai/claims/${CLAIM}`,
+          }
+        : id === QUANTITY
+          ? {
+              claimId: QUANTITY,
+              kind: "quantity",
+              canonicalForm: "Deaths in the first wave (count)",
+              status: "unknown",
+              assessed: true,
+              statusConfidence: null,
+              summary: "About three.",
+              definition,
+              estimate,
+              standing: null,
+              subclaimCount: 0,
+              claimUrl: `https://minerval.ai/claims/${QUANTITY}`,
+              judgmentsInForce: 2,
+            }
+          : null
+    );
+    const result = await client.callTool({
+      name: "get_page_claims",
+      // An id asked twice is read once, whatever its case.
+      arguments: { claim_ids: [CLAIM, QUANTITY, MISSING, CLAIM.toUpperCase()] },
+    });
+    const body = parseText(result) as {
+      claims: Array<{ claim_id: string; graph: Record<string, unknown> }>;
+      not_found: string[];
+    };
+    expect(mocks.loadMatchedClaim).toHaveBeenCalledTimes(3);
+    expect(body.not_found).toEqual([MISSING]);
+    expect(body.claims).toEqual([
+      {
+        claim_id: CLAIM,
+        canonical_form: "Lockdowns did more harm than good.",
+        page_url: `https://minerval.ai/claims/${CLAIM}`,
+        graph: {
+          kind: "claim",
+          status: "inconclusive",
+          confidence: 0.7,
+          summary: "The evidence examined does not come down on either side.",
+          subclaim_count: 4,
+        },
+      },
+      {
+        claim_id: QUANTITY,
+        canonical_form: "Deaths in the first wave (count)",
+        page_url: `https://minerval.ai/claims/${QUANTITY}`,
+        graph: {
+          kind: "quantity",
+          status: "unknown",
+          confidence: null,
+          summary: "About three.",
+          definition,
+          estimate,
+          several_judgments: expect.stringContaining("2 judgments"),
+          subclaim_count: 0,
+        },
+      },
+    ]);
+
+    // The bound it states is the one it keeps.
+    const { tools } = await client.listTools();
+    expect(tools.find((t) => t.name === "get_page_claims")?.description).toContain("At most 50 ids a call");
+    const tooMany = await client.callTool({
+      name: "get_page_claims",
+      arguments: { claim_ids: Array.from({ length: 51 }, () => CLAIM) },
+    });
+    expect(tooMany.isError).toBe(true);
     await client.close();
   });
 

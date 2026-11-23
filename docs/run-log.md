@@ -137,8 +137,8 @@ under a promise of privacy, carries `input:private-grantmaking` and keeps
 the promise.
 
 The account a run worked for reads it, whatever its reasons, when the run
-worked only for that account: its Assistant's runs (and the copies they
-delegate to) and its extension's are read whole by it, and another agent's
+worked only for that account: its Assistant's runs (the copies they
+delegate to, and its marks on a page the account sent) are read whole by it, and another agent's
 run when every reason is text the account handed in
 (`input:readers-own-content`; `ownerCoversRun`). The privacy policy says
 these transcripts are the account's to read. A run with any other reason
@@ -245,8 +245,10 @@ service's terms say is never stored:
   conversation deletes the runs its messages name, and no message names
   this one.
 
-The code marks each with `untraced()` (`src/llm/usage-context.ts`), and
-the extension's own agent is never traced whoever calls it. Metering is
+The code marks each with `untraced()` (`src/llm/usage-context.ts`). The
+page analysis's last step, the Assistant's call that marks the page
+(`src/llm/agents/page-markup.ts`), is covered by the analysis's mark; no
+agent is kept off the log by its name. Metering is
 unaffected: the calls are counted and charged like any others.
 
 That is an exemption of the best-effort log, and record mode has none. A

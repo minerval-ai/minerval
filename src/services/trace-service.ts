@@ -44,16 +44,18 @@
  * its transcript is how the eval harness and the monitors see the agents
  * think — and exactly wrong for content a user never published: the page
  * open in their browser, a chat about it, a passage pasted into an MCP
- * client. Two rules keep the second kind out, independent of TRACE_LEVEL:
- *   - untraced() (usage-context.ts) marks a stretch of work as transient;
- *     withAgent opens no run inside it. The extension service and the MCP's
- *     on-demand analysis tools run their whole pipeline under it.
- *   - NEVER_TRACED lists agents whose entire input is such content, so they
- *     stay untraced whoever calls them.
- * Retention bounds how long a trace lives; these rules decide whether one
+ * client. One rule keeps the second kind out, independent of TRACE_LEVEL:
+ * untraced() (usage-context.ts) marks a stretch of work as transient, and
+ * withAgent opens no run inside it. The extension service and the MCP's
+ * on-demand analysis tools run their whole pipeline under it. (There was a
+ * second rule, a list of agents never traced by name, which held only the
+ * Extension Agent. Its work is the Assistant's now, #1132, and the
+ * Assistant's conversations are logged, so no name can carry the rule: the
+ * call that marks a page is kept off the log by the pipeline it runs in.)
+ * Retention bounds how long a trace lives; this rule decides whether one
  * exists at all.
  *
- * Both rules are an exemption of the best-effort log, and record mode has
+ * The rule is an exemption of the best-effort log, and record mode has
  * none: there every run is logged, a reader's own content included, because
  * a deployment that keeps its log as a record holds material whose handling
  * has to be on it (docs/run-log.md, "Record mode"). A run over such content
@@ -160,21 +162,13 @@ export function traceLevel(agent?: string): "off" | "full" {
 }
 
 /**
- * Agents never traced while the log is best-effort, at any TRACE_LEVEL:
- * everything they are given is a reader's own page (#356). The extension
- * agent judges the phrasings on whatever page is open in the browser, which
- * is not the public graph's to keep.
- */
-const NEVER_TRACED: ReadonlySet<string> = new Set(["extension"]);
-
-/**
  * Whether a run of `agent` may be recorded at all. In record mode every run
- * is. Otherwise never-traced wins over everything, including
- * TRACE_ALWAYS_AGENTS.
+ * is. Work over a reader's own content is kept off a best-effort log by
+ * untraced(), not here: no agent is left out by name.
  */
 export function traceable(agent: string): boolean {
   if (recordMode()) return true;
-  return !NEVER_TRACED.has(agent) && traceLevel(agent) !== "off";
+  return traceLevel(agent) !== "off";
 }
 
 // A step's content is capped so a pathological tool output can't bloat the

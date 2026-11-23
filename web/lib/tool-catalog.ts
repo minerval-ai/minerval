@@ -36,7 +36,7 @@ export interface CatalogGroup {
 
 // In order: the first group whose test a tool passes is its group.
 const GROUPS: { key: string; title: string; test: RegExp }[] = [
-  { key: "check", title: "Checking text", test: /^(match_claim|extract_claims|assess_text|get_text_analysis|get_page_analysis)$/ },
+  { key: "check", title: "Checking text", test: /^(match_claim|extract_claims|assess_text|get_text_analysis|get_page_analysis|get_page_claims)$/ },
   { key: "cite", title: "Citing and exporting", test: /^(cite_claim|export_\w+)$/ },
   { key: "math", title: "Formal statements and prizes", test: /formaliz|lean|attempt|prize|bounty/ },
   {

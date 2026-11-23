@@ -125,7 +125,7 @@ declares under `[[model_providers.endpoints]]`, below.
 | `correspondent` | Correspondents: updates written for an audience. | `CORRESPONDENT_MODEL` |
 | `consistency`, `consistency_strong` | The Consistency Checker's standard and strong sweeps. | `CONSISTENCY_MODEL`, `CONSISTENCY_STRONG_MODEL` |
 | `assistant`, `assistant_standard`, `assistant_title` | The Assistant, its cheaper choice, and the small model that names a conversation. | `ASSISTANT_MODEL`, `ASSISTANT_STANDARD_MODEL`, `ASSISTANT_TITLE_MODEL` |
-| `extension` | The browser extension's agent. | `EXTENSION_MODEL` |
+| `assistant_markup` | The Assistant's verdicts on a page in the browser extension: one call per analyzed page. | `ASSISTANT_MARKUP_MODEL` |
 | `researcher_strong`, `researcher_standard`, `researcher_cheap` | The researcher's three tiers. | `RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`, `RESEARCHER_CHEAP_MODEL` |
 | `solver` | The solver's proof attempts. | `SOLVER_MODEL` |
 | `judge` | The judge that grades evaluation runs. | `JUDGE_MODEL` |

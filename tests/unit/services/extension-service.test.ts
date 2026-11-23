@@ -5,7 +5,7 @@ import {
   buildAnnotations,
   pageCacheKey,
 } from "../../../src/services/extension-service.js";
-import type { ClaimVerdict } from "../../../src/llm/agents/extension-agent.js";
+import type { ClaimVerdict } from "../../../src/llm/agents/page-markup.js";
 
 describe("pageCacheKey", () => {
   it("is stable for identical url + content", () => {

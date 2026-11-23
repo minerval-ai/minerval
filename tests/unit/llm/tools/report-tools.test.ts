@@ -154,14 +154,14 @@ describe("raise_issue tool", () => {
   it("withholds the body inside an untraced context (#356) but keeps the rest", async () => {
     const tools = createReportTools();
     const out = await untraced(() =>
-      runWithUsageContext({ agent: "extension" }, () =>
+      runWithUsageContext({ agent: "assistant" }, () =>
         tools.execute("raise_issue", GOOD_INPUT)
       )
     );
     expect(JSON.parse(out!).success).toBe(true);
     expect(mocks.raiseIssue).toHaveBeenCalledWith(
       expect.objectContaining({
-        agent: "extension",
+        agent: "assistant",
         title: GOOD_INPUT.title,
         surface: GOOD_INPUT.surface,
         contextRefs: GOOD_INPUT.context_refs,
@@ -358,7 +358,7 @@ describe("update_issue tool", () => {
   it("withholds a note's text inside an untraced context (#356)", async () => {
     const tools = createReportTools();
     await untraced(() =>
-      runWithUsageContext({ agent: "extension" }, () =>
+      runWithUsageContext({ agent: "assistant" }, () =>
         tools.execute("update_issue", { report_id: REPORT_ID, note: "quoted page text" })
       )
     );

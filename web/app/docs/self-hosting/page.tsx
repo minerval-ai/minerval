@@ -147,7 +147,7 @@ docker compose logs -f api`}</Code>
           <tbody>
             <tr>
               <td><code>extension</code></td>
-              <td>The browser extension's API: the <code>/extension</code> routes and <code>get_page_analysis</code>, and the backfill of page hashes that lets the extension find pages the graph has read</td>
+              <td>The browser extension's API: the <code>/extension</code> routes and <code>get_page_analysis</code> and <code>get_page_claims</code>, and the backfill of page hashes that lets the extension find pages the graph has read</td>
             </tr>
             <tr>
               <td><code>mathematics</code></td>

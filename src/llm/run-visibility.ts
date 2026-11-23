@@ -95,14 +95,13 @@ export function returnsSourceText(tool: string): boolean {
 
 /** Agents whose inputs are public by construction; any other agent starts private. */
 export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
-  assistant: { reads: "private", why: "a user's private conversation with their own agent" },
+  assistant: { reads: "private", why: "a user's private conversation with their own agent; its marks on a page a reader has open, logged only in record mode" },
   audit: { reads: "private", why: "audit contexts can carry operator data, such as a prize claim's checker errors" },
   consistency_checker: { reads: "public", why: "a region of the public graph" },
   contribution_reviewer: { reads: "public", why: "a contribution's id; contributions are public" },
   correspondent: { reads: "public", why: "a mandate's brief, its workspace and its manager's pokes, which direct the public graph and are public; a mandate made before that rule marks its runs private (private-grantmaking.ts)" },
   curator: { reads: "public", why: "curation requests over public claims" },
   dispute_arbitrator: { reads: "public", why: "a contribution, its appeal and the trigger; all public" },
-  extension: { reads: "private", why: "the page a reader has open; logged only in record mode" },
   extractor: { reads: "public", why: "a submitted source, public once submitted; on-demand analysis runs untraced, or private in record mode" },
   grantmaker: { reads: "public", why: "a granting conversation and its funder's notes, public from the first message since talking to the Grantmaker directs the public graph; a conversation or mandate from before that rule marks its runs private (private-grantmaking.ts)" },
   grantor: { reads: "public", why: "a mandate before approval and its workspace, public since the Grantmaker drafted them; a mandate from before that rule marks its runs private (private-grantmaking.ts)" },
@@ -442,15 +441,14 @@ export const REASONS_A_LABEL_COVERS: Readonly<Record<string, string>> = {
 
 /**
  * Agents whose every run works for one account and on that account's
- * credentials: the Assistant (and the copies it delegates to, which run as
- * the same agent) and the extension's page analysis. Whatever such a run
+ * credentials: the Assistant, the copies it delegates to (which run as the
+ * same agent) and its marks on a page its user sent for analysis. Whatever such a run
  * read, its user could have read; so the account a run is attributed to
  * reads it whole, whatever its reasons (services/run-view-service.ts). The
  * privacy page says these transcripts are visible to their user.
  */
 export const AGENTS_AN_OWNER_READS: Readonly<Record<string, string>> = {
-  assistant: "a user's own agent, working with that user's own tools",
-  extension: "the page a reader had open, which they sent",
+  assistant: "a user's own agent, working with that user's own tools, or marking a page that user sent",
 };
 
 /**
@@ -461,6 +459,11 @@ export const AGENTS_AN_OWNER_READS: Readonly<Record<string, string>> = {
  */
 export const REASONS_AN_OWNER_COVERS: Readonly<Record<string, string>> = {
   "input:readers-own-content": "a passage or page the account handed over for analysis",
+  // No run starts with this reason any more: the marks on a page are the
+  // Assistant's (#1132). A deployment in record mode holds runs the
+  // Extension Agent logged before that, and the account that sent the page
+  // still reads them.
+  "agent:extension": "the page a reader had open, which they sent, in a run logged before the marks became the Assistant's",
 };
 
 /** Whether the account this run is attributed to may read it. */
