@@ -294,6 +294,14 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   // ---- read-only SQL ----
   "POST /sql": { rule: "none", why: "A read. The query runs on a role that can write nothing." },
 
+  // ---- events for outside clients (docs/events.md) ----
+  "POST /events/poll": { rule: "none", why: "A read: events after a cursor, at the request's own clearance. Nothing is written." },
+  "POST /events/subscriptions": {
+    rule: "none",
+    why: "A webhook subscription is the account's own record, as a key is, and carries no label. What it delivers is read at `public` each time, whatever the account may read (services/event-webhook-service.ts); its row for the router is written at `public` for that reason.",
+  },
+  "DELETE /events/subscriptions/:id": { rule: "none", why: ACCOUNT },
+
   // ---- accounts, keys and money ----
   "POST /users/provision": { rule: "none", why: ACCOUNT },
   "POST /users/guest": { rule: "none", why: "Makes a guest account and its pass and grant: accounts and the owl ledger, which carry no label." },

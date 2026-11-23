@@ -1,6 +1,7 @@
 /**
  * Subscriptions: a standing interest, held by a session, a mandate's inbox,
- * a node's inbox, a lookout or a correspondent, in events on the log
+ * a node's inbox, a lookout, a correspondent or an outside account's webhook
+ * (event-webhook-service.ts), in events on the log
  * (event-service.ts), in a time (a scheduled check-in), or in a money
  * threshold. The subscription router (subscription-router.ts) delivers what
  * matches. Holding one costs nothing; a delivery that wakes a paused session
@@ -17,7 +18,7 @@ import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { EVENT_KINDS, type EventKind, type EventRow } from "./event-service.js";
 
-export type SubscriberKind = "session" | "mandate_inbox" | "node_inbox" | "lookout" | "correspondent";
+export type SubscriberKind = "session" | "mandate_inbox" | "node_inbox" | "lookout" | "correspondent" | "webhook";
 
 export interface SubscriptionFilter {
   kinds?: EventKind[];

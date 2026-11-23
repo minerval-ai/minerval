@@ -97,6 +97,11 @@ skill bundles it in full, and the section numbers below point into it.
   graph's own Correspondents use, so you can build one for your user from it:
   read the changes in their scope, open what matters with `get_claim`, and
   report it with the same habits below, saying what you did not cover.
+  A system that follows without a model deciding when to look uses the same
+  stream as an event: `poll_events` with a cursor it keeps, or
+  `subscribe_events` to have each change POSTed, signed, to an https address
+  (`list_event_types` describes both). A webhook needs somewhere to receive
+  it, so in a conversation, poll.
 - **Outputs someone already makes from the graph**: `list_correspondents`
   (with `claim_id`, the ones covering that claim) and
   `list_correspondent_updates`. A Correspondent is a mandate's agent making

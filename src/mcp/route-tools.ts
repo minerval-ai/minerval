@@ -187,6 +187,20 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /correspondents": { name: "list_correspondents" },
   "GET /correspondents/:id": { name: "get_correspondent" },
   "GET /correspondents/:id/updates": { name: "list_correspondent_updates" },
+  // ---- events for outside clients (docs/events.md) ----
+  "GET /events": { name: "list_event_types" },
+  "POST /events/poll": {
+    name: "poll_events",
+    note: "Keep the cursor between calls yourself: nothing is remembered for you.",
+  },
+  "POST /events/subscriptions": {
+    name: "subscribe_events",
+    note:
+      "For a system that can receive an https POST. If you are an agent in a conversation with nowhere to receive " +
+      "one, follow the event with poll_events.",
+  },
+  "GET /events/subscriptions": { name: "list_event_subscriptions" },
+  "DELETE /events/subscriptions/:id": { name: "unsubscribe_events" },
   "GET /correspondents/:id/updates/:update_id": { name: "get_correspondent_update" },
   "POST /correspondents/:id/poke": {
     name: "poke_correspondent",

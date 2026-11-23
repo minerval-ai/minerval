@@ -8161,7 +8161,7 @@ export const subscriptions = pgTable(
     check("subscriptions_delivery_check", sql`${table.delivery} IN ('wake', 'queue')`),
     check(
       "subscriptions_subscriber_check",
-      sql`${table.subscriberKind} IN ('session', 'mandate_inbox', 'node_inbox', 'lookout', 'correspondent')`
+      sql`${table.subscriberKind} IN ('session', 'mandate_inbox', 'node_inbox', 'lookout', 'correspondent', 'webhook')`
     ),
   ]
 );
@@ -8172,6 +8172,70 @@ export const eventRouterState = pgTable("event_router_state", {
   lastSeq: bigint("last_seq", { mode: "number" }).notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// A webhook subscription to an event type, held by an account for a callback
+// address outside the deployment (services/event-webhook-service.ts;
+// docs/events.md). One row per (account, address, event type, arguments):
+// `subscription_key` is derived from the four and is the id the receiver is
+// told. The row is the account's own record, as an API key is, and carries
+// no label: what it delivers is read at `public` each time. It is deleted
+// when it ends (unsubscribed, expired, or its account's access gone).
+//
+// `cursor` is the position after the last event delivered or given up on.
+// `wake_at` is set when the router matched an event to it (through its row
+// in `subscriptions`, `router_subscription_id`) and cleared when its events
+// have been sent; `checked_at` is when the stream was last read for it, for
+// the sweep that finds what the log does not record. `attempt_*` is the one
+// delivery in flight: the event, the message id its retries keep, how many
+// tries, and when the next is due. `lease_until` keeps two processes from
+// sending for the same subscription at once.
+export const eventWebhooks = pgTable(
+  "event_webhooks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriptionKey: text("subscription_key").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => contributors.id, { onDelete: "cascade" }),
+    // The key the subscription was made with, when it was made with one:
+    // revoking the key ends it.
+    apiKeyId: uuid("api_key_id").references(() => apiKeys.id, { onDelete: "cascade" }),
+    eventName: text("event_name").notNull(),
+    arguments: jsonb("arguments").notNull().default({}),
+    url: text("url").notNull(),
+    // The caller's signing secret, sealed (connection-credential.ts's key).
+    secretSealed: text("secret_sealed").notNull(),
+    secretKeyId: text("secret_key_id").notNull(),
+    // The secret before a rotation, signed with as well until this time.
+    previousSecretSealed: text("previous_secret_sealed"),
+    previousSecretKeyId: text("previous_secret_key_id"),
+    previousSecretUntil: timestamp("previous_secret_until", { withTimezone: true }),
+    cursor: text("cursor").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // When the address proved it wants this account's deliveries.
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    // False while delivery is suspended after an hour of failures.
+    active: boolean("active").notNull().default(true),
+    wakeAt: timestamp("wake_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+    attemptEventId: text("attempt_event_id"),
+    attemptMessageId: text("attempt_message_id"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    failedSince: timestamp("failed_since", { withTimezone: true }),
+    lastError: text("last_error"),
+    lastDeliveryAt: timestamp("last_delivery_at", { withTimezone: true }),
+    deliveries: integer("deliveries").notNull().default(0),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    routerSubscriptionId: uuid("router_subscription_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_event_webhooks_key").on(table.subscriptionKey),
+    index("idx_event_webhooks_user").on(table.userId),
+    index("idx_event_webhooks_due").on(table.wakeAt, table.nextAttemptAt, table.checkedAt),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // judgment_inputs: what each judgment was made against (#566)

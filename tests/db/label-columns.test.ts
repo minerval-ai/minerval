@@ -203,6 +203,9 @@ describe("the label column, in the catalog", () => {
       "eval_runs",
       // Where the subscription router has read the event log to: a number.
       "event_router_state",
+      // An account's webhook subscriptions: an address, a sealed secret, an event type and the ids
+      // and tags that narrow it. What one delivers is read at public each time (docs/events.md).
+      "event_webhooks",
       // Hosting tokens for deployments Minerval provisions, kept as hashes (docs/organizations.md, "Hosted by Minerval").
       // A guest's pass on /ask: an account, what it was given, an address hashed with its day (docs/accounts.md, "Guests").
       "guest_passes",

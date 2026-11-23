@@ -60,6 +60,7 @@ import { ASKED_FROM_BELOW } from "../services/ask-above-service.js";
 import { offerMandateBelow } from "../services/gate-handoff.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { routeEvents } from "../services/subscription-router.js";
+import { deliveryTick } from "../services/event-webhook-service.js";
 import { microUsdToOwls } from "../services/owl.js";
 import { releaseHolds } from "../services/petition-service.js";
 import { deploymentFaultsTick } from "../services/deployment-fault-service.js";
@@ -193,6 +194,9 @@ export async function processNextEngineAction(
   // check-ins and thresholds that have come due. The router runs here, on
   // the tick, and nowhere else.
   await routeEvents().catch(() => 0);
+  // Webhook subscriptions the router just marked, retries that are due, and
+  // the sweep for what the log does not record (event-webhook-service.ts).
+  await deliveryTick().catch(() => ({ delivered: 0, expired: 0 }));
   // Holds whose time has come, or whose runs have settled, go back to be
   // decided; the officers' sittings and the Grantmaker's session take them.
   await releaseHolds().catch(() => []);

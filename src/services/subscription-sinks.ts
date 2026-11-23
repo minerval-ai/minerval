@@ -1,7 +1,8 @@
 /**
  * Deliveries to the subscribers that are not sessions or mandate inboxes:
  * a node's inbox (read by its Steward's next pass, never waking one), a
- * lookout's queued inputs, a correspondent's next run. Each lands where the
+ * lookout's queued inputs, a correspondent's next run, an outside account's
+ * webhook. Each lands where the
  * agent already reads its inputs, so nothing new has to be learned to read
  * it, and none of them starts a run by itself: the agent's own triggers and
  * heartbeat decide when it next runs.
@@ -33,6 +34,14 @@ export async function deliverToAgentSink(s: SubscriptionRow, e: EventRow | null,
       [s.subscriber_ref, JSON.stringify({ subscription_id: s.id, event_seq: e?.seq ?? null, event_kind: e?.kind ?? null, node_id: e?.node_id ?? null, text })]
     );
     return rows.length > 0;
+  }
+  if (s.subscriber_kind === "webhook") {
+    // An outside account's webhook (event-webhook-service.ts). The event is
+    // only the signal that there is news: the delivery reads the change
+    // stream from the subscription's own cursor, so nothing of this event's
+    // text is passed on from here.
+    const { wakeWebhook } = await import("./event-webhook-service.js");
+    return wakeWebhook(s.subscriber_ref);
   }
   return false;
 }

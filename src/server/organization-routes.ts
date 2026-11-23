@@ -109,6 +109,13 @@ export const ORGANIZATION_ROUTES: Readonly<Record<string, OrganizationRouteRule>
 
   // ---- reads that write nothing, sent as POST ----
   "POST /sql": { member: "member" },
+  "POST /events/poll": { member: "member" },
+
+  // ---- webhook subscriptions held by the organization's account ----
+  // Where the organization's deliveries go is an administrator's to set.
+  "POST /events/subscriptions": { member: "admin" },
+  "GET /events/subscriptions": { member: "admin" },
+  "DELETE /events/subscriptions/:id": { member: "admin" },
 
   // ---- the organization's own state ----
   "GET /billing/ledger": { member: "admin" },

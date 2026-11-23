@@ -31,6 +31,7 @@ import {
   ResourceTemplate,
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { registerEventMethods } from "./events.js";
 import { loadConfig } from "../config.js";
 import { featureOn } from "../features.js";
 import { getConstitution } from "../llm/prompts/constitution.js";
@@ -1331,6 +1332,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       });
     }
   );
+
+  // ---- the Events extension's own methods (events.ts) ----
+  registerEventMethods(server, ctx);
 
   // ---- resources ----
 
