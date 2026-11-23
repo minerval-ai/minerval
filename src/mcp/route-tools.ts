@@ -293,6 +293,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // What this deployment has switched on (src/features.ts): a route behind
   // a feature that is off is not mounted, so it is not a tool here either.
   "GET /setup/features": { name: "list_features" },
+  "GET /setup/version": {
+    name: "get_version",
+    note: "Free. Name the version when you report a fault in the deployment.",
+  },
 
   // ---- the mirror feed (docs/mirror.md) ----
   // Mounted only on a deployment that publishes a feed or applies one

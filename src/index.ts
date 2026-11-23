@@ -42,6 +42,8 @@ import { abandonStewardLeases } from "./services/steward-lease.js";
 import { startGatedWork } from "./workers/agent-work-gate.js";
 import { ConfigFileError } from "./config-file.js";
 import { startStoredSettings } from "./services/settings-service.js";
+import { recordVersionStarted } from "./services/versions-service.js";
+import { runningVersion } from "./version.js";
 import { firstAdministratorCodeLines, issueFirstAdministratorCode } from "./services/first-administrator-code.js";
 import type {
   QueuedClaimPipelineMessage,
@@ -323,6 +325,15 @@ async function main() {
     );
   }
   config = loadConfig();
+
+  // Which version this is, said once where a person looking at the log sees
+  // it, and recorded: what the deployment ran before is how it later says
+  // what changed since (services/versions-service.ts).
+  const running = runningVersion();
+  console.log(`[version] Minerval ${running.version}${running.commit ? ` (commit ${running.commit})` : ""}`);
+  await recordVersionStarted(running).catch((err) =>
+    console.error("[version] the version could not be recorded; Health will not say what was run before:", err)
+  );
 
   // A members-only deployment that has never had an administrator prints
   // the code that makes one (services/first-administrator-code.ts).

@@ -40,6 +40,7 @@ CREATE TABLE "product_release_entries" (
 	"kind" text NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"payload" jsonb NOT NULL,
+	"prose" text,
 	"signature" text NOT NULL,
 	"key_id" text NOT NULL,
 	"received_at" timestamp with time zone DEFAULT now() NOT NULL,

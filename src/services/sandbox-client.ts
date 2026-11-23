@@ -55,6 +55,9 @@ export interface SandboxLimits {
 
 export interface SandboxHealth {
   version: string;
+  /** The release of Minerval the sandbox's image is part of (docs/releases.md); empty from a sandbox built before it said. */
+  minervalVersion: string;
+  minervalCommit: string;
   image: string;
   python: string;
   /** The Python libraries that import in the sandbox, each with its version. */
@@ -170,6 +173,8 @@ interface RawHealth {
   ok?: boolean;
   problem?: string;
   version?: string;
+  minerval_version?: string;
+  minerval_commit?: string;
   image?: string;
   python?: string;
   libraries?: Record<string, string>;
@@ -220,6 +225,8 @@ export async function sandboxHealth(config: SandboxConfig = loadConfig()): Promi
     ok: true,
     value: {
       version: String(h.version ?? ""),
+      minervalVersion: String(h.minerval_version ?? ""),
+      minervalCommit: String(h.minerval_commit ?? ""),
       image: String(h.image ?? ""),
       python: String(h.python ?? ""),
       libraries: h.libraries ?? {},
@@ -339,6 +346,9 @@ export interface SandboxCheck {
   answers: boolean;
   failure: SandboxFailure | null;
   version: string | null;
+  /** The release of Minerval its image is part of, and the commit it was built from; null where it did not say. */
+  minervalVersion?: string | null;
+  minervalCommit?: string | null;
   image: string | null;
   limits: SandboxLimits | null;
   /**
@@ -382,6 +392,8 @@ export async function checkSandbox(config: SandboxConfig = loadConfig()): Promis
   }
   check.answers = true;
   check.version = health.value.version;
+  check.minervalVersion = health.value.minervalVersion || null;
+  check.minervalCommit = health.value.minervalCommit || null;
   check.image = health.value.image;
   check.limits = health.value.limits;
   const probed = await probeSandboxService(config);

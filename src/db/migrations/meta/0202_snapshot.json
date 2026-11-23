@@ -1,5 +1,5 @@
 {
-  "id": "9dea134a-fe52-41dd-a38d-4af0b63e0636",
+  "id": "c77ce4a9-2d2c-40a5-8526-26b0e7c07a24",
   "prevId": "7de9ec06-684e-4fb2-9119-5fbe0584493a",
   "version": "7",
   "dialect": "postgresql",
@@ -23623,6 +23623,12 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
+        },
+        "prose": {
+          "name": "prose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "signature": {
           "name": "signature",

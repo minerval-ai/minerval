@@ -60,6 +60,8 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/settings-service.ts:storedMeta": "Who set each stored setting and when, from deployment_settings, which carries no label: the same for every reader, and returned only to an administrator.",
   "src/services/settings-service.ts:storedReadAt": "A time: when the stored settings were last read.",
   "src/given-variables.ts:given": "The stored settings as last read, by variable, from deployment_settings, which carries no label. Read for the key of a model endpoint, never returned.",
+  "src/version.ts:fromPackage": "The version package.json states, read once from disk.",
+  "src/version.ts:webVersion": "The version the web app last said it runs, from a header on its own request. No rows.",
   "src/config.ts:_config": "The process's configuration, from its environment, its config file and the deployment's stored settings.",
   "src/config-changes.ts:listeners": "Functions told when the configuration is made again. No rows.",
   "src/config.ts:_stored": "The administrators' settings as last read from deployment_settings, which carries no label: the same for every reader.",

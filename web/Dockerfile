@@ -18,14 +18,18 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ARG READS=members
-ENV READS=$READS NEXT_TELEMETRY_DISABLED=1
+# The commit the image is built from (docs/releases.md, "Versions"). The
+# version itself is package.json's, which the build context carries.
+ARG MINERVAL_COMMIT=""
+ENV READS=$READS NEXT_TELEMETRY_DISABLED=1 MINERVAL_COMMIT=$MINERVAL_COMMIT
 RUN npm run build
 
 FROM node:22-alpine
 RUN addgroup -S minerval && adduser -S minerval -G minerval
 WORKDIR /app
 ARG READS=members
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 READS=$READS PORT=3000 HOSTNAME=0.0.0.0
+ARG MINERVAL_COMMIT=""
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 READS=$READS PORT=3000 HOSTNAME=0.0.0.0 MINERVAL_COMMIT=$MINERVAL_COMMIT
 # The whole built app: the pages read their vendored content (content/) and
 # the card fonts (lib/og/fonts) from disk as well as from .next. Owned by
 # the user it runs as, because Next writes its cache under .next.

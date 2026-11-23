@@ -153,6 +153,24 @@ export async function fetchFeatures(): Promise<Features> {
   }
 }
 
+/**
+ * The version the API runs (GET /setup/version, open to anyone). Null where
+ * it cannot be read: the footer then shows the web app's own.
+ */
+export async function fetchApiVersion(): Promise<{ version: string; commit: string | null } | null> {
+  if (!BASE) return null;
+  try {
+    const res = await fetch(`${BASE}/setup/version`, { next: { revalidate: 60 } });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { version?: unknown; commit?: unknown };
+    return typeof body.version === "string"
+      ? { version: body.version, commit: typeof body.commit === "string" ? body.commit : null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 // --- mathematics: field defaults ---------------------------------------------
 // The formal statement, the derived badge, the bounty, the attempts, and the
 // prize claims (docs/mathematics.md §11.1) arrive on the same routes the

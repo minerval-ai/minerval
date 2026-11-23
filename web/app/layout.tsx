@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { VersionLine } from "../components/VersionLine";
 import Link from "next/link";
 import { Mark } from "./Mark";
 import { THEME_SCRIPT } from "./theme";
@@ -90,6 +91,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <a href="https://blog.minerval.ai">blog</a>
               <a href="https://github.com/minerval-ai/minerval">source</a>
             </nav>
+            {/* which code this is, for whoever reports a fault (docs/releases.md) */}
+            <p style={{ margin: ".7rem 0 0", opacity: 0.7, fontSize: "0.85em" }}>
+              <VersionLine />
+            </p>
           </div>
         </footer>
         </ActingAsProvider>

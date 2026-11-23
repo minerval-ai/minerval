@@ -63,6 +63,8 @@ export type SignInClass = "anyone" | "own_credential" | "service" | "signed_in" 
 /** Reachable with no credential, each with the reason. */
 export const OPEN_TO_ANYONE: Readonly<Record<string, string>> = {
   "GET /health": "The load balancer's liveness probe. It says whether the API and its database are up and nothing else.",
+  "GET /setup/version":
+    "Which version of Minerval the server runs, and nothing else (docs/releases.md). It says nothing of the deployment's material, and a person reporting a fault needs it before they can sign in.",
   "GET /.well-known/oauth-authorization-server":
     "OAuth discovery: how an MCP client finds where to sign in.",
   "GET /.well-known/oauth-authorization-server/mcp": "The same document at the path some clients ask for.",

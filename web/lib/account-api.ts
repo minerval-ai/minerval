@@ -1,4 +1,5 @@
 import "server-only";
+import { WEB_VERSION, WEB_VERSION_HEADER } from "./version";
 import type {
   AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
 } from "./types";
@@ -106,6 +107,7 @@ export async function accountFetch<T>(
     method: options.method ?? "GET",
     headers: {
       ...(KEY ? { "x-api-key": KEY } : {}),
+      [WEB_VERSION_HEADER]: WEB_VERSION,
       ...(acting ? { "x-acting-user": acting } : {}),
       ...(options.actingOrganization ? { "x-acting-organization": options.actingOrganization } : {}),
       ...(options.body !== undefined

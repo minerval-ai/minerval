@@ -81,6 +81,7 @@ import {
   type StoredClearance,
 } from "./provider-labels.js";
 import { givenVariable } from "./given-variables.js";
+import { isDevVersion, lastWebVersion, releaseOf, runningVersion, versionWithCommit, type RunningVersion } from "./version.js";
 import { readStoredClearance } from "./services/provider-clearance-service.js";
 import { SETTINGS, strayVariables, type RetiredVariable, type UnknownVariable } from "./settings-registry.js";
 import { labelsBesidesPublic, publicIsTheOnlyLabel } from "./services/label-service.js";
@@ -172,6 +173,13 @@ export interface PreflightFacts {
    * saved that wait for a restart. Absent reads as none set.
    */
   storedSettings?: { set: number; problem: string | null; waiting: string[] };
+  /**
+   * What each part of the deployment says it runs (docs/releases.md, the
+   * `version` check): the API itself, the web app as it last named itself
+   * on a request (null until it has called), and the sandbox as its health
+   * answer says (in `deployment.sandbox`). Absent reads as the API alone.
+   */
+  versions?: { api: RunningVersion; web: string | null };
   /**
    * The load-bearing roles whose model nothing has set, by their variables
    * (modelsNobodyChose in src/config.ts). Absent reads as every one chosen.
@@ -266,6 +274,58 @@ function checkUnknownSettings({ strays }: PreflightFacts): Outcome {
     );
   }
   return fail(parts.join(" "));
+}
+
+// ---------------------------------------------------------------------------
+// One version for every part
+// ---------------------------------------------------------------------------
+
+/** Whether two parts were built from the same code, as far as their versions say. */
+function sameBuild(a: string, b: string): boolean {
+  if (a === b) return true;
+  // A build of main names its commit where the build passed it. One that did
+  // not cannot be told from another build of the same release-to-be.
+  const bare = (v: string) => /-dev$/.test(v);
+  return isDevVersion(a) && isDevVersion(b) && (bare(a) || bare(b)) && releaseOf(a) === releaseOf(b);
+}
+
+/**
+ * The API, the web app and the sandbox are released together, under one
+ * number. This fails when they do not report one: an image was rebuilt and
+ * another was not. It does not block agent work.
+ */
+function checkVersion({ versions, deployment }: PreflightFacts): Outcome {
+  if (!versions) return notApplicable("The parts' versions were not read.");
+  const sandbox = deployment.sandbox?.answers && deployment.sandbox.minervalVersion
+    ? versionWithCommit(deployment.sandbox.minervalVersion, deployment.sandbox.minervalCommit ?? null)
+    : null;
+  const parts: Array<[string, string]> = [
+    ["the API", versions.api.version],
+    ...(versions.web ? ([["the web app", versions.web]] as Array<[string, string]>) : []),
+    ...(sandbox ? ([["the sandbox", sandbox]] as Array<[string, string]>) : []),
+  ];
+  const dev = isDevVersion(versions.api.version)
+    ? " This is a build of the main branch between releases, not a release: the release notes cover releases only."
+    : "";
+  const unheard = [
+    ...(versions.web ? [] : ["the web app has not called the API since it started, so its version is not known yet"]),
+    ...(deployment.sandbox?.answers && !sandbox ? ["the sandbox does not say which release it is part of, so it was built before this one"] : []),
+  ];
+  const differ = parts.filter(([, v]) => !sameBuild(v, versions.api.version));
+  if (differ.length > 0) {
+    return fail(
+      `The parts of this deployment were not built from one version: ${parts.map(([name, v]) => `${name} runs ${v}`).join(", ")}. ` +
+        `One image was rebuilt and another was not. Build all of them from the same checkout (docker compose build) and start them again.${dev}`
+    );
+  }
+  if (deployment.sandbox?.answers && !sandbox) {
+    return fail(
+      `The API runs ${versions.api.version}, and the sandbox does not say which release it is part of: its image was built before this release. ` +
+        `Build it again from the same checkout (docker compose build sandbox) and start it again.${dev}`
+    );
+  }
+  const who = parts.length === 1 ? "The API runs" : `${listed(parts.map(([name]) => name)).replace(/^t/, "T")} run`;
+  return pass(`${who} ${versions.api.version}${unheard.length > 0 ? `; ${unheard.join(", and ")}` : ""}.${dev}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -943,6 +1003,7 @@ function checkWorkOutsideTheRunLog({ config, holdsPrivate }: PreflightFacts): Ou
 
 /** The checks, in the order they are reported. */
 export const PREFLIGHT_CHECKS: readonly PreflightCheck[] = [
+  { name: "version", blocking: false, run: checkVersion },
   { name: "config_file", blocking: false, run: checkConfigFile },
   { name: "unknown_settings", blocking: false, run: checkUnknownSettings },
   { name: "settings", blocking: false, run: checkSettings },
@@ -1151,6 +1212,7 @@ export async function gatherPreflightFacts(options: { callOut?: boolean } = {}):
     strays: strayVariables(process.env),
     storedSettings: storedSettingsFacts(),
     modelsNobodyChose: modelsNobodyChose(),
+    versions: { api: runningVersion(), web: lastWebVersion() },
   };
 }
 

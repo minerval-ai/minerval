@@ -1,6 +1,6 @@
 {
   "name": "minerval",
-  "version": "0.1.0",
+  "version": "0.2.0-dev",
   "description": "Knowledge graph of claims, quantities, and questions with transparent provenance and assessment",
   "license": "Apache-2.0",
   "type": "module",
@@ -53,6 +53,11 @@
     "ensure:sql-roles": "tsx scripts/ensure-sql-roles.ts",
     "reseal:connection-credentials": "tsx scripts/reseal-connection-credentials.ts",
     "preflight": "tsx scripts/preflight.ts",
+    "version:set": "tsx scripts/release.ts set",
+    "release:check": "tsx scripts/release.ts check",
+    "release:settings": "tsx scripts/release.ts settings",
+    "release:cut": "tsx scripts/release.ts cut",
+    "release:sign": "tsx scripts/release.ts sign",
     "platform-mandates": "tsx scripts/platform-mandates.ts",
     "tags": "tsx scripts/tags.ts",
     "tags:seed": "tsx scripts/seed-tags-from-clusters.ts",
@@ -80,6 +85,7 @@
     "stripe": "^23.1.0",
     "tsx": "^4.19.0",
     "unpdf": "^1.9.1",
+    "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

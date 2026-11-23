@@ -59,11 +59,11 @@ const GROUPS: { key: string; title: string; test: RegExp }[] = [
   { key: "account", title: "Your account", test: /^(get_account|get_usage|list_owl_packs|get_owl_ledger|list_api_keys)$/ },
   { key: "assistant", title: "The Assistant and pages", test: /assistant|^(save_page|list_pages|get_page|get_shared_page)$/ },
   { key: "sql", title: "SQL", test: /^query_sql$/ },
-  { key: "transparency", title: "Runs, setups and health", test: /run|setup|prompt_set|features|queue|monitor|consistency/ },
+  { key: "transparency", title: "Runs, setups and health", test: /run|setup|prompt_set|features|queue|monitor|consistency|^get_version$|product_release/ },
   {
     key: "deployment",
     title: "Running a deployment",
-    test: /permission|label|part(y|ies)|connection|file_set|usage_report|standing_mandate|owls_created|redaction|checklist/,
+    test: /permission|label|part(y|ies)|connection|file_set|usage_report|standing_mandate|owls_created|redaction|checklist|setting/,
   },
 ];
 

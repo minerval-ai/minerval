@@ -52,7 +52,10 @@ services:
     build:
       context: ..
       args:
-        GIT_SHA: ${GIT_SHA:-}
+        # The commit the images are built from, where the build says it
+        # (MINERVAL_COMMIT=$(git rev-parse HEAD) docker compose build). The
+        # version needs nothing: each image carries it (docs/releases.md).
+        MINERVAL_COMMIT: ${MINERVAL_COMMIT:-${GIT_SHA:-}}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -174,6 +177,7 @@ services:
       context: ../web
       args:
         READS: members
+        MINERVAL_COMMIT: ${MINERVAL_COMMIT:-${GIT_SHA:-}}
     restart: unless-stopped
     depends_on:
       api:
@@ -203,6 +207,7 @@ services:
       context: ../sandbox
       args:
         SANDBOX_IMAGE: ${SANDBOX_IMAGE:-minerval-sandbox:local}
+        MINERVAL_COMMIT: ${MINERVAL_COMMIT:-${GIT_SHA:-}}
     restart: unless-stopped
     environment:
       - SANDBOX_TOKEN=${SANDBOX_TOKEN:?Set SANDBOX_TOKEN in .env}

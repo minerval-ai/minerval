@@ -3245,13 +3245,14 @@ export const versionsRun = pgTable("versions_run", {
 // last read it or as an administrator uploaded it.
 //
 // An entry is a signed statement and is never edited. `kind` 'release' is a
-// release's facts and prose at one `revision`: a correction is the next
-// revision, and the list shows the latest. `kind` 'withdrawal' says a
-// release was found to be bad, why, and which version to move to. `payload`
-// is exactly what was signed; `signature` is Ed25519 over its canonical
-// JSON, by the release key whose public half is in the code
-// (src/release-key.ts), so a copy of the list cannot invent, withdraw or
-// change a release.
+// release's facts at one `revision`: a correction is the next revision, and
+// the list shows the latest. `kind` 'withdrawal' says a release was found to
+// be bad, why, and which version to move to. `payload` is exactly what was
+// signed; `signature` is Ed25519 over its canonical JSON, by the release
+// key whose public half is in the code (src/release-key.ts), so a copy of
+// the list cannot invent, withdraw or change a release. A release's prose
+// is kept beside its facts and not inside them, so the list can be read
+// without it: the payload carries the prose's hash, which fixes it.
 // ---------------------------------------------------------------------------
 export const productReleaseEntries = pgTable(
   "product_release_entries",
@@ -3260,6 +3261,7 @@ export const productReleaseEntries = pgTable(
     kind: text("kind").notNull(),
     revision: integer("revision").notNull().default(1),
     payload: jsonb("payload").notNull(),
+    prose: text("prose"),
     signature: text("signature").notNull(),
     keyId: text("key_id").notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),

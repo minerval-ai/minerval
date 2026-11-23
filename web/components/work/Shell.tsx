@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { VersionLine } from "../VersionLine";
 import type { MyPermissions } from "../../lib/account-api";
 import { workSections } from "../../lib/work-sections";
 import { ThemeToggle } from "../ThemeToggle";
@@ -45,6 +46,10 @@ export function WorkShell({ mine, children }: { mine: MyPermissions; children: R
       />
       <main className="w-main">
         <div className="frame">{children}</div>
+        {/* which code this is, for whoever reports a fault (docs/releases.md) */}
+        <div className="w-muted w-small" style={{ padding: "18px 28px 22px" }}>
+          <VersionLine />
+        </div>
       </main>
     </div>
   );

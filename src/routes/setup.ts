@@ -10,12 +10,16 @@
  *   GET /setup/prompt-set                    the prompt set this deployment's
  *     code builds: one hash over the constitution, every role prompt and
  *     every skill, with the hash of each (services/prompt-set.ts).
+ *   GET /setup/version                       the version of Minerval this
+ *     API runs and the commit it was built from, and nothing else
+ *     (src/version.ts; docs/releases.md).
  *   GET /setup/features                      the optional parts of the
  *     product (src/features.ts), each with whether this deployment has it
  *     on and what switching it off removes.
  */
 import type { FastifyInstance } from "fastify";
 import { loadConfig } from "../config.js";
+import { runningVersion } from "../version.js";
 import { FEATURE_NAMES, listFeatures } from "../features.js";
 import { getPromptSet } from "../services/prompt-set.js";
 import { getSetupPart, listSetupParts } from "../services/setup-service.js";
@@ -121,6 +125,30 @@ export async function setupRoutes(app: FastifyInstance): Promise<void> {
     },
     handler: async (_request, reply) =>
       reply.send({ ...getPromptSet(), commit: loadConfig().gitSha ?? null }),
+  });
+
+  app.get("/version", {
+    schema: {
+      tags: ["setup"],
+      summary: "The version of Minerval this API runs, and the commit it was built from",
+      description:
+        "Open to anyone, with no credential, and it says nothing else: which code a server runs is what a person " +
+        "reporting a fault and a caller choosing what to call need, and it says nothing of the deployment's material. " +
+        "`version` is a release (`0.5.0`) or a build of the main branch between releases (`0.6.0-dev.1a2b3c4`). " +
+        "`commit` is null where the build did not say.",
+      response: {
+        200: {
+          type: "object",
+          required: ["version", "commit"],
+          additionalProperties: false,
+          properties: {
+            version: { type: "string" },
+            commit: { type: "string", nullable: true },
+          },
+        },
+      },
+    },
+    handler: async (_request, reply) => reply.send(runningVersion()),
   });
 
   app.get("/features", {

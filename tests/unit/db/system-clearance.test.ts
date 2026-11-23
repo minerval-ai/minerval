@@ -136,6 +136,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "The hash of a code the API printed, and the first administrator's grants for the account that gave the code. Nothing read from a labelled table.",
     ],
   ],
+  "src/services/versions-service.ts": [
+    [
+      "The record of which versions of the software this deployment has run is the deployment's own: it carries no label and names no row of the graph.",
+      "A row for the version the API started as, with the time. Nothing read from a labelled table.",
+    ],
+  ],
   "src/services/settings-service.ts": [
     [
       "The deployment's settings are the owner's alone, sealed keys among them, so they are read and written on the owner's connection. A write's caller has checked that the actor administers the deployment.",

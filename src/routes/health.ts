@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { rawQuery } from "../db/client.js";
+import { runningVersion } from "../version.js";
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get("/health", {
@@ -35,7 +36,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
 
       return reply.send({
         status: dbStatus === "connected" ? "healthy" : "degraded",
-        version: process.env.npm_package_version ?? "0.1.0",
+        version: runningVersion().version,
         db: dbStatus,
       });
     },

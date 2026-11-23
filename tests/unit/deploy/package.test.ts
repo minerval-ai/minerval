@@ -93,8 +93,10 @@ describe("the settings a deployment gives", () => {
   const { interpolated, required, passedThrough } = takenFromDeployment();
 
   it("are each named in env.example", () => {
-    // GIT_SHA is stamped by whoever builds the image, not chosen by the deployment.
-    const taken = [...new Set([...interpolated, ...passedThrough])].filter((name) => name !== "GIT_SHA");
+    // The commit is stamped by whoever builds the image, not chosen by the deployment.
+    const taken = [...new Set([...interpolated, ...passedThrough])].filter(
+      (name) => name !== "GIT_SHA" && name !== "MINERVAL_COMMIT"
+    );
     expect(taken.filter((name) => !named.has(name)).sort()).toEqual([]);
   });
 

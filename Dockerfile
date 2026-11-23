@@ -9,10 +9,17 @@ RUN npm run build
 
 # Production stage
 FROM node:22-alpine
-# The commit this image is built from (the deploy passes GITHUB_SHA): stamped
-# on agent runs and setup parts so prompts link to their source (config.ts).
+# What this image is (docs/releases.md, "Versions"). The version is the one
+# package.json states, which the image carries, so a build of a checked-out
+# release needs nothing passed; MINERVAL_VERSION, where passed, says the same
+# and wins. MINERVAL_COMMIT is the commit the image is built from (the deploy
+# passes GITHUB_SHA): reported at GET /setup/version, and stamped on agent
+# runs and setup parts so prompts link to their source (config.ts). GIT_SHA
+# is the argument's older name, still taken.
+ARG MINERVAL_VERSION=""
+ARG MINERVAL_COMMIT=""
 ARG GIT_SHA=""
-ENV GIT_SHA=$GIT_SHA
+ENV MINERVAL_VERSION=$MINERVAL_VERSION MINERVAL_COMMIT=${MINERVAL_COMMIT:-$GIT_SHA}
 RUN apk add --no-cache curl
 RUN addgroup -S minerval && adduser -S minerval -G minerval
 WORKDIR /app
@@ -37,6 +44,10 @@ COPY scripts/ ./scripts/
 COPY tsconfig.json ./
 COPY src/ ./src/
 COPY rds-ca-bundle.pem ./
+# The notes of every release up to this one (docs/releases.md, "Every image
+# carries the notes"): how a deployment that reaches nothing outside still
+# says, after an upgrade, what changed since the version it last ran.
+COPY releases/ ./releases/
 COPY src/db/migrations/ ./drizzle-migrations/
 # Where a packaged deployment keeps uploaded file sets (deploy/compose.yml
 # mounts a volume here and sets FILE_SET_STORE_DIR to it). Made here and
