@@ -50,6 +50,9 @@ vi.mock("../../../web/auth", () => ({
   oidcName: () => "Halden single sign-on",
 }));
 
+// The gate's one form for a deployment with no administrator yet posts to a server action, which is Next's to run.
+vi.mock("../../../web/app/admin/settings/actions", () => ({ firstAdministratorAction: async () => ({}) }));
+
 const BASE = "http://api.test";
 const KEY = "service-key";
 const ID = "3f1c9a2e-5b7d-4e8f-9a01-6c2d4b8e0f13";
