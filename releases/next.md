@@ -10,7 +10,14 @@ settings:
       note: "The version an image was built as (MINERVAL_VERSION). Set when the image is built, never by hand; an image knows its version without it."
     - key: build.commit
       note: "The commit an image was built from (MINERVAL_COMMIT). Set when the image is built. GIT_SHA, its older name, is still read."
-  retired: []
+    - key: accounts.members_label
+      note: "The name of the label for the organization's own material that every member reads (MEMBERS_LABEL). Leave it unset unless the deployment had already defined a label named members."
+    - key: accounts.published_label
+      note: "The name of the label for what the organization released outside (PUBLISHED_LABEL). Leave it unset unless the deployment had already defined a label named published."
+  retired:
+    - key: models.extractor_fallback
+      replaced_by: "nothing: a model's refusal is no longer retried on another model, and the Extractor's refusal is shown as one"
+      note: "EXTRACTOR_FALLBACK_MODEL is read by nothing. Delete it from .env or api.env; a config file that still holds models.extractor_fallback is read, with a warning."
   defaults_changed: []
 operator_steps: []
 ---

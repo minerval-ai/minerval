@@ -4,8 +4,10 @@ import { useRouter } from "next/navigation";
 import { Fragment, useState, type ReactNode } from "react";
 import { setProviderClearanceAction } from "../actions";
 
-// What each label may be sent to, as one matrix: a row for each label besides
-// public, a column for each model provider and outside service. Ticks change
+// What each label may be sent to, as one matrix: a row for each label, a
+// column for each model provider and outside service. The first row is the
+// public graph's own material, which no choice on this page narrows: it is
+// drawn as what is in force and cannot be changed here. Ticks change
 // only on this page until Save, which sends each changed row as its own
 // request (the API clears providers one label at a time: PUT
 // /labels/{label}/providers), one after the other, and says what each did.
@@ -34,12 +36,17 @@ export function ClearanceMatrix({
   providers,
   rows,
   editable,
-  publicChip,
+  publicRow,
 }: {
   providers: MatrixProvider[];
   rows: MatrixRow[];
   editable: boolean;
-  publicChip: ReactNode;
+  /**
+   * The public graph's label: what is cleared for it as things stand, and
+   * whether any run of this deployment works at it. Where none does, nothing
+   * is sent from there whatever is cleared.
+   */
+  publicRow: { chip: ReactNode; cleared: string[]; worksHere: boolean };
 }) {
   const router = useRouter();
   const [edits, setEdits] = useState<Record<string, string[]>>({});
@@ -122,11 +129,32 @@ export function ClearanceMatrix({
           </thead>
           <tbody>
             <tr>
-              <td>{publicChip}</td>
-              <td colSpan={ordered.length} className="w-labels-all" title="Every provider is cleared for public, always">
-                Everything
-              </td>
+              <td>{publicRow.chip}</td>
+              {ordered.every((p) => publicRow.cleared.includes(p.name)) ? (
+                <td
+                  colSpan={ordered.length}
+                  className="w-labels-all"
+                  title="The public graph's own material may be sent to every provider: anyone may read it. It is not changed on this page."
+                >
+                  Every provider{!publicRow.worksHere && <span className="w-faint"> · no run of this deployment works at this label</span>}
+                </td>
+              ) : (
+                ordered.map((p) => (
+                  <td
+                    key={p.name}
+                    className={["w-labels-cell", !p.configured && "w-labels-off", p === services[0] && "w-labels-first-service"].filter(Boolean).join(" ")}
+                    title="Set by the deployment's PROVIDER_LABELS setting. It is not changed on this page."
+                  >
+                    <input type="checkbox" checked={publicRow.cleared.includes(p.name)} disabled readOnly aria-label={`${p.heading} cleared for the public graph's material`} />
+                  </td>
+                ))
+              )}
             </tr>
+            {!publicRow.worksHere && !ordered.every((p) => publicRow.cleared.includes(p.name)) && (
+              <tr className="w-labels-problem">
+                <td colSpan={ordered.length + 1}>No run of this deployment works at this label, so nothing is sent from it.</td>
+              </tr>
+            )}
             {rows.map((row) => {
               const now = ticked(row.label);
               return (

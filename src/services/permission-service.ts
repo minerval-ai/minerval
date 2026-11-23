@@ -9,7 +9,7 @@
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, openLabels, memberLabels } from "../labels.js";
 import { microUsdToOwls } from "./owl.js";
 import {
   PERMISSION_DEFINITIONS,
@@ -41,8 +41,8 @@ function sqlState(err: unknown): string | undefined {
 
 /**
  * Every label readable from `labels`: the labels themselves, and each label
- * one of them reads, followed through label_reads to the end. `public` is
- * always in the answer. Sorted.
+ * one of them reads, followed through label_reads to the end. What anyone
+ * may read (openLabels) is always in the answer. Sorted.
  *
  * The answer is the database's (minerval_labels_readable_from), which is
  * also what a run's label is turned into a clearance with
@@ -50,7 +50,7 @@ function sqlState(err: unknown): string | undefined {
  * for runs.
  */
 export async function labelsReadableFrom(labels: readonly string[]): Promise<string[]> {
-  const start = [...new Set([PUBLIC_LABEL, ...labels])];
+  const start = [...new Set([...openLabels(), ...labels])];
   if (start.length === 1) return start;
   const [row] = await rawQuery<{ labels: string[] }>(
     `SELECT minerval_labels_readable_from($1::text[]) AS labels`,
@@ -107,8 +107,9 @@ export async function resolveStanding(accountId: string): Promise<Standing> {
   return {
     member: true,
     grants,
-    clearance: await labelsReadableFrom(readAt),
-    rawSourceLabels: [...new Set([PUBLIC_LABEL, ...rawAt])].sort(),
+    // Every member reads the base label and opens its sources with no grant.
+    clearance: await labelsReadableFrom([baseLabel(), ...readAt]),
+    rawSourceLabels: [...new Set([...memberLabels(), ...rawAt])].sort(),
     groups,
   };
 }
@@ -603,6 +604,10 @@ export type AdministrativeAction =
   | "label_read_removed"
   | "label_face_shown"
   | "label_face_withdrawn"
+  // A members-only deployment's `public` was split into the public graph's
+  // label, the published label and the base label (services/label-split.ts).
+  // It happens once, at start, and no person does it.
+  | "labels_split"
   // Which model providers and outside services may be sent a label's text
   // was chosen (provider-clearance-service.ts).
   | "provider_clearance_set"
@@ -615,6 +620,12 @@ export type AdministrativeAction =
   | "connection_changed"
   | "connection_tools_offered"
   | "connection_tool_withdrawn"
+  // A tool was granted to write, with the administrator's reason; a write
+  // grant was revoked; whether a granted tool's calls wait for an
+  // administrator, or what a tool's call costs a run, was changed.
+  | "connection_tool_write_granted"
+  | "connection_tool_write_revoked"
+  | "connection_tool_terms_changed"
   // File sets (src/file-sets.ts, services/file-set-service.ts). These are
   // acts of a person who directs the graph, logged with the administrative
   // ones because they change what agents may read.
@@ -663,6 +674,7 @@ export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, L
   label_read_removed: "labels",
   label_face_shown: "labels",
   label_face_withdrawn: "labels",
+  labels_split: "labels",
   provider_clearance_set: "providers",
   party_added: "parties",
   own_organization_named: "parties",
@@ -671,6 +683,9 @@ export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, L
   connection_changed: "connections",
   connection_tools_offered: "connections",
   connection_tool_withdrawn: "connections",
+  connection_tool_write_granted: "connections",
+  connection_tool_write_revoked: "connections",
+  connection_tool_terms_changed: "connections",
   file_set_added: "file_sets",
   file_set_closed: "file_sets",
   file_set_changed: "file_sets",
@@ -735,6 +750,12 @@ export interface LogEntry {
   /** A tool withdrawn from agents, and why: changed, missing or address_changed. */
   tool?: string;
   reason?: string;
+  /** On a write grant: the administrator's reason for it. */
+  write_reason?: string;
+  /** On a write grant or a change of a tool's terms: whether its write calls wait for an administrator. */
+  held?: boolean;
+  /** On a change of a tool's terms: what one call is charged to the run's budget, in owls. */
+  owls_per_call?: number;
   /** The providers a label was cleared for, and those it no longer is (provider_clearance_set). */
   cleared?: string[];
   no_longer_cleared?: string[];
@@ -770,6 +791,12 @@ export interface LogEntry {
   /** For release_step_done: the release and the step. */
   version?: string;
   step?: string;
+  /**
+   * For labels_split: the label that took what the organization released
+   * outside. `label` is the one that took the members' own material. Anyone
+   * may read the first and every member the second, so neither is withheld.
+   */
+  published?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -1075,6 +1102,10 @@ export async function permissionLog(
         }
         if (typeof d.note === "string" && d.note) entry.note = d.note;
       }
+      if (r.event === "labels_split") {
+        if (typeof d.label === "string") entry.label = d.label;
+        if (typeof d.published === "string") entry.published = d.published;
+      }
       if (typeof d.key_id === "string") entry.key_id = d.key_id;
       if (r.event === "mirror_followed" && typeof d.feed === "string") entry.feed = d.feed;
       if (typeof d.connection_id === "string") {
@@ -1096,7 +1127,11 @@ export async function permissionLog(
           const dropped = list(d.no_longer_offered);
           if (dropped) entry.no_longer_offered = dropped;
           if (typeof d.tool === "string") entry.tool = d.tool;
+          // The reason is an administrator's words about the system.
+          if (typeof d.write_reason === "string") entry.write_reason = d.write_reason;
         }
+        if (typeof d.held === "string") entry.held = d.held === "true";
+        if (typeof d.price_micro_usd === "string") entry.owls_per_call = microUsdToOwls(Number(d.price_micro_usd));
       }
       if (typeof d.file_set_id === "string") {
         entry.file_set = fileSetName(d.file_set_id);

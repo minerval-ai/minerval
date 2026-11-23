@@ -62,7 +62,14 @@ describe("which judgment a node's page opens on", () => {
   });
 
   it("puts public last and the rest by name", () => {
-    expect([version("public"), version("legal"), version("finance")].sort(byLabelName).map((v) => v.label)).toEqual(["finance", "legal", "public"]);
+    expect([version("public"), version("legal"), version("finance")].sort(byLabelName()).map((v) => v.label)).toEqual(["finance", "legal", "public"]);
+  });
+
+  // #1203: where the bottom layers are labels of their own, they come last from the top down.
+  it("puts the bottom layers last: the members' own, what was published, then the public graph's", () => {
+    const layers = { public_graph: "public", published: "published", base: "members", split: true };
+    const sorted = [version("public"), version("members"), version("legal"), version("published"), version("finance")].sort(byLabelName(layers));
+    expect(sorted.map((v) => v.label)).toEqual(["finance", "legal", "members", "published", "public"]);
   });
 });
 

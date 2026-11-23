@@ -33,7 +33,7 @@
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { baseLabel } from "../labels.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { everyLabel, keyAtLabel } from "../services/label-service.js";
@@ -181,7 +181,7 @@ async function judgedHereAtThisLabel(claimIds: string[], label: string): Promise
   const rows = await rawQuery<{ id: string }>(
     `SELECT a.claim_id AS id FROM assessments_in_force a
       WHERE a.claim_id = ANY($1::uuid[]) AND a.sensitivity_label = $2 AND a.origin = 'local'`,
-    [claimIds, label ?? PUBLIC_LABEL]
+    [claimIds, label ?? baseLabel()]
   );
   return new Set(rows.map((r) => r.id));
 }

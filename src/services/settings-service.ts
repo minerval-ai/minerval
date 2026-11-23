@@ -61,7 +61,7 @@ import {
 } from "../settings-registry.js";
 import { CREDENTIAL_KEY_ENV, credentialKeys, openCredential, sealCredential } from "./connection-credential.js";
 import { logAdministrativeEvent } from "./permission-service.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { labelsBesidesPublic } from "./label-service.js";
 import { endpointKeysMissing, evaluatePreflight, gatherPreflightFacts, type PreflightCheckResult } from "../preflight.js";
 
 /**
@@ -151,7 +151,7 @@ export async function readStoredSettings(): Promise<string | null> {
          LEFT JOIN contributors c ON c.id = s.set_by
         ORDER BY s.key`
     ),
-    privateLabels: (await rawQuery<{ n: string }>(`SELECT count(*)::text AS n FROM labels WHERE name <> $1`, [PUBLIC_LABEL]))[0]!.n !== "0",
+    privateLabels: (await labelsBesidesPublic()).length > 0,
   }));
   const values: Record<string, string> = {};
   const meta = new Map<string, StoredMeta>();
@@ -367,11 +367,9 @@ function endpointKeyViews(config: Config): SettingView[] {
   return views;
 }
 
+/** Whether the deployment defines a label besides the public graph's: it then holds private material (src/preflight.ts). */
 async function holdsPrivateLabels(): Promise<boolean> {
-  const rows = await asOwner(() =>
-    rawQuery<{ n: string }>(`SELECT count(*)::text AS n FROM labels WHERE name <> $1`, [PUBLIC_LABEL])
-  );
-  return rows[0]!.n !== "0";
+  return (await asOwner(() => labelsBesidesPublic())).length > 0;
 }
 
 export interface SettingsListing {

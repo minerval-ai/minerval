@@ -10,6 +10,7 @@ import { getDb, closeDb, rawQuery } from "./db/client.js";
 import { ensureSqlRoles, hasSqlRoleCredentials } from "./db/sql-roles.js";
 import { withSystemClearance } from "./db/clearance.js";
 import { enforcementFacts, enforcementProblems, ensureEnforcement } from "./db/enforcement.js";
+import { ensureLabelSplit } from "./services/label-split.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
@@ -52,6 +53,7 @@ import type {
   ContributionMessage,
   ArbitrationMessage,
 } from "./services/queue-service.js";
+import { PUBLIC_LABEL } from "./labels.js";
 
 type WorkLogger = {
   info: (...args: unknown[]) => void;
@@ -281,6 +283,20 @@ async function main() {
     }
   }
 
+  // A members-only deployment's `public` is split, once, into the public
+  // graph's label, the published label and the members' own
+  // (services/label-split.ts). Here, after migrations and before anything is
+  // served or any worker starts, so that no work is in progress while rows
+  // are restamped. It does nothing on the public graph, on an open
+  // deployment, or once it has been done. A failure stops the start: the
+  // deployment would otherwise go on filing its members' material at the
+  // public graph's label.
+  {
+    const { split, lines } = await ensureLabelSplit(config);
+    for (const line of lines) console.log(`[labels] ${line}`);
+    if (split) console.log("[labels] public was split into the public graph's label, the published label and the base label");
+  }
+
   // Where the deployment has more than one label, the database holds every
   // read and write to a clearance (db/clearance.ts). The step that covers
   // each labelled table runs here, after migrations, so a table a migration
@@ -307,7 +323,7 @@ async function main() {
   } catch (err) {
     const others = await withSystemClearance(
       "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",
-      () => rawQuery(`SELECT 1 FROM labels WHERE name <> 'public' LIMIT 1`)
+      () => rawQuery(`SELECT 1 FROM labels WHERE name <> $1 LIMIT 1`, [PUBLIC_LABEL])
     ).catch(() => null);
     if (others === null || others.length > 0) throw err;
     console.error("[labels] the enforcement step failed; public is the only label, so nothing is held:", err);

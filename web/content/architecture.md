@@ -1467,10 +1467,10 @@ worker exits its loop when false), a `solver_paused` row in
 `platform_flags` polled every turn so an operator halts a run without a
 deploy, and `POST /admin/attempts/:id/cancel`, also polled per turn. A
 halted attempt completes its action with the metered amount and keeps its
-notebook and transcript. The solver runs with server-side fallbacks off: a
-refusal records `refused` and stops, since a maximum-effort attempt
-silently continued on a different model would be a different product than
-the mandate funded.
+notebook and transcript. Like every agent, the solver has no refusal
+fallback: a refusal records `refused` and stops, since a maximum-effort
+attempt silently continued on a different model would be a different
+product than the mandate funded.
 
 **Execution.** A dedicated worker (`src/workers/solver-executor.ts`, its own
 process, `npm run worker:solver`) claims `attempt_proof` actions, runs the
@@ -1767,7 +1767,7 @@ Model choice follows the value of the judgment, not a single default:
 | Claim Steward (standard pass) · Curator · Audit Agent | Claude Opus 5.5 |
 | Claim Steward (strong pass, money triggers) · Dispute Arbitrator · Grantmaker | Claude Fable 5.2 |
 | Assistant | Claude Fable 5.2 (`ASSISTANT_MODEL`); the user may pick Claude Opus 5.5 for a conversation (`ASSISTANT_STANDARD_MODEL`) |
-| Solver (`math_solver`) | Claude Fable 5.2 at effort `max` (`SOLVER_MODEL`), fallbacks off |
+| Solver (`math_solver`) | Claude Fable 5.2 at effort `max` (`SOLVER_MODEL`) |
 | Researcher (`researcher`) | Chosen per launch by the administrator: Claude Fable 5.2 (`RESEARCHER_STRONG_MODEL`), Claude Sonnet 5.5 (`RESEARCHER_STANDARD_MODEL`), or GPT-6 Luna (`RESEARCHER_CHEAP_MODEL`) |
 
 The Matcher's judgment is narrow ("same proposition?") over candidates it
@@ -1783,8 +1783,22 @@ one lookout whose brief warrants it. The load-bearing epistemic work
 judgments that are final or bought deliberately (arbitration, the Steward's
 strong pass, the Grantmaker) and the long runs whose budget already bounds
 them (the solver, the researcher's strong tier) run on Fable 5.2, at twice
-the price per token. Both tiers carry a server-side fallback to Opus 4.8 so a
-safety-classifier refusal degrades gracefully instead of failing the job. Background assessments carry a
+the price per token.
+
+**Refusals are shown as refusals.** A model's safety classifiers can decline
+a request (Opus 5.5, Sonnet 5.5, Fable and Haiku 5.5 all have them). No
+request opts into a server-side fallback, and nothing retries a refused
+request on another model: what a frontier model declines to write is not
+something Minerval should publish from a model that was less careful about
+it (#1044). The refusal surfaces as `LlmRefusalError` with the provider's
+category, and each place shows it as what it is: a Steward pass parks the
+claim with the public reason `model_refusal` (a person decides what
+happens next); an ingest or a text analysis fails with the refusal as its
+reason; the researcher and the solver end `refused`; a REST call answers
+422 `MODEL_REFUSED`. The adapter still records the model that served each
+turn, so a turn the provider re-served on its own would show.
+
+Background assessments carry a
 standard-model and a strong-model variant on the action ledger, and whoever
 commissions a pass chooses the tier (docs/allocation.md), the strong one
 where the node is contested and important; what no one commissions is the
@@ -1951,6 +1965,21 @@ nothing about it changes. A deployment with another label serves nothing at
 that label until a provider is cleared for it: which outside party may read
 private text is a step of setting the deployment up, never a default.
 
+On a members-only deployment `public` holds only the public graph's own
+text, and no run works there ("The three layers at the bottom", under
+"Labels and clearance"), so "every provider is cleared for `public`" is true
+by construction and narrows nothing an organization owns. The organization's
+own bottom layers, `members` and `published`, are cleared by choice like any
+other label. When a deployment is split, both start cleared for each
+provider set up, as `public` was, so that nothing changes until an
+administrator unticks a box. Where `PROVIDER_LABELS` fixes the clearance
+nothing is stored: the setting has to name `members` and `published` on the
+line of each provider that should serve them, and the preflight's
+`provider_labels` check fails, saying which lines to change, until it does.
+The labels page draws the row for `public` as what is in force (every
+provider, or the setting's own lines) and says that no run of the deployment
+works at it.
+
 Who clears it is one of two, never both.
 
 **The administrators, on the labels page.** This is how a deployment starts.
@@ -1958,7 +1987,7 @@ The form that defines a label on `/admin/labels`, and each label's row
 there, list the providers and outside services this deployment has set up,
 each with what it would be sent (the table above, from
 `describeProviders`). A person ticks the ones cleared for the label, and
-nothing is ticked until someone ticks it. A box "the same as public" ticks
+nothing is ticked until someone ticks it. A box "every one above" ticks
 every one listed, which is still a choice made on purpose. The choice is
 stored in `provider_clearances`, a row for each provider and label it
 clears (`src/services/provider-clearance-service.ts`), through
@@ -1978,7 +2007,7 @@ fixed by the deployment's settings, and the route refuses a change
 labels it may receive text at:
 
 ```
-PROVIDER_LABELS={"anthropic":["public","internal"],"endpoint:local":["public","internal","restricted"],"embeddings":["public","internal"]}
+PROVIDER_LABELS={"anthropic":["public","published","members","internal"],"endpoint:local":["public","published","members","internal","restricted"],"embeddings":["public","published","members","internal"]}
 ```
 
 A provider the setting does not name is cleared for `public` and for nothing
@@ -2174,13 +2203,13 @@ at the 128,000-token output ceiling), `effort` up to `max`, a moving cache
 breakpoint on the last user message so a hundred-turn loop pays cache-read
 rates for its history rather than the full input price every turn,
 per-turn hooks (`beforeTurn`, `afterTurn`, `reminder`) through which the
-solver's dollar ceiling, wrap-up notice, and kill switches act, and
-`fallbacks: "none"`. The history is append-only, which the
+solver's dollar ceiling, wrap-up notice, and kill switches act, and no
+refusal fallback. The history is append-only, which the
 preserved-thinking rule requires and a test pins. A second client with an
 hour-long timeout serves it, because the default 180-second timeout with
 retries would abort and re-issue a fifteen-minute turn several times, each
-billable. The adapter reports the served model, whether a fallback ran, and
-cache-read and cache-creation tokens on every result; the money decisions
+billable. The adapter reports the served model, whether it differs from the
+requested one, and cache-read and cache-creation tokens on every result; the money decisions
 record the first two.
 
 
@@ -2215,6 +2244,16 @@ DB-claimed lanes, which is safe for the same reason several tasks are. Money
 bounds how much work runs; this ceiling bounds how much runs at once, which
 money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
+
+The ledger's housekeeping does not wait for a slot (#1028). Routing
+subscriptions and due check-ins, releasing petition holds, closing deployment
+faults that are over and funding mandates' and lookouts' own rows is database
+work with no model in it (`ledgerHousekeeping`, `src/workers/engine-executor.ts`).
+The engine lane runs it before it picks each row, so a row opened a moment ago
+is funded at once, and the runner also runs it every five seconds on a timer
+of its own, one pass at a time, so it goes on while every slot is inside a long
+unit. Until that timer, a process whose slots were all held did no
+housekeeping at all, and a check-in arrived seventeen hours late.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget, rejected credentials, a
@@ -2803,11 +2842,70 @@ default, a function call of about three microseconds for each row inserted
 without naming its label; the application's inserts name it, so this falls
 on a migration or a hand-written statement.
 
+**The three layers at the bottom.** On the public graph `public` is three
+things at once: the public graph's own rows, what is published, and the
+bottom layer of the deployment's own work. A members-only deployment holds
+material nobody outside reads, and there the three are three labels, each
+named in `labels.layer` (`src/labels.ts`, "The layers at the bottom"):
+
+| Label | What is at it | Who reads it | What reads it | Who writes it |
+| --- | --- | --- | --- | --- |
+| `public` | The public graph's own rows, as the mirror brings them. Empty on a deployment that does not mirror. | Anyone | Every label, always | The mirror's applier, and nothing else |
+| `published` | What the organization released outside: what passed the gate to outside, the packages and proposals built from it, what was sent and what came back about it. | Anyone; every member here | Every label, always | The gate to outside and the outbound and inbound work |
+| `members` | The organization's own material that every member reads: the work of any run, request or key that names no other label. | Every member | `members`, and each label that names it in `label_reads` | Work at `members` |
+| Each label the deployment defines | As below | Those granted it | As below | Work at it |
+
+`members` is the base label (`baseLabel()`, `minerval_base_label()`): what a
+run, a request or a key works at when nothing names another, what every
+member reads with no grant, and the label whose ledger keys are bare.
+`published` (`publishedLabel()`, `minerval_published_label()`) is the
+destination of the gate to outside. It is the organization's and not the
+public graph's: the public graph's agents treat it as an outside party's
+contribution, and a published page of a mirrored node sits beside the
+mirrored node's own judgment and does not replace it. Nothing runs at
+`public`, so "the judgment of a mirrored node at its own label is the public
+graph's" is a fact there and not a rule: work that starts from one of the
+public graph's rows (a mirrored node someone orders an assessment of) is done
+at `members` (`workLabelFor`), a person is refused filing at `public` or
+`published`, and a release that names either as its destination is refused
+with the reason. A release to every member names `members`.
+
+A label above reads `members` by a pair in `label_reads`, like any other
+label, and the pair can be absent for a label that should see none of the
+members' material. Neither `public`, `published` nor `members` can be made to
+read another label by a pair: what one of them read, everyone who reads it
+would read.
+
+The public graph is never split, and neither is an open deployment
+(`reads = "open"`), whose visitors read `public`: there all three names
+answer `public`. Code says which layer it means and never the bare word;
+`tests/unit/labels/layer-names.test.ts` fails on a file under `src/` that
+names `public` as a label without being listed with its reason.
+
+*The split.* A members-only deployment whose `labels` names no base layer
+is split once, at start, after migrations and before anything is served
+(`src/services/label-split.ts`). It is not a migration, because a migration
+does not know whether the deployment is members-only. In one transaction on
+the owner's connection it defines `members` and `published` and marks
+`public` as the public graph's; restamps, in every labelled table, each row
+at `public` that the mirror did not write (`published` for the destination
+side of the gate to outside and the outbound and inbound work, `members` for
+the rest); records that each label of the deployment's own reads `members`,
+as it read `public`; moves grants and keys at `public` to `members`; clears
+each provider set up for both new labels, as it was for `public`; and logs
+`labels_split`. A row's label otherwise never changes, and this is the one
+exception. A deployment that had already defined a label called `members`
+or `published` is stopped at start and told which of `MEMBERS_LABEL` and
+`PUBLISHED_LABEL` to set, since a label is never renamed. Splitting a
+deployment that had `public` alone turns enforcement on.
+
 A deployment that defines a second label is held to it by the database, not
 by the queries (`src/db/clearance.ts`). A clearance is a set of labels. A run
 reads its own label and the labels that label reads (`label_reads`, followed
-to the end, with `public` always included). A request reads what its account
-was granted. Work with nothing in context reads `public` alone. Row-level
+to the end, with what anyone may read always included: `public`, and
+`published` where that is a label of its own). A request reads what its
+account was granted, and every member reads the base label. Work with
+nothing in context reads only what anyone may read. Row-level
 security on every labelled table returns a row only to a connection whose
 clearance includes its label and lets a new row be added only at the
 connection's own label, so a query that forgets to filter is filtered all
@@ -2866,7 +2964,10 @@ On a deployment that mirrors the public graph, the `public` version of a
 mirrored node is the mirrored row. Nothing local records one or opens work
 at `public` on a mirrored node, and a version at another label is recorded
 beside it and kept current as batches of the mirror are applied
-([mirror.md](mirror.md), "Beside a deployment's own rows").
+([mirror.md](mirror.md), "Beside a deployment's own rows"). On a
+members-only deployment no run works at `public` at all, so the members' own
+judgment of a mirrored node is a version at `members`, beside the public
+graph's.
 
 Which versions are in force depends on who reads, and the rule is written
 once, in the database (`minerval_version_standing`): among the current
@@ -3218,9 +3319,9 @@ may name such a label among those they hold, and a key, a token or an
 Assistant conversation starts the work at its own label on any node that
 label reads. [accounts.md](accounts.md), "The label a request works at",
 has the rules as a caller meets them. A request the table gives no label
-(a read, or a route that adds no labelled row) still stamps `public` on a
-labelled row if it writes one: the usage row of an embedding call made for
-a search is the case that exists.
+(a read, or a route that adds no labelled row) still stamps the base label
+on a labelled row if it writes one: the usage row of an embedding call made
+for a search is the case that exists.
 
 **How a connection gets its clearance.** Connections held to a clearance log
 in as the role `minerval_cleared`, which owns no table and so is bound by the
@@ -3262,9 +3363,10 @@ reads that row: it puts each recipient's piece together inside
 `tests/unit/db/system-clearance.test.ts` lists every caller with its reason
 and with what it writes. The mirror's applier is among them: it writes the
 public graph's rows, as `public`, and what follows a batch for a label's own
-work is opened at that label ([mirror.md](mirror.md)). Nothing at a label
-other than `public` is sent to the issue tracker, which is outside the
-deployment.
+work is opened at that label ([mirror.md](mirror.md)). Only a report at the
+published label is sent to the issue tracker, which is outside the
+deployment: on the public graph that label is `public`, and on a
+members-only deployment a report reaches it through the gate to outside.
 
 **Money.** `action_allocations` and `regrants` carry a label for the text on
 them (a commission's brief and reason, a regrant's note), and their money
@@ -3350,12 +3452,12 @@ where reads are held.
 - A request is given a label only by the rule of a route that writes
   (`src/server/request-labels.ts`). A read has none, and neither has a
   route the table says adds no labelled row, and a labelled row such a
-  request did add would be stamped `public`. The case that exists is the
+  request did add would be stamped with the base label. The case that exists is the
   usage row of an embedding call made for a search, which holds counts and
   no text. `tests/db/request-labels.test.ts` drives every writing route
   against a private row and counts every labelled table at every label
   before and after. The routes the operator key guards act for no person,
-  and read and write `public` alone.
+  and work at the base label.
 - A few keys are still one for the whole deployment
   (`tests/db/layer-identity-keys.test.ts` lists them with their reasons).
   Under one of those an insert that collides with a row the writer cannot
@@ -3380,7 +3482,7 @@ where reads are held.
   commissioned, without the text, and let any cleared connection change the
   money columns of any label's row, which is what settlement does. A ledger
   key can hold an address (`ingest:<url>`) and, for work at a label other
-  than `public`, that label's name. Work at one label can therefore mark
+  than the base label, that label's name. Work at one label can therefore mark
   another label's money spent or released; it cannot rewrite its text or its
   key, or delete it. These are the only columns a connection may change on
   a row at another label: an allocation's `amount_micro_usd`,

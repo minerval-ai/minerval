@@ -28,6 +28,8 @@ import {
   syncIssueClosures,
 } from "../services/github-issue-service.js";
 import { listReportsAwaitingIssue } from "../services/report-service.js";
+import { publishedLabel } from "../labels.js";
+import { runAtLabel } from "../llm/usage-context.js";
 
 export interface GithubIssueSyncTickResult {
   pending: number;
@@ -87,10 +89,12 @@ export function startGithubIssueSync(options: {
     if (busy) return;
     busy = true;
     try {
-      // No system clearance: only public reports are ever filed (a tracker
-      // is outside the deployment), and a timer with nothing in context
-      // reads `public` alone, which is all this needs.
-      const result = await githubIssueSyncTick();
+      // No system clearance: only reports at the published label are ever
+      // filed (a tracker is outside the deployment), so the tick works at
+      // that label: it reads the reports there and marks each one filed,
+      // which is a change to a row at that label. On the public graph the
+      // published label is `public`.
+      const result = await runAtLabel(publishedLabel(), "the GitHub issue sync", () => githubIssueSyncTick());
       if (result.pending > 0) {
         options.logger.info(
           `GitHub issue sync: ${result.filed} filed, ${result.failed} failed ` +

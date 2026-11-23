@@ -22,7 +22,7 @@ export function NewReleaseForm({
   nodeId: string;
   pages: Array<{ label: string; assessedAt: string }>;
   at: string | null;
-  labels: Array<{ name: string; whoReads: string; reads: string[] }>;
+  labels: Array<{ name: string; whoReads: string; reads: string[]; everyMember: boolean }>;
   gates: Array<{ id: string; from: string; to: string }>;
 }) {
   const [page, setPage] = useState<string>(pages.length === 1 ? pages[0]!.label : (pages.find((p) => p.label === at)?.label ?? ""));
@@ -81,7 +81,7 @@ export function NewReleaseForm({
                 />
                 <span>
                   <Lbl name={l.name} />
-                  <span className="w-releases-m">{off ? `Already reads ${page}` : l.name === "public" ? "every member" : "arrives as a source there"}</span>
+                  <span className="w-releases-m">{off ? `Already reads ${page}` : l.everyMember ? "every member" : "arrives as a source there"}</span>
                 </span>
               </label>
             );

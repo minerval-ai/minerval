@@ -1,5 +1,5 @@
 {
-  "id": "c77ce4a9-2d2c-40a5-8526-26b0e7c07a24",
+  "id": "99e173e6-a835-45cd-9040-f9e765600afe",
   "prevId": "7de9ec06-684e-4fb2-9119-5fbe0584493a",
   "version": "7",
   "dialect": "postgresql",
@@ -9201,6 +9201,63 @@
           "primaryKey": false,
           "notNull": false
         },
+        "writes": {
+          "name": "writes",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "price_micro_usd": {
+          "name": "price_micro_usd",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "charged_micro_usd": {
+          "name": "charged_micro_usd",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "charge_to": {
+          "name": "charge_to",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tool_definition_hash": {
+          "name": "tool_definition_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "held_at": {
+          "name": "held_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_note": {
+          "name": "decision_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "sensitivity_label": {
           "name": "sensitivity_label",
           "type": "text",
@@ -9227,6 +9284,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_connection_calls_writes": {
+          "name": "idx_connection_calls_writes",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "called_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "writes",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9286,6 +9365,19 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "connection_calls_decided_by_contributors_id_fk": {
+          "name": "connection_calls_decided_by_contributors_id_fk",
+          "tableFrom": "connection_calls",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "connection_calls_sensitivity_label_labels_name_fk": {
@@ -9401,6 +9493,51 @@
           "primaryKey": false,
           "notNull": false
         },
+        "writes": {
+          "name": "writes",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "write_reason": {
+          "name": "write_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "write_acknowledgement": {
+          "name": "write_acknowledgement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "write_granted_by": {
+          "name": "write_granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "write_granted_at": {
+          "name": "write_granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "write_held": {
+          "name": "write_held",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "call_price_micro_usd": {
+          "name": "call_price_micro_usd",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "sensitivity_label": {
           "name": "sensitivity_label",
           "type": "text",
@@ -9459,6 +9596,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
+        "connection_tools_write_granted_by_contributors_id_fk": {
+          "name": "connection_tools_write_granted_by_contributors_id_fk",
+          "tableFrom": "connection_tools",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "write_granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "connection_tools_sensitivity_label_labels_name_fk": {
           "name": "connection_tools_sensitivity_label_labels_name_fk",
           "tableFrom": "connection_tools",
@@ -9476,7 +9626,20 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ck_connection_tools_write_grant": {
+          "name": "ck_connection_tools_write_grant",
+          "value": "NOT \"connection_tools\".\"writes\" OR (\"connection_tools\".\"write_reason\" IS NOT NULL AND \"connection_tools\".\"write_acknowledgement\" IS NOT NULL AND \"connection_tools\".\"write_granted_at\" IS NOT NULL)"
+        },
+        "ck_connection_tools_held_writes": {
+          "name": "ck_connection_tools_held_writes",
+          "value": "NOT \"connection_tools\".\"write_held\" OR \"connection_tools\".\"writes\""
+        },
+        "ck_connection_tools_price": {
+          "name": "ck_connection_tools_price",
+          "value": "\"connection_tools\".\"call_price_micro_usd\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.connections": {
@@ -12299,75 +12462,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.deployment_settings": {
-      "name": "deployment_settings",
-      "schema": "",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sealed_value": {
-          "name": "sealed_value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_four": {
-          "name": "last_four",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_by": {
-          "name": "set_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_at": {
-          "name": "set_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "deployment_settings_set_by_contributors_id_fk": {
-          "name": "deployment_settings_set_by_contributors_id_fk",
-          "tableFrom": "deployment_settings",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "set_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_deployment_settings_one_value": {
-          "name": "ck_deployment_settings_one_value",
-          "value": "(\"deployment_settings\".\"value\" IS NULL) <> (\"deployment_settings\".\"sealed_value\" IS NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.deployments": {
       "name": "deployments",
       "schema": "",
@@ -14289,71 +14383,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.first_administrator_codes": {
-      "name": "first_administrator_codes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "code_hash": {
-          "name": "code_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "used_by": {
-          "name": "used_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "first_administrator_codes_used_by_contributors_id_fk": {
-          "name": "first_administrator_codes_used_by_contributors_id_fk",
-          "tableFrom": "first_administrator_codes",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "used_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -23595,87 +23624,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.product_release_entries": {
-      "name": "product_release_entries",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prose": {
-          "name": "prose",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signature": {
-          "name": "signature",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_id": {
-          "name": "key_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "product_release_entries_version_kind_revision_pk": {
-          "name": "product_release_entries_version_kind_revision_pk",
-          "columns": [
-            "version",
-            "kind",
-            "revision"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_product_release_entries_kind": {
-          "name": "ck_product_release_entries_kind",
-          "value": "\"product_release_entries\".\"kind\" IN ('release', 'withdrawal')"
-        },
-        "ck_product_release_entries_revision": {
-          "name": "ck_product_release_entries_revision",
-          "value": "\"product_release_entries\".\"revision\" >= 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.proof_attempts": {
       "name": "proof_attempts",
       "schema": "",
@@ -27755,66 +27703,6 @@
           "value": "\"release_removals\".\"start_offset\" >= 0 AND \"release_removals\".\"end_offset\" > \"release_removals\".\"start_offset\""
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.release_steps_done": {
-      "name": "release_steps_done",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "step": {
-          "name": "step",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "done_by": {
-          "name": "done_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "done_at": {
-          "name": "done_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "release_steps_done_done_by_contributors_id_fk": {
-          "name": "release_steps_done_done_by_contributors_id_fk",
-          "tableFrom": "release_steps_done",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "done_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "release_steps_done_version_step_pk": {
-          "name": "release_steps_done_version_step_pk",
-          "columns": [
-            "version",
-            "step"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.releases": {
@@ -32037,45 +31925,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.versions_run": {
-      "name": "versions_run",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "commit": {
-          "name": "commit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_started_at": {
-          "name": "first_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_started_at": {
-          "name": "last_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

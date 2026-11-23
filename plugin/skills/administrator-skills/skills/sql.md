@@ -6,9 +6,10 @@ description: >-
   readers and agents most often ask.
 metadata:
   minerval:
-    version: 14
+    version: 15
     since_epoch: 2026-11-responsive-funding
     changelog:
+      15: "ledger carries closed_reason (#1045): why a cancelled row was cancelled, in the platform's words (an ingest whose site refused the fetch, a document too long to read, an extraction given up on), null on any other row; a cancelled row's money is back with its payers"
       14: "ledger carries partition (#1005): the tag slug, residual or graph a consistency_sweep row reads, so a sweep joins nodes.tags; the skill says what target_ref holds for each kind of row"
       13: "plan_items carries added_by, added_at and added_run_id: who put each item in the plan (the Grantmaker's draft, its planning pass, its chat with the funder, or its own review pass) and when; null on items added before they were recorded"
       12: "ledger carries extraction, extraction_started_at and queued_ahead: a running ingest says whether its source is queued or being read, and about how many extractions wait ahead of a queued one"
@@ -86,6 +87,12 @@ unknown.
   of the tag it reads, `residual` for the bucket of live claims no tag
   large enough to be swept on its own covers, or `graph` for a sweep of
   the whole graph; null too for a tag that is gone or you cannot see).
+  closed_reason (null unless the row is cancelled and its cancel said why:
+  for an ingest, the site refused the fetch, the page is not there, the
+  document is too long to read, or the extraction failed on the platform's
+  side; a reason that names a refused site or a missing page means another
+  address for the same text is the way to read it). A cancelled row holds
+  no money: what was placed on it is back with its payers.
   target_ref is the row's target in the ledger's own terms: for
   `ingest`, the source's URL; for `consistency_sweep`, the swept tag's
   id (not served by `tags`; join on partition instead), `residual` or

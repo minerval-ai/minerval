@@ -151,6 +151,29 @@ const configSchema = z.object({
   // age (web/auth.ts reads the same variable), so a person at work signs in
   // again before their groups lapse.
   signInValidHours: z.coerce.number().positive().default(12),
+  // The names of the two labels a members-only deployment's `public` is
+  // split into at start (services/label-split.ts; src/labels.ts, "The
+  // layers at the bottom"): the organization's own material that every
+  // member reads, and what it released outside. Left empty they are
+  // "members" and "published", which is what the docs and the agents'
+  // briefs call them. They are read once, by the split, and only matter to
+  // a deployment that had already defined a label of one of those names:
+  // a label is never renamed, so such a deployment says here what the new
+  // one is to be called instead.
+  membersLabel: z
+    .string()
+    .trim()
+    .refine((name) => name === "" || /^[a-z][a-z0-9_-]{0,62}$/.test(name), {
+      message: "MEMBERS_LABEL must be a label's name: a short lower-case word (letters, digits, hyphens and underscores, starting with a letter).",
+    })
+    .default(""),
+  publishedLabel: z
+    .string()
+    .trim()
+    .refine((name) => name === "" || /^[a-z][a-z0-9_-]{0,62}$/.test(name), {
+      message: "PUBLISHED_LABEL must be a label's name: a short lower-case word (letters, digits, hyphens and underscores, starting with a letter).",
+    })
+    .default(""),
 
   // Where this deployment's owls come from (docs/accounts.md, "Owls a
   // deployment creates for itself"). "sold", the starting value, is the
@@ -1261,14 +1284,6 @@ const configSchema = z.object({
   // DEFAULT_MODEL — the exact regression the production guard below was
   // written to prevent, through a door that guard did not cover.
   extractorModel: modelId(MODELS.sonnet),
-  // Where extraction retries when the chosen tier REFUSES. The strong tier's
-  // classifiers decline bio-adjacent material (issue #78; Fable did so on this
-  // graph's virology cluster, and Opus 5.5 carries the same bio classifier),
-  // and LlmRefusalError means the server-side Opus fallback refused too — so
-  // the retry has to leave the family. Without it, moving extraction to the
-  // strong tier would turn "this paper is about pathogens" into a
-  // cancelled ingest with the mandate's fetch money already spent.
-  extractorFallbackModel: modelId(MODELS.sonnet),
   // Shared by the Contribution Reviewer. The Audit Agent has its own knob
   // (auditModel) so it can run on Opus without also upgrading the reviewer.
   governanceModel: modelId(MODELS.sonnet),
@@ -1759,6 +1774,8 @@ function buildConfig(env: NodeJS.ProcessEnv): Config {
     reads: env.READS || undefined,
     firstAdministrator: env.FIRST_ADMINISTRATOR,
     signInValidHours: env.SIGN_IN_VALID_HOURS || undefined,
+    membersLabel: env.MEMBERS_LABEL,
+    publishedLabel: env.PUBLISHED_LABEL,
     owls: env.OWLS || undefined,
     modelPriceRefreshHours: env.MODEL_PRICE_REFRESH_HOURS,
     modelPrices: env.MODEL_PRICES,
@@ -1936,7 +1953,6 @@ function buildConfig(env: NodeJS.ProcessEnv): Config {
     stewardModel: env.STEWARD_MODEL,
     curatorModel: env.CURATOR_MODEL,
     extractorModel: env.EXTRACTOR_MODEL,
-    extractorFallbackModel: env.EXTRACTOR_FALLBACK_MODEL,
     governanceModel: env.GOVERNANCE_MODEL,
     auditModel: env.AUDIT_MODEL,
     redactorModel: env.REDACTOR_MODEL,

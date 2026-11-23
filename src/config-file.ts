@@ -154,6 +154,17 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
 
 const KEYS_BY_NAME = new Map(CONFIG_FILE_KEYS.map((k) => [k.key, k]));
 
+/**
+ * Keys a file may still hold from before they were retired, each with what
+ * replaced it: the registry's retired rows that were settings of the file
+ * (a retired secret was never one). Reading a file skips one with a warning
+ * rather than refusing to start, since it set something that no longer
+ * exists, not something wrong. Writing one is refused.
+ */
+export const RETIRED_FILE_KEYS: ReadonlyMap<string, string> = new Map(
+  SETTINGS.filter((row) => row.retired && !row.secret).map((row) => [row.key, row.retired!.replacedBy])
+);
+
 /** The group a setting is in; "" for a setting that is a group of its own at the top of the file. */
 function groupOf(key: string): string {
   const dot = key.lastIndexOf(".");
@@ -426,6 +437,14 @@ function checkSettings(
       problems.push(secretProblem(name, key));
       continue;
     }
+    if (key.retired) {
+      // Reading a file skips a retired setting with a warning (parseConfigFile); writing one is refused.
+      problems.push(
+        `${name} is not a setting any more: it was retired in ${key.retired.in} and nothing reads it. ` +
+          `In its place: ${key.retired.replacedBy}.`
+      );
+      continue;
+    }
     const converted = toEnvironmentText(key, value);
     if ("problem" in converted) {
       problems.push(converted.problem);
@@ -488,7 +507,11 @@ export function parseConfigFile(text: string, check: FieldCheck, path: string | 
   const walk = (node: Record<string, unknown>, prefix: string) => {
     for (const [name, value] of Object.entries(node)) {
       const full = prefix ? `${prefix}.${name}` : name;
-      if (KEYS_BY_NAME.has(full)) {
+      if (RETIRED_FILE_KEYS.has(full)) {
+        console.warn(
+          `[config] ${path ?? "the config file"}: ${full} is ignored and can be deleted: ${RETIRED_FILE_KEYS.get(full)}.`
+        );
+      } else if (KEYS_BY_NAME.has(full)) {
         settings[full] = value as ConfigFileValue;
       } else if (GROUPS.has(full)) {
         if (isGroupValue(value)) walk(value, full);

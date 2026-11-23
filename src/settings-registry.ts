@@ -113,6 +113,12 @@ const retired = (key: string, env: string, about: string, replacedBy: string): S
   retired: { in: "0.2.0", replacedBy },
 });
 
+/** A setting that was one of the file's and is read by nothing now. */
+const retiredSetting = (key: string, env: string, about: string, replacedBy: string): Setting => ({
+  key, env, kind: "text", where: "machine", applies: "restart", about,
+  retired: { in: "0.2.0", replacedBy },
+});
+
 const T: Extra = { tuning: true };
 
 /**
@@ -129,8 +135,6 @@ export const SETTINGS: readonly Setting[] = [
     "The Steward's strong pass, and the model its money decisions run on. Empty, there is no strong pass."),
   model("curator", "CURATOR_MODEL", "curatorModel", "The Curator: merges, splits and structure."),
   model("extractor", "EXTRACTOR_MODEL", "extractorModel", "The Extractor: reads a document and states its claims in the graph's words."),
-  model("extractor_fallback", "EXTRACTOR_FALLBACK_MODEL", "extractorFallbackModel",
-    "Where extraction is tried again when the Extractor's model refuses a document."),
   model("matcher", "MATCHER_MODEL", "matcherModel", "The Matcher: decides whether a claim is already in the graph."),
   model("tagger", "TAGGER_MODEL", "taggerModel", "The tagger: says what each node is about."),
   model("contribution_reviewer", "GOVERNANCE_MODEL", "governanceModel", "The Contribution Reviewer."),
@@ -329,6 +333,13 @@ export const SETTINGS: readonly Setting[] = [
   machine("accounts.reads", "READS", "text", "reads", "Whether anyone may read (open) or only signed-in members (members).", T),
   machine("accounts.first_administrator", "FIRST_ADMINISTRATOR", "text", "firstAdministrator",
     "The sign-in identity made the first administrator, for an install that is scripted.", T),
+  // The two labels a members-only deployment's `public` is split into at
+  // start (services/label-split.ts). Read once, by the split, before anyone
+  // can sign in, and a label is never renamed.
+  machine("accounts.members_label", "MEMBERS_LABEL", "text", "membersLabel",
+    "The name of the label for the organization's own material that every member reads. Left empty, it is members.", T),
+  machine("accounts.published_label", "PUBLISHED_LABEL", "text", "publishedLabel",
+    "The name of the label for what the organization released outside. Left empty, it is published.", T),
   // The web app ends a session at the same age and reads the same variable
   // from its own environment (web/auth.ts), which the app cannot change.
   machine("accounts.sign_in_valid_hours", "SIGN_IN_VALID_HOURS", "number", "signInValidHours",
@@ -517,7 +528,10 @@ export const SETTINGS: readonly Setting[] = [
   machine("build.commit", "MINERVAL_COMMIT", "text", "gitSha", "The commit the running code was built from. Set when the image is built.", T),
   machine("build.version", "MINERVAL_VERSION", "text", "version", "The version the running code was built as. Set when the image is built.", T),
 
-  // ---- Retired: read by nothing, named so that a file that still sets one is told ----
+  // ---- Retired: read by nothing, named so that a deployment that still sets one is told ----
+  retiredSetting("models.extractor_fallback", "EXTRACTOR_FALLBACK_MODEL",
+    "Where extraction was tried again when the Extractor's model refused a document.",
+    "a model's refusal is no longer retried on another model (#1044); the Extractor's refusal is shown as one"),
   retired("retired.public_graph_api_key", "PUBLIC_GRAPH_API_KEY", "The key a deployment reached the public graph with.", "the connection to minerval.ai, made on the Overview"),
   retired("retired.mirror_feed_api_key", "MIRROR_FEED_API_KEY", "The key a deployment read the mirror feed with.", "the connection to minerval.ai, made on the Overview"),
   retired("retired.usage_report_api_key", "USAGE_REPORT_API_KEY", "The key a deployment sent usage reports with.", "the connection to minerval.ai, made on the Overview"),

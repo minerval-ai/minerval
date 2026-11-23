@@ -38,7 +38,9 @@ Two settings are the machine's only some of the time:
   cleared by label"). That choice has its own table and its own page, and
   is where this design started.
 - **`run_log.mode`** is the administrators' until a label besides `public`
-  is defined. From then on it is the machine's: a deployment that holds
+  is defined, which for a members-only deployment is its first start: its
+  own material is at `members` and `published` from then on
+  ([architecture.md](architecture.md)). From then on it is the machine's: a deployment that holds
   private material keeps its whole log ([run-log.md](run-log.md), "Record
   mode"), and loosening that is for whoever runs the machine to decide. The
   packaged deployment sets it to `record` in its Compose file, which fixes
@@ -275,7 +277,6 @@ still fix it. A machine setting always applies at a restart.
 | `models.steward_strong` | `STEWARD_STRONG_MODEL` | administrators | live | empty | The Steward's strong pass, and the model its money decisions run on. Empty, there is no strong pass. |
 | `models.curator` | `CURATOR_MODEL` | administrators | live | `claude-sonnet-5-5` | The Curator: merges, splits and structure. |
 | `models.extractor` | `EXTRACTOR_MODEL` | administrators | live | `claude-sonnet-5-5` | The Extractor: reads a document and states its claims in the graph's words. |
-| `models.extractor_fallback` | `EXTRACTOR_FALLBACK_MODEL` | administrators | live | `claude-sonnet-5-5` | Where extraction is tried again when the Extractor's model refuses a document. |
 | `models.matcher` | `MATCHER_MODEL` | administrators | live | `openai/gpt-6-luna` | The Matcher: decides whether a claim is already in the graph. |
 | `models.tagger` | `TAGGER_MODEL` | administrators | live | `openai/gpt-6-luna` | The tagger: says what each node is about. |
 | `models.contribution_reviewer` | `GOVERNANCE_MODEL` | administrators | live | `claude-sonnet-5-5` | The Contribution Reviewer. |
@@ -495,6 +496,8 @@ still fix it. A machine setting always applies at a restart.
 |---|---|---|---|---|---|
 | `accounts.reads` | `READS` | the machine | restart | `open` | Whether anyone may read (open) or only signed-in members (members). |
 | `accounts.first_administrator` | `FIRST_ADMINISTRATOR` | the machine | restart | empty | The sign-in identity made the first administrator, for an install that is scripted. |
+| `accounts.members_label` | `MEMBERS_LABEL` | the machine | restart | empty | The name of the label for the organization's own material that every member reads. Left empty, it is members. |
+| `accounts.published_label` | `PUBLISHED_LABEL` | the machine | restart | empty | The name of the label for what the organization released outside. Left empty, it is published. |
 | `accounts.sign_in_valid_hours` | `SIGN_IN_VALID_HOURS` | the machine | restart | `12` | How many hours a sign-in vouches for the groups it carried. The web app reads the same variable. |
 
 #### `budgets`
@@ -720,6 +723,7 @@ still fix it. A machine setting always applies at a restart.
 
 | Environment variable | Retired in | In its place |
 |---|---|---|
+| `EXTRACTOR_FALLBACK_MODEL` | 0.2.0 | a model's refusal is no longer retried on another model (#1044); the Extractor's refusal is shown as one |
 | `PUBLIC_GRAPH_API_KEY` | 0.2.0 | the connection to minerval.ai, made on the Overview |
 | `MIRROR_FEED_API_KEY` | 0.2.0 | the connection to minerval.ai, made on the Overview |
 | `USAGE_REPORT_API_KEY` | 0.2.0 | the connection to minerval.ai, made on the Overview |

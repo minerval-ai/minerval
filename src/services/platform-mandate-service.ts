@@ -20,7 +20,7 @@
  * the openness the constitution asks of the one budget no outside funder
  * checks.
  */
-import { PUBLIC_LABEL } from "../labels.js";
+import { openLabels } from "../labels.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import type { GrantMandate } from "../llm/agents/grantmaker.js";
 import {
@@ -257,8 +257,8 @@ export async function getPublicConversation(conversationId: string) {
        FROM grant_conversations gc
        JOIN contributors c ON c.id = gc.user_id
        LEFT JOIN grants g ON g.id = gc.grant_id
-      WHERE gc.id = $1 AND gc.in_public AND gc.sensitivity_label = $3`,
-    [conversationId, PLATFORM_EXTERNAL_ID, PUBLIC_LABEL]
+      WHERE gc.id = $1 AND gc.in_public AND gc.sensitivity_label = ANY($3::text[])`,
+    [conversationId, PLATFORM_EXTERNAL_ID, openLabels()]
   );
   if (!row) return null;
   return {

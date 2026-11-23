@@ -100,8 +100,26 @@ export const labels = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Which of the three bottom layers this label is (src/labels.ts, "The
+    // layers at the bottom"), or null for a label the deployment defines
+    // above them:
+    //   public_graph  the public graph's own rows, which is `public`;
+    //   published     what the organization released outside;
+    //   base          the organization's own material that every member
+    //                 reads, and where work that names no label is done.
+    // On the public graph, and on any deployment that has not been split,
+    // no row says: `public` is all three. The split (services/label-split.ts)
+    // writes them, once, on a members-only deployment. It is data and not a
+    // setting because the database's own functions read it
+    // (minerval_base_label, minerval_published_label).
+    layer: text("layer"),
   },
   (table) => [
+    check("ck_labels_layer", sql`${table.layer} IN ('public_graph', 'published', 'base')`),
+    // One label for each layer.
+    uniqueIndex("uq_labels_layer").on(table.layer).where(sql`${table.layer} IS NOT NULL`),
+    // The public graph's label is `public` and nothing else is.
+    check("ck_labels_public_graph_is_public", sql`(${table.layer} = 'public_graph') IS NOT TRUE OR ${table.name} = 'public'`),
     // A label's name is written into a connection's settings (the clearance
     // a connection reads with, db/clearance.ts), so the table holds it to
     // the plain word the administrator's route already requires
@@ -228,12 +246,14 @@ export const labelFaces = pgTable(
 // because it does not say who may read the row. A key and a token are the
 // account's own and carry no label of that kind, and the step that holds
 // every table with a sensitivity_label column to a clearance must not take
-// these tables for labelled ones. A credential minted before a deployment
-// had a second label works at 'public', which was the only label there was.
+// these tables for labelled ones. A credential that names no label works at
+// the deployment's base label (minerval_base_label(): `public` on the public
+// graph, the members' label on a members-only deployment that has been
+// split).
 const workLabelColumn = () =>
   text("work_label")
     .notNull()
-    .default("public")
+    .default(sql`minerval_base_label()`)
     .references(() => labels.name);
 
 // ---------------------------------------------------------------------------
@@ -2245,6 +2265,16 @@ export const connections = pgTable(
 // administrator looks again and picks it again. `listed` says whether the
 // server still listed the tool at the last look.
 //
+// A pick is of a tool that reads unless it carries a write grant (`writes`):
+// the administrator's acknowledgement, in the words it had then
+// (write_acknowledgement), and their reason (write_reason), with who and
+// when. The grant is told to every agent offered the tool. write_held says
+// the tool's calls wait for an administrator before they are sent.
+// call_price_micro_usd is what one answered call is charged to the run's
+// budget, zero for a tool whose calls cost the organization's system and no
+// money. A tool left out of a later pick loses all of these; a tool
+// withdrawn keeps them as what was granted, and offers nothing.
+//
 // sensitivity_label is the connection's: a tool's name, description and
 // input schema are the organization's system describing itself, the same
 // whoever looks, so the row is derived from the connection and carries its
@@ -2273,9 +2303,26 @@ export const connectionTools = pgTable(
     withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
     // 'changed' | 'missing' | 'address_changed': a name the code gives.
     withdrawnReason: text("withdrawn_reason"),
+    writes: boolean("writes").notNull().default(false),
+    writeReason: text("write_reason"),
+    writeAcknowledgement: text("write_acknowledgement"),
+    writeGrantedBy: uuid("write_granted_by").references((): AnyPgColumn => contributors.id),
+    writeGrantedAt: timestamp("write_granted_at", { withTimezone: true }),
+    writeHeld: boolean("write_held").notNull().default(false),
+    callPriceMicroUsd: integer("call_price_micro_usd").notNull().default(0),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("uq_connection_tools_name").on(table.connectionId, table.name)]
+  (table) => [
+    uniqueIndex("uq_connection_tools_name").on(table.connectionId, table.name),
+    // A write grant is whole: the reason and the acknowledgement with it.
+    check(
+      "ck_connection_tools_write_grant",
+      sql`NOT ${table.writes} OR (${table.writeReason} IS NOT NULL AND ${table.writeAcknowledgement} IS NOT NULL AND ${table.writeGrantedAt} IS NOT NULL)`
+    ),
+    // Only a call that writes waits for an administrator.
+    check("ck_connection_tools_held_writes", sql`NOT ${table.writeHeld} OR ${table.writes}`),
+    check("ck_connection_tools_price", sql`${table.callPriceMicroUsd} >= 0`),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -2288,6 +2335,21 @@ export const connectionTools = pgTable(
 // 'answered', 'tool_error' (the system answered with an error) or 'failed'
 // (no answer: unreachable, credential refused, timed out), with `error`
 // saying which.
+//
+// `writes` says the call was to a tool granted to write when it was made;
+// those are the calls an administrator watches, with what was sent and what
+// came back. Where the tool's calls are held, the row is made with outcome
+// 'held' and nothing is sent: held_at says since when, and
+// tool_definition_hash which definition the agent wrote its arguments
+// against. An administrator's decision is on the row (decided_by,
+// decided_at, decision_note): approved, the call is sent then, once, and
+// the outcome becomes what a call's is; declined, or found no longer
+// sendable when approved (the connection off, the grant gone or changed),
+// the outcome is 'declined' or 'not_sent' and nothing was sent.
+// charged_micro_usd is what the call cost the run's budget, at the tool's
+// price when it was made (price_micro_usd). A held call is charged when it
+// is sent, to whoever was paying for the run that made it (charge_to: the
+// account, key and job from that run's usage context).
 //
 // A call is not a source. When an agent's work rests on one it keeps it
 // (keep_reading): source_id then names the source row made from the call,
@@ -2328,12 +2390,25 @@ export const connectionCalls = pgTable(
     partyId: uuid("party_id").references(() => parties.id),
     sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
     keptAt: timestamp("kept_at", { withTimezone: true }),
+    writes: boolean("writes").notNull().default(false),
+    priceMicroUsd: integer("price_micro_usd").notNull().default(0),
+    chargedMicroUsd: integer("charged_micro_usd").notNull().default(0),
+    chargeTo: jsonb("charge_to"),
+    toolDefinitionHash: text("tool_definition_hash"),
+    heldAt: timestamp("held_at", { withTimezone: true }),
+    decidedBy: uuid("decided_by").references((): AnyPgColumn => contributors.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     // The rate check counts a connection's calls in the last minute, and an
     // administrator's list reads them newest first.
     index("idx_connection_calls_connection_time").on(table.connectionId, table.calledAt),
+    // The calls an administrator watches: those that wrote, newest first.
+    index("idx_connection_calls_writes")
+      .on(table.connectionId, table.calledAt)
+      .where(sql`writes`),
     index("idx_connection_calls_source")
       .on(table.sourceId)
       .where(sql`source_id IS NOT NULL`),
@@ -4110,6 +4185,13 @@ export const actions = pgTable(
     faultSince: timestamp("fault_since", { withTimezone: true }),
     faultAttempts: integer("fault_attempts").notNull().default(0),
     retryAfter: timestamp("retry_after", { withTimezone: true }),
+    // Why a cancelled row was cancelled, in words its payer can read (a
+    // fetch the site refused, a document too long to read), written with
+    // the cancel by cancelActionGroup (#1045). Never a provider's or the
+    // database's own text: it is on the public ledger. Cleared when the row
+    // leaves cancelled (trigger actions_clear_closed_reason). Null on a row
+    // cancelled by a path that gives no reason.
+    closedReason: text("closed_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

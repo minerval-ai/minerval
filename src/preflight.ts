@@ -71,7 +71,7 @@ import {
   type DeploymentFacts,
 } from "./preflight-deployment.js";
 import { featureOn, offFeatures, type FeatureName } from "./features.js";
-import { PUBLIC_LABEL } from "./labels.js";
+import { PUBLIC_LABEL, baseLabel, layersAreSplit, publishedLabel } from "./labels.js";
 import { ENDPOINT_ID_PREFIX, parseEndpointModelId, resolveProvider } from "./llm/providers/routing.js";
 import { anthropicServerWebSearch } from "./llm/tools/web-search-tool.js";
 import {
@@ -153,6 +153,13 @@ export interface PreflightFacts {
   holdsPrivate: boolean | null;
   /** The labels defined besides `public`, by name; null when the labels could not be read. */
   privateLabels: string[] | null;
+  /**
+   * On a members-only deployment whose `public` has been split into its
+   * bottom layers (src/labels.ts): the names of the base label and the
+   * published one. Null, or absent in facts made up for a test, where it
+   * has not been.
+   */
+  bottomLayers?: { base: string; published: string } | null;
   /**
    * The administrators' stored choice of providers for each label, where
    * provider_labels is not set; null when it could not be read. Absent
@@ -657,7 +664,34 @@ function whereCleared(config: Config): string {
 const STORED_UNKNOWN =
   "This could not be checked: the providers the administrators cleared for each label could not be read.";
 
-function checkProviderLabels({ config, privateLabels }: PreflightFacts): Outcome {
+/**
+ * Where the settings fix the clearance on a deployment split into its
+ * bottom layers: the layers the setting names for no provider. The split
+ * could seed nothing there (the setting, not the table, is what is in
+ * force), so until the setting names them no run at the members' label is
+ * served by any model. This is the one change an operator makes by hand.
+ */
+function bottomLayersNotNamed({ config, bottomLayers }: PreflightFacts): string | null {
+  if (!bottomLayers) return null;
+  const setting = config.providerLabels ?? {};
+  const names = Object.values(setting).flat();
+  const missing = [bottomLayers.base, bottomLayers.published].filter((label) => !names.includes(label));
+  if (missing.length === 0) return null;
+  const example = Object.entries(setting)
+    .filter(([, labels]) => labels.includes(PUBLIC_LABEL))
+    .map(([provider, labels]) => `${JSON.stringify(provider)}:${JSON.stringify([...new Set([...labels, bottomLayers.published, bottomLayers.base])])}`);
+  return (
+    `provider_labels names ${listed(missing.map((l) => `"${l}"`))} for no provider. This deployment's "public" was split: ` +
+    `"${bottomLayers.base}" now holds the organization's own material that every member reads, where work that names no label is done, ` +
+    `and "${bottomLayers.published}" holds what it released outside. A provider the setting does not name them for is sent neither, so ` +
+    `${missing.includes(bottomLayers.base) ? `every agent run at "${bottomLayers.base}" is refused before anything is sent` : `the outbound work at "${bottomLayers.published}" is refused`}. ` +
+    `Add them to the line of each provider that should serve them` +
+    (example.length > 0 ? `, for example ${example.join(", ")}.` : `: a provider cleared for "public" before the split served both.`)
+  );
+}
+
+function checkProviderLabels(facts: PreflightFacts): Outcome {
+  const { config, privateLabels } = facts;
   if (!clearanceFixedBySettings(config)) {
     return notApplicable(
       "provider_labels is not set, so the administrators choose which model providers and outside services each " +
@@ -666,6 +700,8 @@ function checkProviderLabels({ config, privateLabels }: PreflightFacts): Outcome
     );
   }
   const setting = config.providerLabels ?? {};
+  const layersMissing = bottomLayersNotNamed(facts);
+  if (layersMissing) return fail(layersMissing);
   if (Object.keys(setting).length === 0) {
     return notApplicable(
       "provider_labels is set and names nothing, so every model provider and outside service is cleared for public and for no other label."
@@ -1252,6 +1288,8 @@ export async function gatherPreflightFacts(options: { callOut?: boolean } = {}):
     // Left null: the checks that turn on it say that it could not be read.
   }
   const holdsPrivate = privateLabels === null ? null : privateLabels.length > 0;
+  // Read with the labels just now (db/clearance.ts reads the layers with its check on enforcement).
+  const bottomLayers = layersAreSplit() ? { base: baseLabel(), published: publishedLabel() } : null;
   // The administrators' choice, where the settings do not fix the clearance.
   let storedClearance: StoredClearance | null = {};
   if (!clearanceFixedBySettings(config)) {
@@ -1271,6 +1309,7 @@ export async function gatherPreflightFacts(options: { callOut?: boolean } = {}):
     configFile: appliedConfigFile(),
     holdsPrivate,
     privateLabels,
+    bottomLayers,
     storedClearance,
     endpointKeysMissing: endpointKeysMissing(config),
     database,

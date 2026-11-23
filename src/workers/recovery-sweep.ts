@@ -225,11 +225,22 @@ export async function sweepStalledIngests(): Promise<IngestSweepStats> {
         [row.action_id]
       );
       if (Number(prior?.n ?? 0) >= MAX_INGEST_REAPS) {
-        await rawQuery(
-          `UPDATE actions SET status = 'cancelled', updated_at = now()
-            WHERE id = $1 AND status = 'running'`,
+        // Cancelled with its reason, and the money on it back with its
+        // payers (#1045).
+        const { cancelActionGroup } = await import("../services/action-service.js");
+        const [group] = await rawQuery<{ exclusion_group: string }>(
+          `SELECT exclusion_group FROM actions WHERE id = $1`,
           [row.action_id]
         );
+        if (group) {
+          await cancelActionGroup(
+            group.exclusion_group,
+            `the extraction of ${row.target_ref ?? "this source"} stopped making progress ${MAX_INGEST_REAPS} ` +
+              `times and was given up on; the platform does not submit it again. Nothing is known to be wrong ` +
+              `with the source, and planning it again may succeed.`,
+            { only: row.action_id, statuses: ["running"] }
+          );
+        }
         await rawQuery(
           `UPDATE jobs SET error = $2, result = result - 'retried_by_platform' WHERE id = $1`,
           [

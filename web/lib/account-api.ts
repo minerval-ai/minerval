@@ -1,5 +1,6 @@
 import "server-only";
 import { WEB_VERSION, WEB_VERSION_HEADER } from "./version";
+import type { LabelLayers } from "./label-layers";
 import type {
   AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
 } from "./types";
@@ -344,6 +345,8 @@ export interface MyPermissions {
    * giving the code the API printed (docs/accounts.md, "The first administrator").
    */
   awaiting_first_administrator?: boolean;
+  /** Which labels are the bottom layers here (lib/label-layers.ts). Absent from an API that predates them. */
+  label_layers?: LabelLayers;
 }
 
 export async function fetchMyPermissions(externalId: string): Promise<MyPermissions> {

@@ -34,9 +34,9 @@ describe("work_label", () => {
       .map((c) => `${c.table_name}.${c.column_name} ${c.is_nullable === "NO" ? "not null" : "null"} ${c.column_default ?? ""}`.trim())
       .sort();
     expect(found).toEqual([
-      "api_keys.work_label not null 'public'::text",
+      "api_keys.work_label not null minerval_base_label()",
       "oauth_authorization_requests.work_label null",
-      "oauth_tokens.work_label not null 'public'::text",
+      "oauth_tokens.work_label not null minerval_base_label()",
     ]);
   });
 

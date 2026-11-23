@@ -24,7 +24,7 @@
  */
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { offerToGate } from "./gate-service.js";
 import { gateOf } from "./gate-settings-service.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
@@ -110,7 +110,7 @@ export async function keepsPublicCurrent(): Promise<{ asks: boolean; in_words: s
     rawQuery<{ n: string }>(
       `SELECT count(*) AS n FROM gates g JOIN redaction_policies p ON p.boundary_id = g.boundary_id AND p.side = 'page'
         WHERE p.to_outside AND g.keep_current_mandate IS NOT NULL AND g.sensitivity_label = $1`,
-      [PUBLIC_LABEL]
+      [publishedLabel()]
     )
   );
   const asks = Number(row?.n ?? 0) > 0;

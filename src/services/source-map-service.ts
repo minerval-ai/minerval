@@ -50,6 +50,7 @@ import {
 import { sourceContentHash } from "./source-content.js";
 import { decodeEntities, htmlToText } from "./html-text.js";
 import { interestsForClaim, type SourceInterestView } from "./source-interest-service.js";
+import { baseLabel } from "../labels.js";
 
 export class SourceMapError extends Error {
   constructor(message: string) {
@@ -1017,7 +1018,7 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
     if (nearer) {
       nearer.below = [
         ...(nearer.below ?? []),
-        { label: r.label ?? "public", support: r.support, note: r.note, read_at: new Date(r.updated_at).toISOString() },
+        { label: r.label ?? baseLabel(), support: r.support, note: r.note, read_at: new Date(r.updated_at).toISOString() },
       ];
       continue;
     }

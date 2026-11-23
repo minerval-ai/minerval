@@ -2,7 +2,8 @@
 # workers, the web app built members-only, and the sandbox.
 # docs/self-hosting.md has the steps, in order.
 #
-#   cp env.example .env        # then fill it in; it is never committed
+#   install -m 600 env.example .env   # readable by you alone; then fill
+#                                     # it in. It is never committed
 #   docker compose build
 #   docker compose up -d
 #
@@ -105,6 +106,8 @@ services:
       # No model is required here any more: a role whose model nobody has
       # chosen is named by the preflight's `models_chosen` check.
       - FIRST_ADMINISTRATOR
+      - MEMBERS_LABEL
+      - PUBLISHED_LABEL
       - SIGN_IN_VALID_HOURS
       - CLEARED_ROLE_PASSWORD
       - MINERVAL_OPERATOR_KEY
@@ -128,7 +131,6 @@ services:
       - STEWARD_STRONG_MODEL
       - CURATOR_MODEL
       - EXTRACTOR_MODEL
-      - EXTRACTOR_FALLBACK_MODEL
       - MATCHER_MODEL
       - TAGGER_MODEL
       - GOVERNANCE_MODEL

@@ -249,12 +249,13 @@ describe("effort", () => {
     expect(sentParams()).not.toHaveProperty("output_config");
   });
 
-  it("rides through the Fable beta path with the refusal fallback", async () => {
+  it("goes to the plain endpoint on the strong tier, with no refusal fallback (#1044)", async () => {
     await anthropicAdapter.complete({ messages, model: MODELS.strong, maxTokens: 64, effort: "high" });
-    const params = sentParams(mocks.betaCreate);
+    expect(mocks.betaCreate).not.toHaveBeenCalled();
+    const params = sentParams(mocks.create);
     expect(params.output_config).toEqual({ effort: "high" });
-    expect(params.betas).toEqual(["server-side-fallback-2026-06-01"]);
-    expect(params.fallbacks).toEqual([{ model: MODELS.opus }]);
+    expect(params).not.toHaveProperty("betas");
+    expect(params).not.toHaveProperty("fallbacks");
   });
 });
 
@@ -269,8 +270,10 @@ describe("usage and served model", () => {
     });
   });
 
-  it("reports the served model and whether a fallback ran", async () => {
-    mocks.betaCreate.mockResolvedValue(response({ model: MODELS.opus }));
+  it("reports the served model, and a turn another model served", async () => {
+    // No request asks for a fallback; this is the record that would show one
+    // the provider made on its own.
+    mocks.create.mockResolvedValue(response({ model: MODELS.opus }));
     const fell = await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
@@ -281,7 +284,7 @@ describe("usage and served model", () => {
     expect(fell.servedModel).toBe(MODELS.opus);
     expect(fell.fallbackRan).toBe(true);
 
-    mocks.betaCreate.mockResolvedValue(response({ model: MODELS.strong }));
+    mocks.create.mockResolvedValue(response({ model: MODELS.strong }));
     const same = await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
@@ -318,32 +321,23 @@ describe("usage and served model", () => {
 describe("replayable content", () => {
   const search = { type: "server_tool_use", id: "srvtoolu_1", name: "code_execution", input: {} };
   const result = { type: "code_execution_tool_result", tool_use_id: "srvtoolu_1", content: {} };
-  const fallback = {
-    type: "fallback",
-    from: { model: MODELS.strong },
-    to: { model: MODELS.opus },
-    trigger: { type: "refusal", category: "frontier_llm" },
-  };
   const blocks = (xs: unknown[]) => xs as Anthropic.ContentBlock[];
 
-  it("drops a declined model's server tool use left without its result, keeping the fallback block in place", async () => {
-    const declined = blocks([
+  it("drops a server tool use left without its result on the tool path, keeping the rest in place", async () => {
+    const cut = blocks([
       { type: "thinking", thinking: "t", signature: "s" },
       search,
-      fallback,
-      { type: "text", text: "The fallback's answer" },
+      { type: "text", text: "partial" },
       { type: "tool_use", id: "t1", name: "record", input: {} },
     ]);
-    mocks.betaCreate.mockResolvedValue(
-      response({ model: MODELS.opus, content: declined, stop_reason: "tool_use" })
-    );
+    mocks.create.mockResolvedValue(response({ content: cut, stop_reason: "tool_use" }));
     const turn = await anthropicAdapter.completeWithTools({
       messages,
       tools: [TOOL],
       model: MODELS.strong,
       maxTokens: 64,
     });
-    expect(turn.rawContent).toEqual([declined[0], fallback, declined[3], declined[4]]);
+    expect(turn.rawContent).toEqual([cut[0], cut[2], cut[3]]);
     expect(turn.toolUses.map((t) => t.id)).toEqual(["t1"]);
   });
 
@@ -472,7 +466,6 @@ describe("completeWithToolsStreaming", () => {
     tools: [TOOL],
     model: MODELS.strong,
     maxTokens: 200_000,
-    fallbacks: "none" as const,
   };
 
   it("streams on the long-run client and reads the final message", async () => {
@@ -508,7 +501,7 @@ describe("completeWithToolsStreaming", () => {
     const params = sentParams(mocks.betaStream);
     expect(params.max_tokens).toBe(LONG_RUN_MAX_OUTPUT_TOKENS);
     expect(params.tools[0].cache_control).toEqual(EPHEMERAL);
-    // Fable rejects sampling params; and no betas or fallbacks unless asked.
+    // Fable rejects sampling params; no betas unless asked, and never a fallback.
     expect(params).not.toHaveProperty("temperature");
     expect(params).not.toHaveProperty("betas");
     expect(params).not.toHaveProperty("fallbacks");
@@ -518,13 +511,6 @@ describe("completeWithToolsStreaming", () => {
   it("passes a smaller max_tokens through unchanged", async () => {
     await anthropicAdapter.completeWithToolsStreaming({ ...longRun, maxTokens: 4096 });
     expect(sentParams(mocks.betaStream).max_tokens).toBe(4096);
-  });
-
-  it("opts into the server-side fallback only when asked", async () => {
-    await anthropicAdapter.completeWithToolsStreaming({ ...longRun, fallbacks: "server" });
-    const params = sentParams(mocks.betaStream);
-    expect(params.betas).toEqual(["server-side-fallback-2026-06-01"]);
-    expect(params.fallbacks).toEqual([{ model: MODELS.opus }]);
   });
 
   it("sends effort and the task budget in output_config with the task-budgets beta", async () => {
@@ -544,15 +530,10 @@ describe("completeWithToolsStreaming", () => {
   it("appends caller betas after the derived ones, without duplicates", async () => {
     await anthropicAdapter.completeWithToolsStreaming({
       ...longRun,
-      fallbacks: "server",
       taskBudgetTokens: 20_000,
-      betas: ["compact-2026-01-12", "server-side-fallback-2026-06-01"],
+      betas: ["compact-2026-01-12", TASK_BUDGETS_BETA],
     });
-    expect(sentParams(mocks.betaStream).betas).toEqual([
-      "server-side-fallback-2026-06-01",
-      TASK_BUDGETS_BETA,
-      "compact-2026-01-12",
-    ]);
+    expect(sentParams(mocks.betaStream).betas).toEqual([TASK_BUDGETS_BETA, "compact-2026-01-12"]);
   });
 
   it("uses the same system blocks and history breakpoint as the tool path", async () => {
@@ -567,7 +548,7 @@ describe("completeWithToolsStreaming", () => {
     expect(countBreakpoints(params)).toBe(4);
   });
 
-  it("threads the container and reports a fallback-served turn", async () => {
+  it("threads the container and reports a turn another model served", async () => {
     mocks.betaStream.mockImplementation(() => ({
       finalMessage: async () =>
         response({

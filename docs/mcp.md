@@ -152,10 +152,13 @@ route needs a permission is offered only to a caller whose account holds
 it, and the server's instructions name the tools left out and say why.
 The routes for connections to an organization's systems
 (docs/connections.md) are in the same case: `list_connections`,
-`get_connection` and `list_connection_calls` are tools for a caller who
-holds `administer`, and adding a connection, changing one, picking
-which of its tools the graph's agents are offered, and giving or removing
-its credential take a session. A credential for another system is never a
+`get_connection`, `list_connection_calls` and `list_connection_writes` are
+tools for a caller who holds `administer`, and adding a connection,
+changing one, picking which of its tools the graph's agents are offered
+(and granting one to write), approving or declining a write that was held
+for an administrator, and giving or removing its credential take a
+session. The hold on a write exists so that a person looks before it is
+sent, so no tool can release one. A credential for another system is never a
 tool's input, so that it is in no agent's or outside client's transcript;
 `get_connection` says whether one was given, never what it is. So are
 the routes for file sets (docs/file-sets.md): `list_file_sets`,
@@ -686,6 +689,13 @@ They reach callers three ways, from one set of files:
 - **In the initialize instructions** (`MCP_INSTRUCTIONS` in
   `src/mcp/caller-skills.ts`), the shortest form of the principles, which
   every client is shown, with pointers to the resources.
+
+The files describe public Minerval. A members-only deployment adds a
+passage saying what differs there (its own addresses, who reads it, where
+its administrators connect the organization's systems) to the initialize
+instructions and to the head of each skill it serves as a resource
+(`src/llm/deployment-note.ts`; docs/accounts.md, "Permissions"). The plugin's copies are the files as they are, which is why
+`using-minerval` opens by saying which Minerval it describes.
 
 The Assistant (#646, docs/accounts.md) is a caller too. Its tools are this
 server's, built in process for its user at the trust of an API key

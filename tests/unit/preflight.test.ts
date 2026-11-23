@@ -338,6 +338,39 @@ describe("providers cleared by label", () => {
     });
   });
 
+  // #1203: after the split the setting has to name the two new labels, and
+  // nothing but the operator can put them there.
+  describe("on a deployment whose public was split into its bottom layers", () => {
+    const split = (providerLabels: Record<string, string[]> | undefined) =>
+      check("provider_labels", {
+        holdsPrivate: true,
+        privateLabels: ["internal", "members", "published"],
+        bottomLayers: { base: "members", published: "published" },
+        config: config({ providerLabels }),
+      });
+
+    it("fails until the setting names the base label and the published one, and says which lines to add", () => {
+      const result = split({ anthropic: ["public", "internal"], embeddings: ["public"] });
+      expect(result.status).toBe("fail");
+      expect(result.message).toContain(`provider_labels names "members" and "published" for no provider.`);
+      expect(result.message).toContain(`every agent run at "members" is refused before anything is sent`);
+      expect(result.message).toContain(`"anthropic":["public","internal","published","members"]`);
+      expect(result.message).toContain(`"embeddings":["public","published","members"]`);
+    });
+
+    it("says so of the published label alone when the base label is named", () => {
+      const result = split({ anthropic: ["public", "members"] });
+      expect(result.status).toBe("fail");
+      expect(result.message).toContain(`provider_labels names "published" for no provider.`);
+      expect(result.message).toContain(`the outbound work at "published" is refused`);
+    });
+
+    it("passes once both are named, and asks nothing where the administrators choose", () => {
+      expect(split({ anthropic: ["public", "published", "members"] }).status).toBe("pass");
+      expect(split(undefined).status).toBe("not_applicable");
+    });
+  });
+
   describe("where provider_labels is not set: the administrators' stored choice", () => {
     const stored = (privateLabels: string[], storedClearance: PreflightFacts["storedClearance"], over: Partial<Config> = {}) => ({
       ...withLabels(privateLabels, { ...ALL_ANTHROPIC, providerLabels: undefined, ...over }),
