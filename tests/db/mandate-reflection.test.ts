@@ -1,8 +1,9 @@
 /**
  * The review briefing's read-back of a mandate's money against real
- * Postgres: a commissioned run that spent its whole budget keeps
- * released_at NULL (completeAction stamps it only where something returns),
- * and is still a settled run, a run that ran short, and, when it metered
+ * Postgres: a commissioned run that spent its whole budget is stamped
+ * released like any other since #1045 (before, completeAction stamped it
+ * only where something returned, and the read-back still accepts that
+ * shape), and is a settled run, a run that ran short, and, when it metered
  * past its budget, a run whose spend includes the overage (#1027).
  */
 import { describe, it, expect } from "vitest";
@@ -43,13 +44,14 @@ describe("the review briefing's read-back", () => {
     await commissionAndRun(grantId, jobId, whole, 3 * OWL, 3 * OWL);
     await commissionAndRun(grantId, jobId, over, 3 * OWL, 4 * OWL);
 
-    // The premise: the fully spent allocations were never stamped released.
+    // Every commission is stamped released when its run settles, the fully
+    // spent ones included (#1045).
     const [unstamped] = await rawQuery<{ n: number }>(
       `SELECT count(*)::int AS n FROM action_allocations
         WHERE grant_id = $1 AND commissioned_by IS NOT NULL AND released_at IS NULL`,
       [grantId]
     );
-    expect(unstamped!.n).toBe(2);
+    expect(unstamped!.n).toBe(0);
 
     const text = await reflectionSections(grantId, since);
     const o = microUsdToOwls;
