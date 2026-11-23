@@ -43,6 +43,7 @@ import { startGatedWork } from "./workers/agent-work-gate.js";
 import { ConfigFileError } from "./config-file.js";
 import { startStoredSettings } from "./services/settings-service.js";
 import { recordVersionStarted } from "./services/versions-service.js";
+import { startReleaseCheck } from "./services/product-release-service.js";
 import { runningVersion } from "./version.js";
 import { firstAdministratorCodeLines, issueFirstAdministratorCode } from "./services/first-administrator-code.js";
 import type {
@@ -366,7 +367,12 @@ async function main() {
   const prices = startModelPriceRefresh({
     logger: { ...logger, warn: (...args: unknown[]) => app.log.warn(args) },
   });
-  const pollers: Array<{ stop: () => void }> = [work, prices, storedSettings];
+  // The list of Minerval's releases (docs/releases.md), read once a day
+  // where the deployment reads it at all. Outside the gate: it is not agent
+  // work, it sends nothing of the deployment's, and it is how an operator
+  // learns that a security release is out.
+  const releases = startReleaseCheck({ logger: console });
+  const pollers: Array<{ stop: () => void }> = [work, prices, storedSettings, releases];
 
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands

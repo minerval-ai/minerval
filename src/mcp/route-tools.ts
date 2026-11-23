@@ -293,6 +293,14 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // What this deployment has switched on (src/features.ts): a route behind
   // a feature that is off is not mounted, so it is not a tool here either.
   "GET /setup/features": { name: "list_features" },
+  // Minerval's own releases (routes/product-releases.ts). Not the gate's
+  // releases of pages, which are list_releases and get_release.
+  "GET /setup/releases": {
+    name: "list_product_releases",
+    note: "Free. These are releases of the Minerval software, not pages released through a gate (list_releases).",
+  },
+  "GET /setup/releases/latest": { name: "get_latest_product_release" },
+  "GET /setup/releases/:version": { name: "get_product_release" },
   "GET /setup/version": {
     name: "get_version",
     note: "Free. Name the version when you report a fault in the deployment.",
@@ -730,6 +738,15 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /labels/:label/face/:at": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
   "PUT /labels/:label/providers": PROVIDER_CLEARANCE_SESSION,
+  "POST /operator/releases":
+    "Adds signed entries to the list of Minerval's releases: the release workflow's act, on a tag, with the operator " +
+    "key, which is held outside every deployment surface on purpose. The list itself is a tool (list_product_releases).",
+  "POST /setup/releases/upload":
+    "Keeps a file of the list of releases that a person downloaded, for a deployment that reaches nothing outside: a " +
+    "person's act in their signed-in session. What the deployment knows of releases is in get_setup_checklist.",
+  "POST /setup/releases/steps":
+    "Says that a step of an upgrade was done on the machine. Only a person who did it, or saw it done, can say so; an " +
+    "agent cannot know. From a signed-in session, and logged.",
   "POST /setup/restart":
     "Ends the API's process, and with it every run in flight, to start it again with the settings as they now are. " +
     "It is a person's act in their signed-in session: an agent that could restart the deployment could end other " +

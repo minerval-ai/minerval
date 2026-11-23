@@ -81,6 +81,7 @@ import {
   type StoredClearance,
 } from "./provider-labels.js";
 import { givenVariable } from "./given-variables.js";
+import { releasesFacts, type ReleasesFacts } from "./services/product-release-service.js";
 import { isDevVersion, lastWebVersion, releaseOf, runningVersion, versionWithCommit, type RunningVersion } from "./version.js";
 import { readStoredClearance } from "./services/provider-clearance-service.js";
 import { SETTINGS, strayVariables, type RetiredVariable, type UnknownVariable } from "./settings-registry.js";
@@ -113,6 +114,12 @@ export interface PreflightReport {
   holds_private_material: boolean | null;
   /** No check failed. A check that is to do is not a failure. */
   ready: boolean;
+  /**
+   * What each part of the deployment says it runs, where it was read
+   * (docs/releases.md): the API, the web app once it has called, and the
+   * sandbox once it has answered.
+   */
+  versions?: { api: string; web: string | null; sandbox: string | null };
   /** Whether agent work may start: "refused" when a blocking check failed. */
   agent_work: "allowed" | "refused";
   checks: PreflightCheckResult[];
@@ -180,6 +187,12 @@ export interface PreflightFacts {
    * answer says (in `deployment.sandbox`). Absent reads as the API alone.
    */
   versions?: { api: RunningVersion; web: string | null };
+  /**
+   * What the deployment knows of Minerval's releases
+   * (services/product-release-service.ts). Absent, or null where the tables
+   * could not be read, the check says so.
+   */
+  releases?: ReleasesFacts | null;
   /**
    * The load-bearing roles whose model nothing has set, by their variables
    * (modelsNobodyChose in src/config.ts). Absent reads as every one chosen.
@@ -294,11 +307,16 @@ function sameBuild(a: string, b: string): boolean {
  * number. This fails when they do not report one: an image was rebuilt and
  * another was not. It does not block agent work.
  */
-function checkVersion({ versions, deployment }: PreflightFacts): Outcome {
-  if (!versions) return notApplicable("The parts' versions were not read.");
-  const sandbox = deployment.sandbox?.answers && deployment.sandbox.minervalVersion
+/** The release the sandbox says it is part of, with its commit where it is a build of main. Null where it did not say. */
+function sandboxVersion(deployment: DeploymentFacts): string | null {
+  return deployment.sandbox?.answers && deployment.sandbox.minervalVersion
     ? versionWithCommit(deployment.sandbox.minervalVersion, deployment.sandbox.minervalCommit ?? null)
     : null;
+}
+
+function checkVersion({ versions, deployment }: PreflightFacts): Outcome {
+  if (!versions) return notApplicable("The parts' versions were not read.");
+  const sandbox = sandboxVersion(deployment);
   const parts: Array<[string, string]> = [
     ["the API", versions.api.version],
     ...(versions.web ? ([["the web app", versions.web]] as Array<[string, string]>) : []),
@@ -326,6 +344,51 @@ function checkVersion({ versions, deployment }: PreflightFacts): Outcome {
   }
   const who = parts.length === 1 ? "The API runs" : `${listed(parts.map(([name]) => name)).replace(/^t/, "T")} run`;
   return pass(`${who} ${versions.api.version}${unheard.length > 0 ? `; ${unheard.join(", and ")}` : ""}.${dev}`);
+}
+
+/**
+ * Whether the deployment learns of new releases, and from where. It fails
+ * where the release it runs was withdrawn, where a security release is out
+ * that it does not run, and where it is set to read the list and cannot.
+ * It does not block agent work: an upgrade is the operator's to make.
+ */
+function checkReleases({ releases }: PreflightFacts): Outcome {
+  if (releases === undefined) return notApplicable("What this deployment knows of releases was not read.");
+  if (releases === null) return fail("What this deployment knows of releases could not be read from its database.");
+  if (releases.withdrawn) {
+    return fail(
+      `Release ${releases.withdrawn.version}, which this deployment runs, was withdrawn: ${releases.withdrawn.reason.replace(/\.$/, "")}. ` +
+        `Move to ${releases.withdrawn.move_to}: git fetch --tags, git checkout v${releases.withdrawn.move_to}, docker compose build, docker compose up -d.`
+    );
+  }
+  if (releases.securityNewer.length > 0) {
+    return fail(
+      `${releases.securityNewer.length === 1 ? "A security release is" : "Security releases are"} out that this deployment does not run: ` +
+        `${listed(releases.securityNewer)}. Its notes say what was exposed and since when; upgrade to it.`
+    );
+  }
+  if (releases.serves) {
+    return pass(`This deployment serves the list of releases itself; it holds ${plural(releases.known, "release")}.`);
+  }
+  if (releases.keys === 0) {
+    return pass(
+      "This version of Minerval carries no release key yet, so no list of releases can be checked: the deployment knows of releases from the notes in its own images."
+    );
+  }
+  if (!releases.reads) {
+    return pass(
+      `releases.check is "never", so this deployment asks nobody about releases: it learns of them only from the notes in its own images` +
+        (releases.known > 0 ? `, and from the list an administrator uploaded, which holds ${plural(releases.known, "release")}.` : ". A file of the list, downloaded from the public graph, can be uploaded on Health.")
+    );
+  }
+  if (releases.error) {
+    return fail(
+      `The list of releases could not be read (${releases.error}), so this deployment does not know whether a newer release is out. ` +
+        `It is asked for again daily and when Health is opened. A deployment that must reach nothing outside sets releases.check to "never".`
+    );
+  }
+  if (!releases.checkedAt) return pass("The list of releases has not been read yet; it is read shortly after the API starts, and daily.");
+  return pass(`The list of releases was read on ${releases.checkedAt.slice(0, 10)}, unsigned and with nothing that names this deployment; it holds ${plural(releases.known, "release")}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1004,6 +1067,7 @@ function checkWorkOutsideTheRunLog({ config, holdsPrivate }: PreflightFacts): Ou
 /** The checks, in the order they are reported. */
 export const PREFLIGHT_CHECKS: readonly PreflightCheck[] = [
   { name: "version", blocking: false, run: checkVersion },
+  { name: "releases", blocking: false, run: checkReleases },
   { name: "config_file", blocking: false, run: checkConfigFile },
   { name: "unknown_settings", blocking: false, run: checkUnknownSettings },
   { name: "settings", blocking: false, run: checkSettings },
@@ -1046,6 +1110,9 @@ export function evaluatePreflight(facts: PreflightFacts): PreflightReport {
   const refused = checks.some((c) => c.blocking && c.status === "fail");
   return {
     holds_private_material: facts.holdsPrivate,
+    ...(facts.versions
+      ? { versions: { api: facts.versions.api.version, web: facts.versions.web, sandbox: sandboxVersion(facts.deployment) } }
+      : {}),
     ready: checks.every((c) => c.status !== "fail"),
     agent_work: refused ? "refused" : "allowed",
     checks,
@@ -1213,6 +1280,7 @@ export async function gatherPreflightFacts(options: { callOut?: boolean } = {}):
     storedSettings: storedSettingsFacts(),
     modelsNobodyChose: modelsNobodyChose(),
     versions: { api: runningVersion(), web: lastWebVersion() },
+    releases: database.reachable ? await releasesFacts().catch(() => null) : null,
   };
 }
 

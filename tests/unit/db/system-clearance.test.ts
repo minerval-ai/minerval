@@ -136,6 +136,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "The hash of a code the API printed, and the first administrator's grants for the account that gave the code. Nothing read from a labelled table.",
     ],
   ],
+  "src/services/product-release-service.ts": [
+    [
+      "The list of Minerval's releases and the record of upgrade steps done are the deployment's own: they carry no label and name no row of the graph.",
+      "Signed entries of the list of releases, when the list was last read, and that a step of an upgrade was done with its entry in the administrators' log. Nothing read from a labelled table.",
+    ],
+  ],
   "src/services/versions-service.ts": [
     [
       "The record of which versions of the software this deployment has run is the deployment's own: it carries no label and names no row of the graph.",

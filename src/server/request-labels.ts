@@ -381,6 +381,19 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     rule: "none",
     why: "Grants the first administrator every permission, written on the database owner's connection to tables that carry no label (services/first-administrator-code.ts).",
   },
+  // ---- Minerval's releases (routes/product-releases.ts) ----
+  "POST /operator/releases": {
+    rule: "none",
+    why: "The operator key, on the list of Minerval's releases, which carries no label.",
+  },
+  "POST /setup/releases/upload": {
+    rule: "none",
+    why: "Keeps signed entries of the list of Minerval's releases, a table that carries no label, on the database owner's connection.",
+  },
+  "POST /setup/releases/steps": {
+    rule: "none",
+    why: "Records that a step of an upgrade was done, and its entry in the administrators' log: tables that carry no label.",
+  },
   // ---- the deployment's settings (routes/settings.ts) ----
   "PUT /settings/:key": { rule: "none", why: SETTINGS },
   "DELETE /settings/:key": { rule: "none", why: SETTINGS },
