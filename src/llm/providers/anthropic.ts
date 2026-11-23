@@ -67,7 +67,6 @@ export const TASK_BUDGETS_BETA = "task-budgets-2026-03-13";
 export const LONG_RUN_MAX_OUTPUT_TOKENS = 128_000;
 
 /** Default wall time one long-run turn may take before the SDK gives up on it. */
-const DEFAULT_LONG_RUN_TIMEOUT_MS = 3_600_000;
 
 let _client: Anthropic | null = null;
 let _longRunClient: Anthropic | null = null;
@@ -89,8 +88,8 @@ function getClient(): Anthropic {
   // Bound how long a single request can stall. The SDK default is 10 minutes,
   // so one wedged socket can freeze an entire ingestion run; cap it (override
   // with LLM_REQUEST_TIMEOUT_MS) and let the SDK's automatic retries recover.
-  const timeout = Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000);
-  const maxRetries = Number(process.env.LLM_MAX_RETRIES ?? 4);
+  const timeout = loadConfig().llmRequestTimeoutMs;
+  const maxRetries = loadConfig().llmMaxRetries;
   _client = new Anthropic({ apiKey: requireApiKey(), timeout, maxRetries });
   return _client;
 }
@@ -105,9 +104,7 @@ function getClient(): Anthropic {
  */
 export function getLongRunClient(): Anthropic {
   if (_longRunClient) return _longRunClient;
-  const timeout = Number(
-    process.env.LLM_LONG_RUN_TIMEOUT_MS ?? DEFAULT_LONG_RUN_TIMEOUT_MS
-  );
+  const timeout = loadConfig().llmLongRunTimeoutMs;
   _longRunClient = new Anthropic({ apiKey: requireApiKey(), timeout, maxRetries: 2 });
   return _longRunClient;
 }

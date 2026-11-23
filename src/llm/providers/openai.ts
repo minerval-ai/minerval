@@ -60,8 +60,8 @@ function getClient(): OpenAI {
   }
   _client = new OpenAI({
     apiKey: config.openaiApiKey,
-    timeout: Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000),
-    maxRetries: Number(process.env.LLM_MAX_RETRIES ?? 4),
+    timeout: loadConfig().llmRequestTimeoutMs,
+    maxRetries: loadConfig().llmMaxRetries,
     // The SDK's bundled HTTP client fails with "Premature close" against
     // api.openai.com in some environments (observed on ECS Fargate / Node 22);
     // native fetch works reliably there. Same override the embedding service

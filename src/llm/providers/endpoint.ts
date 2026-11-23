@@ -120,8 +120,8 @@ function getClient(endpoint: ModelEndpoint): OpenAI {
     // ignores the header this placeholder is sent in.
     apiKey: key || "none",
     baseURL: endpoint.baseUrl,
-    timeout: Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000),
-    maxRetries: Number(process.env.LLM_MAX_RETRIES ?? 4),
+    timeout: loadConfig().llmRequestTimeoutMs,
+    maxRetries: loadConfig().llmMaxRetries,
     fetch: ((...args: Parameters<typeof fetch>) => fetch(...args)) as unknown as NonNullable<
       ConstructorParameters<typeof OpenAI>[0]
     >["fetch"],

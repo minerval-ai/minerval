@@ -237,3 +237,10 @@ cap_text_analysis_owls = 0.1
 # [sandbox]
 # url = "http://sandbox:8080"
 # hour_cost_micro_usd = 50000
+
+# Whether this deployment learns of new releases from the public graph
+# ("daily", or "never" where it must reach nothing outside), and where it
+# reads the list. It reads it unsigned and says nothing of itself.
+# [releases]
+# check = "daily"
+# url = "https://api.minerval.ai"

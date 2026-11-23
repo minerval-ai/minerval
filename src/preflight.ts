@@ -74,6 +74,7 @@ import {
   type StoredClearance,
 } from "./provider-labels.js";
 import { readStoredClearance } from "./services/provider-clearance-service.js";
+import { strayVariables, type RetiredVariable, type UnknownVariable } from "./settings-registry.js";
 import { labelsBesidesPublic, publicIsTheOnlyLabel } from "./services/label-service.js";
 import { verifyRunLog } from "./services/run-view-service.js";
 import { openAgentRun, recordAgentStep, sealAgentRun } from "./services/trace-service.js";
@@ -151,6 +152,12 @@ export interface PreflightFacts {
   runLog: RunLogSelfTest;
   /** What a private deployment's settings need looked at (src/preflight-deployment.ts). */
   deployment: DeploymentFacts;
+  /**
+   * The environment variables the API was given that look like settings and
+   * are none, and the retired ones still set (src/settings-registry.ts).
+   * Absent (facts made up for a test) reads as none.
+   */
+  strays?: { unknown: UnknownVariable[]; retired: RetiredVariable[] };
 }
 
 type Outcome = { status: PreflightStatus; message: string };
@@ -206,6 +213,40 @@ function checkConfigFile({ configFile }: PreflightFacts): Outcome {
     `${read}; the environment overrides ${configFile.overridden.length} of them: ` +
       `${configFile.overridden.map((o) => `${o.key} (${o.env})`).join(", ")}.`
   );
+}
+
+// ---------------------------------------------------------------------------
+// Variables that look like settings and are none
+// ---------------------------------------------------------------------------
+
+/**
+ * A misspelt variable is read by nothing and says nothing, and a retired one
+ * goes on sitting in a file on the machine. This names both. It does not
+ * block: neither changes what the deployment does, only what its operator
+ * believes it does.
+ */
+function checkUnknownSettings({ strays }: PreflightFacts): Outcome {
+  const { unknown, retired } = strays ?? { unknown: [], retired: [] };
+  if (unknown.length === 0 && retired.length === 0) {
+    return pass("Every environment variable the API was given that looks like a setting is one.");
+  }
+  const parts: string[] = [];
+  if (unknown.length > 0) {
+    parts.push(
+      `${plural(unknown.length, "environment variable")} the API was given ${unknown.length === 1 ? "looks" : "look"} like ` +
+        `${unknown.length === 1 ? "a setting and is" : "settings and are"} read by nothing: ` +
+        `${unknown.map((u) => (u.nearest ? `${u.env} (did you mean ${u.nearest}?)` : u.env)).join(", ")}.`
+    );
+  }
+  if (retired.length > 0) {
+    parts.push(
+      `${plural(retired.length, "setting")} still set ${retired.length === 1 ? "was" : "were"} retired and ` +
+        `${retired.length === 1 ? "is" : "are"} read by nothing: ` +
+        `${retired.map((r) => `${r.env} (retired in ${r.retiredIn}; in its place, ${r.replacedBy})`).join(", ")}. ` +
+        `Remove ${retired.length === 1 ? "it" : "them"} from the machine's environment.`
+    );
+  }
+  return fail(parts.join(" "));
 }
 
 // ---------------------------------------------------------------------------
@@ -841,6 +882,7 @@ function checkWorkOutsideTheRunLog({ config, holdsPrivate }: PreflightFacts): Ou
 /** The checks, in the order they are reported. */
 export const PREFLIGHT_CHECKS: readonly PreflightCheck[] = [
   { name: "config_file", blocking: false, run: checkConfigFile },
+  { name: "unknown_settings", blocking: false, run: checkUnknownSettings },
   { name: "database", blocking: true, run: checkDatabase },
   { name: "run_log", blocking: true, run: checkRunLog },
   { name: "models", blocking: false, run: checkModels },
@@ -1034,6 +1076,7 @@ export async function gatherPreflightFacts(): Promise<PreflightFacts> {
     database,
     runLog,
     deployment: await gatherDeploymentFacts(config, database.reachable),
+    strays: strayVariables(process.env),
   };
 }
 

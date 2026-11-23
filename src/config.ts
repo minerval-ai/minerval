@@ -1588,6 +1588,33 @@ const configSchema = z.object({
   // secret. Unset in production, the provider answers that it is not set
   // up; elsewhere a key is made for the life of the process.
   oidcSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // The version the running code was built as, baked into the image at build
+  // time (Dockerfile MINERVAL_VERSION, from package.json and the checkout;
+  // docs/releases.md). Unset in a run from a checkout, which reads
+  // package.json itself (src/version.ts).
+  version: z.string().trim().default(""),
+  // Whether this deployment reads the list of releases from the public
+  // graph (docs/releases.md, "What is current"): "daily", the starting
+  // value, or "never", for a deployment that must reach nothing outside. It
+  // then learns of releases only from the notes in its own images, or from
+  // a file of the list an administrator uploads.
+  releasesCheck: z.enum(["daily", "never"]).default("daily"),
+  // Where the list is read from: the public graph's API. Read unsigned,
+  // with no key and nothing that says who asks or what they run.
+  releasesUrl: z
+    .string()
+    .trim()
+    .refine((url) => /^https?:\/\/[^\s]+$/.test(url), {
+      message: 'RELEASES_URL must be an http or https address, for example "https://api.minerval.ai".',
+    })
+    .default("https://api.minerval.ai"),
+  // One model call (src/llm/providers/*): how long it may take before the
+  // client gives it up, the same for a long-run model's call, and how many
+  // times a call that failed is made again. A caller is waiting on each
+  // call and nothing spends while one hangs, so no budget can end it.
+  llmRequestTimeoutMs: z.coerce.number().int().positive().default(180_000),
+  llmLongRunTimeoutMs: z.coerce.number().int().positive().default(3_600_000),
+  llmMaxRetries: z.coerce.number().int().min(0).default(4),
   // The largest package a graph admits, in bytes. A backstop: a page is a
   // node's assessment with its arguments and readings, a few hundred
   // kilobytes at most, and the route that receives one parses it whole
@@ -1672,6 +1699,27 @@ export function configFieldProblem(field: string, value: string): string | null 
     .map((issue) => issue.message.replace(/^Invalid (option|input): /, "").replace(/"\|"/g, '", "'))
     .join("; ");
   return /[.!?]$/.test(said) ? said : `${said}.`;
+}
+
+/**
+ * The value a field has when nothing sets it, as the environment would hold
+ * it; null for a field that is simply absent then. Read from the schema
+ * above, so a default is written only there: the settings page shows it and
+ * releases/settings.json records it (docs/releases.md).
+ */
+export function configFieldDefault(field: string): string | null {
+  let schema = (configSchema.shape as Record<string, z.ZodType | undefined>)[field] as
+    | { def?: { type?: string; defaultValue?: unknown; in?: unknown; innerType?: unknown } }
+    | undefined;
+  for (let depth = 0; schema?.def && depth < 12; depth++) {
+    const { type, defaultValue } = schema.def;
+    if (type === "default" || type === "prefault") {
+      const value = typeof defaultValue === "function" ? (defaultValue as () => unknown)() : defaultValue;
+      return value === undefined || value === null ? null : String(value);
+    }
+    schema = (type === "pipe" ? schema.def.in : schema.def.innerType) as typeof schema;
+  }
+  return null;
 }
 
 export function loadConfig(): Config {
@@ -1777,7 +1825,13 @@ export function loadConfig(): Config {
     urlExtractionStallMinutes: process.env.URL_EXTRACTION_STALL_MINUTES,
     queueStallMinutes: process.env.QUEUE_STALL_MINUTES,
     pipelineEpoch: process.env.PIPELINE_EPOCH,
-    gitSha: process.env.GIT_SHA || undefined,
+    gitSha: process.env.MINERVAL_COMMIT || process.env.GIT_SHA || undefined,
+    version: process.env.MINERVAL_VERSION,
+    releasesCheck: process.env.RELEASES_CHECK || undefined,
+    releasesUrl: process.env.RELEASES_URL || undefined,
+    llmRequestTimeoutMs: process.env.LLM_REQUEST_TIMEOUT_MS || undefined,
+    llmLongRunTimeoutMs: process.env.LLM_LONG_RUN_TIMEOUT_MS || undefined,
+    llmMaxRetries: process.env.LLM_MAX_RETRIES || undefined,
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,
     matchingTopK: process.env.MATCHING_TOP_K,
     matcherBudgetUsd: process.env.MATCHER_BUDGET_USD,

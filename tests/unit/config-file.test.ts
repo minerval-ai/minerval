@@ -20,7 +20,7 @@ import {
   type ConfigFileSettings,
   type ConfigFileValue,
 } from "../../src/config-file.js";
-import { configFieldProblem } from "../../src/config.js";
+import { configFieldDefault, configFieldProblem } from "../../src/config.js";
 import { MODELS } from "../../src/llm/models.js";
 
 const ROOT = resolve(__dirname, "..", "..");
@@ -115,6 +115,9 @@ describe("the table of settings", () => {
       [
         "ANTHROPIC_API_KEY",
         "API_KEYS",
+        "CLEARED_ROLE_PASSWORD",
+        "LEAN_CHECKER_TOKEN",
+        "MIRROR_SIGNING_KEY",
         "CREDENTIAL_ENCRYPTION_KEY",
         "CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS",
         "DATABASE_URL",
@@ -215,7 +218,21 @@ const SAMPLES: Record<string, { file: ConfigFileValue; loads?: unknown }> = {
   "sandbox.hour_cost_micro_usd": { file: 0 },
   "database.tls": { file: "off" },
   "database.ca_file": { file: "", loads: undefined },
+  "releases.check": { file: "never" },
 };
+
+/**
+ * The tuning is sampled at its own default, in the kind the file writes it:
+ * what is checked is that every one of them can be written in a file, read
+ * back and accepted by the schema.
+ */
+function tuningSample(key: { key: string; kind: string; field?: string }): ConfigFileValue | undefined {
+  const text = configFieldDefault(key.field!);
+  if (key.kind === "number") return text === null ? undefined : Number(text);
+  if (key.kind === "boolean") return text === "true";
+  if (key.kind === "list") return (text ?? "").split(",").filter((item) => item.length > 0);
+  return text ?? undefined;
+}
 
 function sampleFor(key: { key: string; kind: string }): { file: ConfigFileValue; loads: unknown } {
   const given = SAMPLES[key.key];
@@ -233,14 +250,31 @@ describe("the file as a layer under the environment", () => {
   it("carries every setting it can hold to the config field it stands for", async () => {
     clearSettings();
     const settings: ConfigFileSettings = {};
-    for (const key of settableConfigFileKeys()) settings[key.key] = sampleFor(key).file;
+    for (const key of settableConfigFileKeys().filter((k) => !k.tuning)) settings[key.key] = sampleFor(key).file;
     nameFile(renderConfigFile(settings, configFieldProblem));
 
     const { loadConfig } = await freshConfig();
     const config = loadConfig() as unknown as Record<string, unknown>;
-    for (const key of settableConfigFileKeys()) {
+    for (const key of settableConfigFileKeys().filter((k) => !k.tuning)) {
       expect(config[key.field!], key.key).toEqual(sampleFor(key).loads);
     }
+  });
+
+  it("carries every tuning setting too: each is written, read back and loads as its default", async () => {
+    clearSettings();
+    const byDefault = { ...((await freshConfig()).loadConfig() as unknown as Record<string, unknown>) };
+    vi.resetModules();
+    const settings: ConfigFileSettings = {};
+    const tuning = settableConfigFileKeys().filter((k) => k.tuning);
+    expect(tuning.length).toBeGreaterThan(150);
+    for (const key of tuning) {
+      const sample = tuningSample(key);
+      if (sample !== undefined) settings[key.key] = sample;
+    }
+    expect(Object.keys(settings).length).toBeGreaterThan(150);
+    nameFile(renderConfigFile(settings, configFieldProblem));
+    const config = (await freshConfig()).loadConfig() as unknown as Record<string, unknown>;
+    for (const key of tuning) expect(config[key.field!], key.key).toEqual(byDefault[key.field!]);
   });
 
   it("lets an environment variable override the file for the same setting, and says so", async () => {
@@ -360,7 +394,8 @@ describe("what a file is refused for", () => {
     expect(problemsOf(() => parse('[run_logs]\nmode = "record"\n'))).toEqual([
       "run_logs is not a group of settings. Did you mean run_log? The groups are: features, models, " +
         "model_providers, outside_services, provider_labels, run_log, hosting, database, pricing, private_runs, publishing, " +
-        "public_graph, usage_report, file_sets, sandbox.",
+        "public_graph, usage_report, file_sets, sandbox, releases, accounts, budgets, allocation, sessions, limits, sql, " +
+        "processing, sweeps, researcher, mathematics, mirror, queues, build.",
     ]);
     expect(problemsOf(() => parse('[run_log]\nmodes = "record"\n'))).toEqual([
       "run_log.modes is not a setting. Did you mean run_log.mode? [run_log] holds: mode, level, retention_days.",
@@ -600,8 +635,8 @@ describe("writing settings back", () => {
 describe("the page that explains the file, docs/deployment.md", () => {
   const page = readFileSync(join(ROOT, "docs", "deployment.md"), "utf8");
 
-  it("describes every setting the file can hold, under its group, with its environment variable", () => {
-    for (const key of settableConfigFileKeys()) {
+  it("describes every setting a deployment decides, under its group, with its environment variable", () => {
+    for (const key of settableConfigFileKeys().filter((k) => !k.tuning)) {
       if (key.kind === "groups" || key.kind === "lists") {
         // A structured setting has a heading of its own, written as its groups are in the file.
         const brackets = key.kind === "groups" ? `[[${key.key}]]` : `[${key.key}]`;
@@ -651,12 +686,13 @@ describe("the example file, deploy/minerval.example.toml", () => {
     expect(parseConfigFile(renderConfigFile(settings, configFieldProblem), configFieldProblem)).toEqual(settings);
   });
 
-  it("shows every setting a file can hold, set or as a commented line", () => {
+  it("shows every setting a deployment decides, set or as a commented line; the tuning is in docs/settings.md", () => {
     // A commented line that is a heading ([group] or [[group]]) or a setting (a name, bare or in quotes).
     const uncommented = text.replace(/^# (\[\[?[a-z_.]+\]\]?|(?:[a-z_]+|"[a-z_:]+") = .+)$/gm, "$1");
     const shown = parseConfigFile(uncommented, configFieldProblem);
     expect(Object.keys(shown).sort()).toEqual(
       settableConfigFileKeys()
+        .filter((k) => !k.tuning)
         .map((k) => k.key)
         .sort()
     );
@@ -686,7 +722,7 @@ describe("the example file, deploy/minerval.example.toml", () => {
       pangramEnabled: "false",
       paymentsEnabled: "true",
     };
-    for (const key of settableConfigFileKeys()) {
+    for (const key of settableConfigFileKeys().filter((k) => !k.tuning)) {
       const field = key.field!;
       const expected = field in saidOnlyInTheFile ? saidOnlyInTheFile[field] : fromProduction[field];
       expect(fromExample[field], key.key).toEqual(expected);

@@ -14,9 +14,10 @@
  * one. So there is still one place a value is turned into a setting, which
  * is loadConfig, reading the variables it always read.
  *
- * Every key the file may hold is a row of CONFIG_FILE_KEYS below: its name
- * in the file, the environment variable it stands for, and the config field
- * that variable fills. The table holds names only. What a value may be (which
+ * Every key the file may hold is a row of the registry
+ * (src/settings-registry.ts): its name in the file, the environment variable
+ * it stands for, and the config field that variable fills. The registry
+ * holds names only. What a value may be (which
  * model ids resolve, which modes exist, which numbers are in range) is asked
  * of the config schema itself through the `check` a caller passes
  * (configFieldProblem in src/config.ts), so the schema is written once.
@@ -38,8 +39,8 @@
  * An endpoint's key is named by its environment variable (key_env), never
  * written, so neither holds a secret.
  *
- * This module imports nothing from the rest of the code, so config.ts can
- * load it first.
+ * This module imports nothing from the rest of the code but the registry,
+ * which imports nothing, so config.ts can load it first.
  */
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -51,16 +52,9 @@ export const CONFIG_FILE_ENV = "MINERVAL_CONFIG";
 /** Read from the working directory when it exists and MINERVAL_CONFIG is not set. */
 export const DEFAULT_CONFIG_FILE = "minerval.toml";
 
-/**
- * What a value is in the file. The environment holds only text, so each kind
- * has one way of being written there: a number in digits, a boolean as
- * "true" or "false", a list as its items joined by commas. The two
- * structured kinds are written there as JSON: "groups" is a list of groups
- * that each hold the same few settings (a JSON list of objects), and "lists"
- * is one group whose names the deployment chooses, each with a list of text
- * (a JSON object of lists).
- */
-export type ConfigFileKind = "text" | "number" | "boolean" | "list" | "groups" | "lists";
+import { SETTINGS, editDistance, type Setting, type SettingKind } from "./settings-registry.js";
+
+export type ConfigFileKind = SettingKind;
 
 /** One group of a "groups" setting, by the names its settings have in the file. */
 export type ConfigFileGroupValue = Record<string, string | number | boolean>;
@@ -70,25 +64,8 @@ export type ConfigFileValue = string | number | boolean | string[] | ConfigFileG
 /** A file's settings, keyed by the dotted name of each (`run_log.mode`). */
 export type ConfigFileSettings = Record<string, ConfigFileValue>;
 
-export interface ConfigFileKey {
-  /** The setting's name in the file: its group, a dot, its name in the group. */
-  key: string;
-  /** The environment variable the setting stands for. */
-  env: string;
-  kind: ConfigFileKind;
-  /**
-   * The field of the config schema (src/config.ts) the variable fills.
-   * Absent only on secrets, which the file never carries.
-   */
-  field?: string;
-  /** A secret: refused in a file and never written to one. */
-  secret?: true;
-  /**
-   * For "groups": the settings each group holds, in the order they are
-   * written, from the name in the file to the name in the variable's JSON.
-   */
-  members?: Readonly<Record<string, string>>;
-}
+/** A row of the registry (src/settings-registry.ts), which is where every setting is listed. */
+export type ConfigFileKey = Setting;
 
 /**
  * Asks the config schema whether `value`, as the environment would hold it,
@@ -97,277 +74,12 @@ export interface ConfigFileKey {
  */
 export type FieldCheck = (field: string, value: string) => string | null;
 
-const model = (name: string, env: string, field: string): ConfigFileKey => ({
-  key: `models.${name}`,
-  env,
-  kind: "text",
-  field,
-});
-
-const secret = (key: string, env: string): ConfigFileKey => ({ key, env, kind: "text", secret: true });
-
 /**
  * Every setting a config file may hold, in the order a written file lists
- * them, and every secret a file may not hold. Not every setting the code has
- * is here: the rest are tuning that a deployment rarely decides, and they
- * stay environment variables (docs/deployment.md lists which, and why).
+ * them, every secret a file may not hold, and every retired setting a file
+ * should no longer hold. It is the registry itself.
  */
-export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
-  { key: "features.off", env: "FEATURES_OFF", kind: "list", field: "featuresOff" },
-
-  // Which model serves which role. The roles are the config schema's.
-  model("steward", "STEWARD_MODEL", "stewardModel"),
-  model("steward_strong", "STEWARD_STRONG_MODEL", "stewardStrongModel"),
-  model("curator", "CURATOR_MODEL", "curatorModel"),
-  model("extractor", "EXTRACTOR_MODEL", "extractorModel"),
-  model("extractor_fallback", "EXTRACTOR_FALLBACK_MODEL", "extractorFallbackModel"),
-  model("matcher", "MATCHER_MODEL", "matcherModel"),
-  model("tagger", "TAGGER_MODEL", "taggerModel"),
-  model("contribution_reviewer", "GOVERNANCE_MODEL", "governanceModel"),
-  model("audit", "AUDIT_MODEL", "auditModel"),
-  model("arbitration", "ARBITRATION_MODEL", "arbitrationModel"),
-  model("grantmaker", "GRANTMAKER_MODEL", "grantmakerModel"),
-  model("program_officer", "PROGRAM_OFFICER_MODEL", "programOfficerModel"),
-  model("lookout", "LOOKOUT_MODEL", "lookoutModel"),
-  model("correspondent", "CORRESPONDENT_MODEL", "correspondentModel"),
-  model("consistency", "CONSISTENCY_MODEL", "consistencyModel"),
-  model("consistency_strong", "CONSISTENCY_STRONG_MODEL", "consistencyStrongModel"),
-  model("assistant", "ASSISTANT_MODEL", "assistantModel"),
-  model("assistant_standard", "ASSISTANT_STANDARD_MODEL", "assistantStandardModel"),
-  model("assistant_title", "ASSISTANT_TITLE_MODEL", "assistantTitleModel"),
-  model("assistant_markup", "ASSISTANT_MARKUP_MODEL", "assistantMarkupModel"),
-  model("researcher_strong", "RESEARCHER_STRONG_MODEL", "researcherStrongModel"),
-  model("researcher_standard", "RESEARCHER_STANDARD_MODEL", "researcherStandardModel"),
-  model("researcher_cheap", "RESEARCHER_CHEAP_MODEL", "researcherCheapModel"),
-  model("solver", "SOLVER_MODEL", "solverModel"),
-  model("judge", "JUDGE_MODEL", "judgeModel"),
-  // Empty for the Steward's model: the Redactor then runs on that.
-  model("redactor", "REDACTOR_MODEL", "redactorModel"),
-
-  {
-    key: "model_providers.openrouter_provider_sort",
-    env: "OPENROUTER_PROVIDER_SORT",
-    kind: "text",
-    field: "openrouterProviderSort",
-  },
-  secret("model_providers.anthropic_api_key", "ANTHROPIC_API_KEY"),
-  secret("model_providers.openai_api_key", "OPENAI_API_KEY"),
-  secret("model_providers.openrouter_api_key", "OPENROUTER_API_KEY"),
-  // The deployment's own model endpoints (src/llm/providers/endpoint-config.ts).
-  // Written last in its group: a [[...]] heading ends the plain settings above it.
-  {
-    key: "model_providers.endpoints",
-    env: "MODEL_ENDPOINTS",
-    kind: "groups",
-    field: "modelEndpoints",
-    members: {
-      name: "name",
-      base_url: "baseUrl",
-      key_env: "keyEnv",
-      input_usd_per_mtok: "inputUsdPerMtok",
-      output_usd_per_mtok: "outputUsdPerMtok",
-    },
-  },
-
-  { key: "outside_services.elicit.use", env: "ELICIT_ENABLED", kind: "boolean", field: "elicitEnabled" },
-  { key: "outside_services.elicit.url", env: "ELICIT_MCP_URL", kind: "text", field: "elicitMcpUrl" },
-  {
-    key: "outside_services.elicit.usd_per_call",
-    env: "ELICIT_USD_PER_CALL",
-    kind: "number",
-    field: "elicitUsdPerCall",
-  },
-  secret("outside_services.elicit.api_key", "ELICIT_API_KEY"),
-
-  { key: "outside_services.pangram.use", env: "PANGRAM_ENABLED", kind: "boolean", field: "pangramEnabled" },
-  { key: "outside_services.pangram.url", env: "PANGRAM_API_URL", kind: "text", field: "pangramApiUrl" },
-  {
-    key: "outside_services.pangram.plagiarism_url",
-    env: "PANGRAM_PLAGIARISM_API_URL",
-    kind: "text",
-    field: "pangramPlagiarismApiUrl",
-  },
-  { key: "outside_services.pangram.model", env: "PANGRAM_MODEL", kind: "text", field: "pangramModel" },
-  {
-    key: "outside_services.pangram.ai_usd_per_word",
-    env: "PANGRAM_AI_USD_PER_WORD",
-    kind: "number",
-    field: "pangramAiUsdPerWord",
-  },
-  {
-    key: "outside_services.pangram.plagiarism_usd_per_word",
-    env: "PANGRAM_PLAGIARISM_USD_PER_WORD",
-    kind: "number",
-    field: "pangramPlagiarismUsdPerWord",
-  },
-  { key: "outside_services.pangram.max_words", env: "PANGRAM_MAX_WORDS", kind: "number", field: "pangramMaxWords" },
-  secret("outside_services.pangram.api_key", "PANGRAM_API_KEY"),
-
-  { key: "outside_services.payments.use", env: "PAYMENTS_ENABLED", kind: "boolean", field: "paymentsEnabled" },
-  secret("outside_services.payments.stripe_secret_key", "STRIPE_SECRET_KEY"),
-  secret("outside_services.payments.stripe_webhook_secret", "STRIPE_WEBHOOK_SECRET"),
-
-  { key: "outside_services.github_issues.repo", env: "GITHUB_ISSUES_REPO", kind: "text", field: "githubIssuesRepo" },
-  { key: "outside_services.github_issues.label", env: "GITHUB_ISSUES_LABEL", kind: "text", field: "githubIssuesLabel" },
-  {
-    key: "outside_services.github_issues.include_external_reports",
-    env: "GITHUB_ISSUES_INCLUDE_EXTERNAL",
-    kind: "boolean",
-    field: "githubIssuesIncludeExternal",
-  },
-  {
-    key: "outside_services.github_issues.api_base_url",
-    env: "GITHUB_API_BASE_URL",
-    kind: "text",
-    field: "githubApiBaseUrl",
-  },
-  { key: "outside_services.github_issues.app_id", env: "GITHUB_APP_ID", kind: "text", field: "githubAppId" },
-  {
-    key: "outside_services.github_issues.app_installation_id",
-    env: "GITHUB_APP_INSTALLATION_ID",
-    kind: "text",
-    field: "githubAppInstallationId",
-  },
-  secret("outside_services.github_issues.token", "GITHUB_TOKEN"),
-  secret("outside_services.github_issues.app_private_key", "GITHUB_APP_PRIVATE_KEY"),
-
-  // Which labels each model provider and outside service may be sent text at
-  // (src/provider-labels.ts). A group of its own: it speaks of both.
-  { key: "provider_labels", env: "PROVIDER_LABELS", kind: "lists", field: "providerLabels" },
-
-  { key: "run_log.mode", env: "RUN_LOG_MODE", kind: "text", field: "runLogMode" },
-  { key: "run_log.level", env: "TRACE_LEVEL", kind: "text", field: "traceLevel" },
-  { key: "run_log.retention_days", env: "TRACE_RETENTION_DAYS", kind: "number", field: "traceRetentionDays" },
-
-  { key: "hosting.environment", env: "ENVIRONMENT", kind: "text", field: "env" },
-  { key: "hosting.web_base_url", env: "PUBLIC_WEB_BASE_URL", kind: "text", field: "publicWebBaseUrl" },
-  { key: "hosting.api_base_url", env: "PUBLIC_API_BASE_URL", kind: "text", field: "publicApiBaseUrl" },
-  { key: "hosting.citation_url_base", env: "CITATION_URL_BASE", kind: "text", field: "citationUrlBase" },
-  { key: "hosting.cors_origins", env: "CORS_ORIGINS", kind: "list", field: "corsOrigins" },
-  { key: "hosting.host", env: "HOST", kind: "text", field: "host" },
-  { key: "hosting.port", env: "PORT", kind: "number", field: "port" },
-  { key: "hosting.log_level", env: "LOG_LEVEL", kind: "text", field: "logLevel" },
-  {
-    key: "hosting.anonymous_rate_limit_per_minute",
-    env: "ANONYMOUS_RATE_LIMIT_PER_MINUTE",
-    kind: "number",
-    field: "anonymousRateLimitPerMinute",
-  },
-  secret("hosting.api_keys", "API_KEYS"),
-  secret("hosting.operator_key", "MINERVAL_OPERATOR_KEY"),
-
-  { key: "database.host", env: "DB_HOST", kind: "text", field: "dbHost" },
-  { key: "database.port", env: "DB_PORT", kind: "number", field: "dbPort" },
-  { key: "database.name", env: "DB_NAME", kind: "text", field: "dbName" },
-  { key: "database.user", env: "DB_USERNAME", kind: "text", field: "dbUser" },
-  // How the connection is secured where the database is not on RDS: "off"
-  // for one on a network of the deployment's own, or the authority its
-  // certificate is checked against. One of the two, never both.
-  { key: "database.tls", env: "DATABASE_TLS", kind: "text", field: "databaseTls" },
-  { key: "database.ca_file", env: "DATABASE_CA_FILE", kind: "text", field: "databaseCaFile" },
-  secret("database.password", "DB_PASSWORD"),
-  // A connection string carries its password.
-  secret("database.url", "DATABASE_URL"),
-  secret("database.sql_agent_url", "SQL_AGENT_DATABASE_URL"),
-  secret("database.sql_caller_url", "SQL_CALLER_DATABASE_URL"),
-  secret("database.sql_agent_password", "SQL_AGENT_DB_PASSWORD"),
-  secret("database.sql_caller_password", "SQL_CALLER_DB_PASSWORD"),
-
-  { key: "pricing.owl_price_micro_usd", env: "OWL_PRICE_MICRO_USD", kind: "number", field: "owlPriceMicroUsd" },
-  { key: "pricing.owl_cost_micro_usd", env: "OWL_COST_MICRO_USD", kind: "number", field: "owlCostMicroUsd" },
-  { key: "pricing.owl_packs", env: "OWL_PACKS", kind: "list", field: "owlPacks" },
-  { key: "pricing.signup_grant_owls", env: "SIGNUP_GRANT_OWLS", kind: "number", field: "signupGrantOwls" },
-  { key: "pricing.monthly_grant_owls", env: "MONTHLY_GRANT_OWLS", kind: "number", field: "monthlyGrantOwls" },
-  { key: "pricing.guest_ask_owls", env: "GUEST_ASK_OWLS", kind: "number", field: "guestAskOwls" },
-  { key: "pricing.guest_ask_daily_owls", env: "GUEST_ASK_DAILY_OWLS", kind: "number", field: "guestAskDailyOwls" },
-  { key: "pricing.guest_ask_per_address_per_day", env: "GUEST_ASK_PER_ADDRESS_PER_DAY", kind: "number", field: "guestAskPerAddressPerDay" },
-  {
-    key: "pricing.cap_claim_proposal_owls",
-    env: "CAP_CLAIM_PROPOSAL_OWLS",
-    kind: "number",
-    field: "capClaimProposalOwls",
-  },
-  { key: "pricing.cap_assessment_owls", env: "CAP_ASSESSMENT_OWLS", kind: "number", field: "capAssessmentOwls" },
-  {
-    key: "pricing.cap_source_ingest_owls",
-    env: "CAP_SOURCE_INGEST_OWLS",
-    kind: "number",
-    field: "capSourceIngestOwls",
-  },
-  {
-    key: "pricing.cap_extension_analysis_owls",
-    env: "CAP_EXTENSION_ANALYSIS_OWLS",
-    kind: "number",
-    field: "capExtensionAnalysisOwls",
-  },
-  {
-    key: "pricing.cap_text_analysis_owls",
-    env: "CAP_TEXT_ANALYSIS_OWLS",
-    kind: "number",
-    field: "capTextAnalysisOwls",
-  },
-  // Whether owls are sold or the deployment's administrators create them.
-  { key: "pricing.owls", env: "OWLS", kind: "text", field: "owls" },
-  // How often the public price lists are read (services/model-price-service.ts).
-  {
-    key: "pricing.model_price_refresh_hours",
-    env: "MODEL_PRICE_REFRESH_HOURS",
-    kind: "number",
-    field: "modelPriceRefreshHours",
-  },
-  // Prices the deployment states for models (src/llm/model-prices.ts).
-  // Written last in its group: a [[...]] heading ends the plain settings above it.
-  {
-    key: "pricing.model_prices",
-    env: "MODEL_PRICES",
-    kind: "groups",
-    field: "modelPrices",
-    members: {
-      model: "model",
-      input_usd_per_mtok: "inputUsdPerMtok",
-      output_usd_per_mtok: "outputUsdPerMtok",
-      cache_read_multiplier: "cacheReadMultiplier",
-      cache_write_multiplier: "cacheWriteMultiplier",
-    },
-  },
-
-  // Which addresses the tools of a run that reads a private label take.
-  { key: "private_runs.fetches", env: "PRIVATE_RUN_FETCHES", kind: "text", field: "privateRunFetches" },
-
-  // Releasing pages outside (docs/published-pages.md). The signing key is a secret.
-  { key: "publishing.hosting", env: "DEPLOYMENT_HOSTING", kind: "text", field: "deploymentHosting" },
-  secret("publishing.signing_key", "PUBLISH_SIGNING_KEY"),
-
-  // The public graph, as this deployment reaches it and pays toward it
-  // (docs/outward-acts.md, docs/usage-report.md).
-  { key: "public_graph.api_url", env: "PUBLIC_GRAPH_API_URL", kind: "text", field: "publicGraphApiUrl" },
-  { key: "public_graph.acts_by", env: "PUBLIC_ACTS_BY", kind: "text", field: "publicActsBy" },
-  { key: "public_graph.price", env: "PUBLIC_GRAPH_PRICE", kind: "text", field: "publicGraphPrice" },
-  secret("public_graph.hosting_token", "MINERVAL_HOSTING_TOKEN"),
-  secret("oidc.signing_key", "OIDC_SIGNING_KEY"),
-
-  { key: "usage_report.url", env: "USAGE_REPORT_URL", kind: "text", field: "usageReportUrl" },
-  { key: "usage_report.dir", env: "USAGE_REPORT_DIR", kind: "text", field: "usageReportDir" },
-  { key: "usage_report.from", env: "USAGE_REPORT_FROM", kind: "text", field: "usageReportFrom" },
-
-  // Sets of files and the sandbox agents explore them in (docs/file-sets.md).
-  { key: "file_sets.store_dir", env: "FILE_SET_STORE_DIR", kind: "text", field: "fileSetStoreDir" },
-  { key: "file_sets.directory_root", env: "FILE_SET_DIRECTORY_ROOT", kind: "text", field: "fileSetDirectoryRoot" },
-  { key: "sandbox.url", env: "SANDBOX_URL", kind: "text", field: "sandboxUrl" },
-  {
-    key: "sandbox.hour_cost_micro_usd",
-    env: "SANDBOX_HOUR_COST_MICRO_USD",
-    kind: "number",
-    field: "sandboxHourCostMicroUsd",
-  },
-  secret("sandbox.token", "SANDBOX_TOKEN"),
-
-  // The key a credential given on a connection's page is sealed with, and
-  // the keys that sealed credentials before it (services/connection-credential.ts).
-  // Not CONNECTION_..., which a connection may name as its credential.
-  secret("connections.credential_key", "CREDENTIAL_ENCRYPTION_KEY"),
-  secret("connections.previous_credential_keys", "CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS"),
-];
+export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = SETTINGS;
 
 /**
  * A connection's credential (docs/connections.md): any number of them, each
@@ -424,6 +136,20 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
     "Where a metered deployment's usage reports go, where not over its connection: another address, or a directory, never both.",
   file_sets: "Where uploaded sets of files are kept, and the directory that directories are registered from.",
   sandbox: "The sandbox agents run commands over file sets in. Its token is SANDBOX_TOKEN.",
+  releases: "Whether this deployment learns of new releases from the public graph, and where it reads the list.",
+  accounts: "Who this deployment serves, and who sets it up. Read before anyone can sign in.",
+  budgets: "What a run of each kind works to. Each is a ceiling: a run returns what it does not spend.",
+  allocation: "What the ledger prices and paces work with, and the switches on each kind of funded work.",
+  sessions: "How long a run waits on an answer it asked for.",
+  limits: "Limits on what no price covers, and the timeouts of calls outside.",
+  sql: "Read-only SQL: how long a query may run and what a caller's database time costs.",
+  processing: "How documents are read and nodes are made.",
+  sweeps: "The schedulers and sweeps: how often each runs and what it takes.",
+  researcher: "The researcher, which an administrator or a mandate launches for one bounded investigation.",
+  mathematics: "Mathematics: the Lean checker, the solver, bounties and prizes.",
+  mirror: "The mirror feed: publishing this deployment's public rows, and following another's.",
+  queues: "Where the queues are. Empty, work is queued in the database and in the process.",
+  build: "What the image was built from. Set when it is built, never by hand.",
 };
 
 const KEYS_BY_NAME = new Map(CONFIG_FILE_KEYS.map((k) => [k.key, k]));
@@ -451,12 +177,12 @@ const GROUPS: ReadonlySet<string> = (() => {
 
 /** The settings a file may hold: every row that is not a secret. */
 export function settableConfigFileKeys(): ConfigFileKey[] {
-  return CONFIG_FILE_KEYS.filter((k) => !k.secret);
+  return CONFIG_FILE_KEYS.filter((k) => !k.secret && !k.retired);
 }
 
 /** The secrets: settings a file may not hold, each with its environment variable. */
 export function secretConfigFileKeys(): ConfigFileKey[] {
-  return CONFIG_FILE_KEYS.filter((k) => k.secret);
+  return CONFIG_FILE_KEYS.filter((k) => k.secret && !k.retired);
 }
 
 /** A config file that could not be used, with everything wrong with it. */
@@ -511,19 +237,6 @@ function isGroupValue(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 }
 
-/** How many single-character edits turn `a` into `b`. */
-function editDistance(a: string, b: string): number {
-  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
-    const next = [i];
-    for (let j = 1; j <= b.length; j++) {
-      next[j] = Math.min(row[j]! + 1, next[j - 1]! + 1, row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-    row = next;
-  }
-  return row[b.length]!;
-}
-
 /** The names directly inside a group: its settings and the groups it holds. */
 function membersOf(group: string): string[] {
   const prefix = group ? `${group}.` : "";
@@ -564,6 +277,12 @@ function unknownKeyProblem(path: string): string {
 }
 
 function secretProblem(path: string, key: ConfigFileKey): string {
+  if (key.retired) {
+    return (
+      `${path} is no longer a setting: ${key.env} was retired in ${key.retired.in} and nothing reads it. ` +
+      `In its place: ${key.retired.replacedBy}. Remove it.`
+    );
+  }
   return (
     `${path} is a secret, and secrets are not kept in the config file. ` +
     `Set the environment variable ${key.env} instead.`
