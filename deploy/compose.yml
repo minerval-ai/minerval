@@ -98,6 +98,8 @@ services:
       # One that is not set there is not set here, and the API's own
       # starting value holds. env.example says what each is.
       - FIRST_ADMINISTRATOR
+      - MEMBERS_LABEL
+      - PUBLISHED_LABEL
       - SIGN_IN_VALID_HOURS
       - CLEARED_ROLE_PASSWORD
       - MINERVAL_OPERATOR_KEY

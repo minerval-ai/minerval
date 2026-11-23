@@ -61,6 +61,7 @@ import type { GateKind } from "./gate-kinds.js";
 import { gateOf, modesFor, type ItemScope } from "./gate-settings-service.js";
 import {
   destinationLabel,
+  destinationProblem,
   ensureBoundaryPolicy,
   policyById,
   type Boundary,
@@ -206,6 +207,8 @@ export async function askRelease(input: {
     if (!labels.has(pageLabel)) throw new ReleaseError("UNKNOWN_LABEL", `This deployment defines no label "${pageLabel}".`);
     if (toLabel !== null) {
       if (!labels.has(toLabel)) throw new ReleaseError("UNKNOWN_LABEL", `This deployment defines no label "${toLabel}".`);
+      const notADestination = destinationProblem(toLabel);
+      if (notADestination) throw new ReleaseError("NOT_A_DESTINATION", notADestination);
       const [reach] = await rawQuery<{ reads: string[] }>(`SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads`, [toLabel]);
       if (toLabel === pageLabel || reach!.reads.includes(pageLabel)) {
         throw new ReleaseError(

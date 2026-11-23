@@ -10,6 +10,7 @@ import { getDb, closeDb, rawQuery } from "./db/client.js";
 import { ensureSqlRoles, hasSqlRoleCredentials } from "./db/sql-roles.js";
 import { withSystemClearance } from "./db/clearance.js";
 import { enforcementFacts, enforcementProblems, ensureEnforcement } from "./db/enforcement.js";
+import { ensureLabelSplit } from "./services/label-split.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
@@ -275,6 +276,20 @@ async function main() {
         console.error("[sql] could not ensure the read-only SQL roles; SQL will answer UNAVAILABLE:", err);
       }
     }
+  }
+
+  // A members-only deployment's `public` is split, once, into the public
+  // graph's label, the published label and the members' own
+  // (services/label-split.ts). Here, after migrations and before anything is
+  // served or any worker starts, so that no work is in progress while rows
+  // are restamped. It does nothing on the public graph, on an open
+  // deployment, or once it has been done. A failure stops the start: the
+  // deployment would otherwise go on filing its members' material at the
+  // public graph's label.
+  {
+    const { split, lines } = await ensureLabelSplit(config);
+    for (const line of lines) console.log(`[labels] ${line}`);
+    if (split) console.log("[labels] public was split into the public graph's label, the published label and the base label");
   }
 
   // Where the deployment has more than one label, the database holds every

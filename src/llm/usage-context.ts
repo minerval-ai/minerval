@@ -33,7 +33,7 @@ import {
 } from "../services/trace-service.js";
 import { setStatementObserver } from "../db/statement-observer.js";
 import { writesGraph } from "../db/graph-writes.js";
-import { MissingLabelError, baseLabel, openLabels } from "../labels.js";
+import { MissingLabelError, baseLabel, openLabels, workLabelFor } from "../labels.js";
 import { leaveSystemClearance, setSessionContextReader, startedHere } from "../db/clearance.js";
 
 export interface UsageContext {
@@ -223,6 +223,11 @@ export function currentClearance(): readonly string[] {
  */
 export function runAtLabel<T>(label: string | null | undefined, work: string, fn: () => T): T {
   if (typeof label !== "string" || label.length === 0) throw new MissingLabelError(work);
+  // Nothing works at the public graph's label once it is a label of its
+  // own: work that starts from one of its rows is done at the base label
+  // (src/labels.ts, workLabelFor). This is the one seam every run's label
+  // passes through, so it holds whatever started the work.
+  label = workLabelFor(label);
   // A run is not a request: where the in-process runner picks work up inside
   // the request that enqueued it, the request's clearance must not carry on
   // into the run. What a run may read follows from its own label. Nor is it

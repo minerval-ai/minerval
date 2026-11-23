@@ -440,6 +440,35 @@ export function byLayerThenName(a: string, b: string): number {
   return layerRank(a) - layerRank(b) || (a < b ? -1 : a > b ? 1 : 0);
 }
 
+/**
+ * Whether work can be done at a label: a run opened there, a request given
+ * it, a key made for it. Every label, except, on a deployment that has been
+ * split, the two anyone may read: the public graph's rows are the mirror's
+ * to write and what was published is the gate's, so no person and no
+ * agent's run chooses either.
+ */
+export function isWorkableLabel(label: string): boolean {
+  return !layersAreSplit() || !isOpenLabel(label);
+}
+
+/** The labels among `labels` that work can be done at (isWorkableLabel). */
+export function workableLabels(labels: readonly string[]): string[] {
+  return labels.filter(isWorkableLabel);
+}
+
+/**
+ * The label work is done at when it starts from a row at `label`: the
+ * row's own, except that on a deployment that has been split nothing works
+ * at the public graph's label, and work that starts from one of its rows
+ * (a mirrored node someone orders an assessment of, a message queued
+ * before the split that names `public`) is the deployment's own and is
+ * done at the base label. What the outbound work does at the published
+ * label is unaffected: that label is named by the code that runs it.
+ */
+export function workLabelFor(label: string): string {
+  return label === PUBLIC_LABEL && layersAreSplit() ? layers.base : label;
+}
+
 /** Whether this deployment has been split into the three layers. */
 export function layersAreSplit(): boolean {
   return layers.base !== PUBLIC_LABEL;

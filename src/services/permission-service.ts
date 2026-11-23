@@ -588,6 +588,10 @@ export type AdministrativeAction =
   | "label_read_removed"
   | "label_face_shown"
   | "label_face_withdrawn"
+  // A members-only deployment's `public` was split into the public graph's
+  // label, the published label and the base label (services/label-split.ts).
+  // It happens once, at start, and no person does it.
+  | "labels_split"
   // Which model providers and outside services may be sent a label's text
   // was chosen (provider-clearance-service.ts).
   | "provider_clearance_set"
@@ -639,6 +643,7 @@ export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, L
   label_read_removed: "labels",
   label_face_shown: "labels",
   label_face_withdrawn: "labels",
+  labels_split: "labels",
   provider_clearance_set: "providers",
   party_added: "parties",
   own_organization_named: "parties",

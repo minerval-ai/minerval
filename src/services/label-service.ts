@@ -1,6 +1,6 @@
 import { enforcementLastKnown } from "../db/clearance.js";
 import { currentReadClearance, rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL, baseLabel, isOpenLabel, isMemberLabel, byLayerThenName, layersAreSplit } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, isOpenLabel, isMemberLabel, byLayerThenName, layersAreSplit, workableLabels } from "../labels.js";
 import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 import { membersOnly } from "../permissions.js";
 
@@ -276,7 +276,9 @@ export function whoReads(label: Pick<ChoosableLabel, "name" | "also_read_from" |
  * page or an agent needs to say what each one means: its description, what
  * it reads, and who reads it. They are the labels the request reads: a
  * person's clearance, or for a key, a token or the Assistant, what that
- * credential's one label reads within it.
+ * credential's one label reads within it, less the labels no work is done
+ * at (src/labels.ts, isWorkableLabel): on a deployment split into its
+ * bottom layers, the public graph's and the published one.
  *
  * Which labels read a label is worked out for every label the deployment
  * has, and then only the ones the asker reads are named: the name of a
@@ -290,7 +292,7 @@ export async function choosableLabels(): Promise<ChoosableLabel[]> {
   );
   const mine = new Set(readable);
   const byName = new Map(rows.map((r) => [r.name, r]));
-  return readable
+  return workableLabels(readable)
     .filter((name) => byName.has(name))
     .sort(byLayerThenName)
     .map((name) => {

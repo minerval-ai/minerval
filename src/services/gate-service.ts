@@ -26,7 +26,7 @@ import { GATE_KINDS, type GateKind } from "./gate-kinds.js";
 import { gateOf } from "./gate-settings-service.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import { paragraphsOf } from "./page-parts.js";
-import { ensureBoundaryPolicy } from "./redaction-policy.js";
+import { destinationProblem, ensureBoundaryPolicy } from "./redaction-policy.js";
 import {
   RELEASE_COLUMNS,
   ReleaseError,
@@ -372,6 +372,8 @@ const GOES_OUTSIDE: readonly GateKind[] = ["page", "mandate", "taken_up", "answe
 export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; state: OfferState } | null> {
   if (oneLabelOnly()) return null;
   if (offer.toLabel === null && !GOES_OUTSIDE.includes(offer.kind)) return null;
+  const notADestination = destinationProblem(offer.toLabel);
+  if (notADestination) throw new ReleaseError("NOT_A_DESTINATION", notADestination);
   return bothSides(async () => {
     const destination = offer.toLabel ?? publishedLabel();
     const [reach] = await rawQuery<{ reads: string[] }>(`SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads`, [destination]);

@@ -28,7 +28,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteOptions } from "fastify";
 import { deploymentHoldsLabels, rawQuery } from "../../db/client.js";
-import { baseLabel } from "../../labels.js";
+import { PUBLIC_LABEL, baseLabel, isWorkableLabel, workLabelFor, workableLabels } from "../../labels.js";
 import { runWithUsageContext } from "../../llm/usage-context.js";
 import { LABEL_DESCRIPTION, VERSIONS_DESCRIPTION } from "../../services/judgment-version-service.js";
 import { LEFT_STANDING_DESCRIPTION, NOT_EXAMINED_AT_DESCRIPTION } from "../../services/left-standing-service.js";
@@ -104,6 +104,12 @@ export const LABEL_MESSAGES = {
   credentialNotReadable: (fixed: FixedLabel) =>
     `This ${credentialName(fixed)} works at the label "${fixed.label}", which this account may no longer ` +
     `read, so it is refused. A run or a credential never reads more than the person it acts for.`,
+  notFiledAt: (named: string, choices: readonly string[]) =>
+    `Nothing is filed at "${named}" here. ` +
+    (named === PUBLIC_LABEL
+      ? `It holds the public graph's own material, which the mirror brings in. `
+      : `It holds what this organization released outside, which gets there through the gate to outside. `) +
+    (choices.length > 0 ? `Name one of: ${choices.map((c) => `"${c}"`).join(", ")}.` : `This account reads no label it can file at.`),
   unknownOnOneLabel: (named: string) =>
     `The request named the label "${named}", and this deployment has one label, "${baseLabel()}".`,
 } as const;
@@ -150,10 +156,19 @@ export function chooseLabel(
     }
     return { label: fixed.label };
   }
-  const choices = standingOf(auth).clearance;
+  // What a person may file at: the labels they read that work is done at.
+  // On a deployment split into its bottom layers that leaves out the two
+  // anyone may read, which the mirror and the gate to outside write.
+  const choices = workableLabels(standingOf(auth).clearance);
   if (typeof named !== "string" || named.length === 0) {
     return {
       refusal: { status: 400, code: "LABEL_REQUIRED", error: LABEL_MESSAGES.required(choices), labels: [...choices] },
+    };
+  }
+  if (!isWorkableLabel(named)) {
+    // Anyone reads it and everyone knows its name, so the refusal can say why.
+    return {
+      refusal: { status: 400, code: "LABEL_NOT_FILED_AT", error: LABEL_MESSAGES.notFiledAt(named, choices), labels: [...choices] },
     };
   }
   if (!choices.includes(named)) {
@@ -208,10 +223,13 @@ export async function decideRequestLabel(
           [id]
         )
       : [];
-  const rowLabel = rows[0]?.sensitivity_label;
-  if (rowLabel === undefined) {
+  const readLabel = rows[0]?.sensitivity_label;
+  if (readLabel === undefined) {
     return { refusal: { status: 404, code: "NOT_FOUND", error: LABEL_MESSAGES.notFound(carrier.noun) } };
   }
+  // The label of the work a request about this row is: the row's own, or
+  // the base label for a row of the public graph, where nothing here works.
+  const rowLabel = workLabelFor(readLabel);
   if (rule.orReader) {
     // Work on the row, at the row's own label or at one that reads it. The
     // row was read on the request's own connection, so a credential's label
@@ -227,14 +245,19 @@ export async function decideRequestLabel(
     if (body.label === undefined || body.label === null || body.label === "" || body.label === rowLabel) {
       return { label: rowLabel };
     }
-    const held = standingOf(request.auth).clearance;
+    const held = workableLabels(standingOf(request.auth).clearance);
     const named = String(body.label);
     const readers = await rawQuery<{ name: string }>(
       `SELECT l.name FROM labels l
         WHERE l.name = ANY($1::text[]) AND $2 = ANY (minerval_labels_readable_from(ARRAY[l.name]))`,
-      [[...held], rowLabel]
+      [[...held], readLabel]
     );
     const choices = readers.map((r) => r.name).sort();
+    if (!isWorkableLabel(named)) {
+      return {
+        refusal: { status: 400, code: "LABEL_NOT_FILED_AT", error: LABEL_MESSAGES.notFiledAt(named, choices), labels: choices },
+      };
+    }
     if (!held.includes(named)) {
       return {
         refusal: { status: 403, code: "LABEL_NOT_READABLE", error: LABEL_MESSAGES.notReadable(named, held), labels: [...held] },
