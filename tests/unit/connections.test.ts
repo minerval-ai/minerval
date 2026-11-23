@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CONNECTION_NOTICE,
+  WRITE_ACKNOWLEDGEMENT,
   CONNECTION_TOOL_SEPARATOR,
   credentialHeaders,
   isConnectionToolName,
@@ -132,12 +133,27 @@ describe("a reading's address", () => {
 });
 
 describe("what an administrator is told", () => {
-  it("asks for a read-only credential and says plainly what cannot be proved", () => {
-    expect(CONNECTION_NOTICE).toContain("Grant it a read-only credential at the system itself");
-    expect(CONNECTION_NOTICE).toContain("This deployment cannot prove that a tool only reads.");
-    expect(CONNECTION_NOTICE).toContain("is a hint");
+  it("says what the default is, what cannot be proved, and which credential to grant", () => {
+    // Reading is the default, said first, with the one thing that changes it.
+    expect(CONNECTION_NOTICE).toMatch(/^A connection reads, unless you grant one of its tools to write\./);
     expect(CONNECTION_NOTICE).toContain("only the tools you pick");
-    expect(CONNECTION_NOTICE).toContain("withdrawn until an administrator looks at it again");
+    expect(CONNECTION_NOTICE).toContain("A tool picked plainly is picked as one that reads.");
+    expect(CONNECTION_NOTICE).toContain("A tool the server itself marks as writing can be picked no other way.");
+    expect(CONNECTION_NOTICE).toContain("This deployment cannot prove what a tool does.");
+    expect(CONNECTION_NOTICE).toContain("is a hint");
+    // The credential is still what limits a tool, and the guidance follows the grant.
+    expect(CONNECTION_NOTICE).toContain(
+      "grant the narrowest one that allows what you have granted here, and a read-only one where no tool is granted to write"
+    );
+    expect(CONNECTION_NOTICE).toContain("is never sent twice");
+    expect(CONNECTION_NOTICE).toContain("its write grant with it, until an administrator looks at it again");
     expect(CONNECTION_NOTICE).not.toMatch(/—/);
+  });
+
+  it("asks an administrator who grants a tool to write to acknowledge what that means", () => {
+    expect(WRITE_ACKNOWLEDGEMENT).toContain("Agents offered it will change or send things at this system");
+    expect(WRITE_ACKNOWLEDGEMENT).toContain("without asking first unless its calls are held");
+    expect(WRITE_ACKNOWLEDGEMENT).toContain("cannot undo a call once it is sent");
+    expect(WRITE_ACKNOWLEDGEMENT).not.toMatch(/—/);
   });
 });

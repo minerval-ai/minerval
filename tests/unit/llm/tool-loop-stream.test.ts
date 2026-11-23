@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
  * toolUseLoop's `stream` option: each turn goes over the streaming endpoint
- * with the refusal fallback the non-streaming path would give its model; a
- * model the long-run path serves gets its full output allowance, any other
+ * with no refusal fallback, as on the non-streaming path (#1044); a model the long-run path serves gets its full output allowance, any other
  * its usual one. `onText` sees the reply as it forms.
  */
 
@@ -55,7 +54,7 @@ const run = (model: string) =>
   });
 
 describe("toolUseLoop stream", () => {
-  it("streams on the strong tier, with the full output allowance and its refusal fallback", async () => {
+  it("streams on the strong tier, with the full output allowance and no refusal fallback", async () => {
     streamMock.mockReturnValue({ on: () => undefined, finalMessage: async () => decision });
     const result = await run(MODELS.strong);
     expect(result.toolUses[0]!.name).toBe("submit");
@@ -64,7 +63,8 @@ describe("toolUseLoop stream", () => {
     expect(betaCreateMock).not.toHaveBeenCalled();
     const params = streamMock.mock.calls[0]![0];
     expect(params.max_tokens).toBe(128_000);
-    expect(params.fallbacks).toEqual([{ model: MODELS.opus }]);
+    expect(params).not.toHaveProperty("fallbacks");
+    expect(params).not.toHaveProperty("betas");
   });
 
   it("streams a mid-tier model within its usual output allowance, passing text as it forms", async () => {

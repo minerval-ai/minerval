@@ -37,6 +37,7 @@ import { decideRequestLabel } from "../../server/plugins/request-label.js";
 import { membersOnly, type PermissionName } from "../../permissions.js";
 import { resolveStanding } from "../../services/permission-service.js";
 import { getCallerSkill, listCallerSkills } from "../../mcp/caller-skills.js";
+import { skillTextHere } from "../deployment-note.js";
 import { runAsAssistant } from "../assistant-acting.js";
 import { rawSourceLabelsOf } from "../../raw-sources.js";
 import { isGuestExternalId } from "../../services/guest-account.js";
@@ -323,7 +324,9 @@ function loadSkillTool(): Tool {
 function executeLoadSkill(input: Record<string, unknown>): string {
   const wanted = String(input.name ?? "").trim();
   const skill = getCallerSkill(wanted);
-  if (skill) return skill.text;
+  // The Assistant is told of a private deployment in its own prompt, so the
+  // skill carries one line pointing there (llm/deployment-note.ts).
+  if (skill) return skillTextHere(skill.text, { told: true });
   return JSON.stringify({
     success: false,
     message:

@@ -73,7 +73,7 @@ import {
 } from "../tools/graph-read-tools.js";
 import { DOCUMENT_MAX_DOWNLOAD_MB } from "../../services/url-guard.js";
 import { createMandateTools } from "../tools/mandate-tools.js";
-import { createConnectionTools } from "../tools/connection-tools.js";
+import { connectionsHeading, createConnectionTools } from "../tools/connection-tools.js";
 import {
   consumeLookoutEvents,
   countPendingLookoutEvents,
@@ -633,7 +633,7 @@ async function runLookoutImpl(input: {
     (feeds.length > 0
       ? `### Your feeds and what is waiting in your inbox\n\n${feedsText}\n\n`
       : "") +
-    (connectionTools.note ? `### Systems you can read\n\n${connectionTools.note}\n\n` : "") +
+    (connectionTools.note ? `### ${connectionsHeading(connectionTools)}\n\n${connectionTools.note}\n\n` : "") +
     `### Your recent flags and what became of them\n\n` +
     (recentFlags.length >= RECENT_FLAGS_SHOWN && Number(lookout.flags) > recentFlags.length
       ? `The ${recentFlags.length} most recent of the ${lookout.flags} you have raised; keep what matters about older ones in your workspace.\n\n`

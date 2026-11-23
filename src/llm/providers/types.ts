@@ -85,10 +85,10 @@ export interface ToolCompletionResult extends CompletionResult {
    */
   rawContent: LlmContentBlock[];
   /**
-   * The model that actually produced the turn (`response.model`). Differs from
-   * `model` when a server-side refusal fallback re-served the request on
-   * another model; a fallback is sticky for about an hour, so later turns can
-   * carry it without a fallback block. Anthropic-only.
+   * The model that actually produced the turn (`response.model`). No request
+   * asks for a refusal fallback (#1044), so this differs from `model` only if
+   * the provider re-served the turn on its own; it is kept as the record that
+   * would show it. Anthropic-only.
    */
   servedModel?: string;
   /** True when `servedModel` differs from the requested model. Anthropic-only. */
@@ -140,14 +140,6 @@ export interface LongRunRequest extends ToolCompleteRequest {
    * (instrument-harness.ts, #897).
    */
   taskBudgetTokens?: number;
-  /**
-   * "server" opts into the server-side refusal fallback (the request is
-   * re-served on the Opus tier inside the same call when the model's safety
-   * classifiers decline); "default" is the same fallback in the scalar form
-   * the Sonnet 5.5 family takes; "none" lets a refusal surface as
-   * LlmRefusalError.
-   */
-  fallbacks: "none" | "server" | "default";
   /** Extra `anthropic-beta` ids to send verbatim. */
   betas?: string[];
   /**

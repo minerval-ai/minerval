@@ -17,6 +17,7 @@
  * funder, and ideology-warping mandates are declined outright.
  */
 import { PUBLIC_LABEL } from "../../labels.js";
+import { membersOnly } from "../../permissions.js";
 import { grantmakingPromisedPrivate, PRIVATE_GRANTMAKING_REASON } from "../private-grantmaking.js";
 import {
   draftWarnings,
@@ -33,7 +34,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { currentLabel, markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
-import { createConnectionTools } from "../tools/connection-tools.js";
+import { connectionsHeading, createConnectionTools } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
@@ -44,6 +45,7 @@ const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t
 import {
   CHAT_SECTION,
   PUBLIC_CONVERSATION_SECTION,
+  MEMBERS_CONVERSATION_SECTION,
   GRANTING_CONVERSATION_SECTION,
   getGrantmakerSystemPromptBlocks,
 } from "../prompts/grantmaker.js";
@@ -719,7 +721,7 @@ async function runGrantmakerTurnImpl(input: {
   });
   const blocks = getGrantmakerSystemPromptBlocks();
   if (skillLoader.pointerNote) blocks[0] = blocks[0] + skillLoader.pointerNote;
-  if (connectionTools.note) blocks[0] = blocks[0] + `\n\n## Systems you can read\n\n${connectionTools.note}`;
+  if (connectionTools.note) blocks[0] = blocks[0] + `\n\n## ${connectionsHeading(connectionTools)}\n\n${connectionTools.note}`;
   if (managed) {
     blocks[0] =
       blocks[0] +
@@ -750,10 +752,13 @@ async function runGrantmakerTurnImpl(input: {
   }
   if (input.funder === "platform") {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
+  } else if (!promisedPrivate && membersOnly()) {
+    // Inside a private graph the conversation is open to the members who
+    // read the mandate's label, at whichever label it works: at `public`
+    // too, which there is the layer every member reads and nobody outside
+    // does (#1120). "Anyone may read this" would be false.
+    blocks[0] = blocks[0] + MEMBERS_CONVERSATION_SECTION;
   } else if (!promisedPrivate && currentLabel() === PUBLIC_LABEL) {
-    // At another label, inside a private graph, the conversation is open to
-    // the members who read that label, which the Grantmaker is told there
-    // (constitution §30); "anyone may read this" would be false.
     blocks[0] = blocks[0] + PUBLIC_CONVERSATION_SECTION;
   }
   // The chat's own rules (#692): the planning and review passes share the
