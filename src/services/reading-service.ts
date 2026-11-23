@@ -46,6 +46,18 @@
  * owls, so the thing to protect is that system, across all runs at once.
  * The agent is told the rate in its brief, where it stands in every result,
  * and when the next call can go in a refusal (llm/tools/connection-tools.ts).
+ *
+ * A tool an administrator priced is the exception to "no owls": a call to
+ * it that the system answers is charged to the run's budget at that price,
+ * like any paid tool (usage-service.ts, meterExternalUsage), and the price
+ * and the charge are kept on the call.
+ *
+ * A call to a tool granted to write is marked as one (`writes`), which is
+ * what an administrator's list of writes reads. Where the grant says such
+ * calls are held, the call is recorded and not sent: it waits for an
+ * administrator, who approves it (it is then sent, once, by
+ * decideHeldCall) or declines it. The agent is not kept waiting. It is
+ * told the call is held and reads what became of it with open_reading.
  */
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
@@ -53,13 +65,15 @@ import { withSystemClearance } from "../db/clearance.js";
 import { CONNECTION_RESULT_MAX_CHARS, readingAddress } from "../connections.js";
 import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { canonicalContent } from "./run-log.js";
-import { callServerTool, type ConnectionFailure } from "./connection-client.js";
+import { callServerTool, type ConnectionFailure, type ConnectionTarget } from "./connection-client.js";
 import {
+  connectionForHeldCall,
   noteConnectionAnswered,
   noteConnectionFailed,
   type OfferedTool,
   type RunConnection,
 } from "./connection-service.js";
+import { meterExternalUsage, type UsageOnBehalfOf } from "./usage-service.js";
 import { windowText, type TextWindow } from "./document-text.js";
 import { labelsReadableFrom } from "./permission-service.js";
 import { sourceContentHash } from "./source-content.js";
@@ -87,15 +101,22 @@ export type ReadingMade =
       text: string;
       sha256: string;
       rate: RateState | null;
+      /** What the call was charged to the run's budget; 0 for a tool with no price. */
+      chargedMicroUsd: number;
     }
   | {
       made: false;
-      /** `rate`: not sent, the connection is at its rate. `failed`: sent, and no usable answer came. */
+      /**
+       * `rate`: not sent, the connection is at its rate. `held`: recorded
+       * and not sent, waiting for an administrator. `failed`: sent, and no
+       * usable answer came.
+       */
       why: "rate";
       rate: RateState;
       /** When the oldest call of the last minute leaves it, so the next can go. */
       nextAt: string;
     }
+  | { made: false; why: "held"; id: string; heldAt: string; rate: RateState | null }
   | { made: false; why: "failed"; id: string; failure: ConnectionFailure | { kind: "too_large"; message: string } };
 
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
@@ -140,16 +161,17 @@ async function callsInLastMinute(connectionId: string): Promise<{ n: number; old
  */
 async function beginCall(
   connection: RunConnection,
-  tool: string,
+  tool: OfferedTool,
   args: Record<string, unknown>
 ): Promise<
   | { ok: true; id: string; calledAt: Date; rate: RateState | null }
   | { ok: false; rate: RateState; nextAt: Date }
 > {
   const context = getUsageContext();
+  const held = tool.writes?.held === true;
   const insert = [
     connection.id,
-    tool,
+    tool.name,
     JSON.stringify(args),
     context.runId ?? null,
     context.agent ?? null,
@@ -157,10 +179,21 @@ async function beginCall(
     connection.partyId,
     // The run's label, not the connection's: the arguments are the run's words.
     currentLabel(),
+    tool.writes !== null,
+    tool.priceMicroUsd,
+    // A held call is not sent now. It keeps the definition its arguments
+    // were written against, and who pays for it when it is sent.
+    held,
+    held ? tool.definitionHash : null,
+    held && tool.priceMicroUsd > 0
+      ? JSON.stringify({ userId: context.userId ?? null, apiKeyId: context.apiKeyId ?? null, jobId: context.jobId ?? null })
+      : null,
   ];
   const INSERT = `INSERT INTO connection_calls
-       (connection_id, tool, arguments, run_id, agent, claim_id, party_id, sensitivity_label)
-     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
+       (connection_id, tool, arguments, run_id, agent, claim_id, party_id, sensitivity_label,
+        writes, price_micro_usd, outcome, held_at, tool_definition_hash, charge_to)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10,
+             CASE WHEN $11::boolean THEN 'held' END, CASE WHEN $11::boolean THEN now() END, $12, $13::jsonb)
      RETURNING id, called_at`;
   const perMinute = connection.callsPerMinute;
   if (perMinute === null) {
@@ -180,36 +213,59 @@ async function beginCall(
   });
 }
 
-/**
- * Make one reading: send the call once, and store what came back whole.
- * Never throws for anything the server or the network did; that comes back
- * as a reading that was not made, with why.
- */
-export async function makeReading(
-  connection: RunConnection,
-  tool: OfferedTool,
-  args: Record<string, unknown>
-): Promise<ReadingMade> {
-  const begun = await beginCall(connection, tool.name, args);
-  if (!begun.ok) return { made: false, why: "rate", rate: begun.rate, nextAt: begun.nextAt.toISOString() };
+type CallFailure = ConnectionFailure | { kind: "too_large"; message: string };
 
+/**
+ * Send a call that is already on record, once, and store what came back on
+ * its row. A call the system answered, with a result or with an error of
+ * its own, is charged at the price the call was recorded with: the system
+ * did the work. One that could not be made is not, since nobody can say it
+ * reached the system.
+ */
+async function sendRecordedCall(input: {
+  callId: string;
+  connection: { id: string; label: string; toolPrefix: string };
+  target: ConnectionTarget;
+  tool: string;
+  args: Record<string, unknown>;
+  priceMicroUsd: number;
+  /** Who pays, for a call sent outside the run that made it. */
+  onBehalfOf?: UsageOnBehalfOf;
+}): Promise<
+  | { sent: true; systemError: boolean; text: string; sha256: string; chargedMicroUsd: number }
+  | { sent: false; failure: CallFailure }
+> {
   const started = Date.now();
-  const called = await callServerTool(connection.target, tool.name, args);
+  const called = await callServerTool(input.target, input.tool, input.args);
   const durationMs = Date.now() - started;
 
-  const fail = async (failure: ConnectionFailure | { kind: "too_large"; message: string }): Promise<ReadingMade> => {
+  const fail = async (failure: CallFailure) => {
     await rawQuery(
       `UPDATE connection_calls SET outcome = 'failed', error = $2, duration_ms = $3 WHERE id = $1`,
-      [begun.id, failure.message, durationMs]
+      [input.callId, failure.message, durationMs]
     );
-    return { made: false, why: "failed", id: begun.id, failure };
+    return { sent: false as const, failure };
   };
 
   if (!called.ok) {
-    await noteConnectionFailed(connection, called.failure, "call");
+    await noteConnectionFailed(input.connection, called.failure, "call");
     return fail(called.failure);
   }
-  await noteConnectionAnswered(connection);
+  await noteConnectionAnswered(input.connection);
+  const charged = Math.max(0, input.priceMicroUsd);
+  if (charged > 0) {
+    await meterExternalUsage(
+      {
+        provider: "connection",
+        model: `connection/${input.connection.toolPrefix}/${input.tool}`,
+        units: 1,
+        unitKind: "call",
+        costMicroUsd: charged,
+      },
+      input.onBehalfOf
+    );
+    await rawQuery(`UPDATE connection_calls SET charged_micro_usd = $2 WHERE id = $1`, [input.callId, charged]);
+  }
   if (called.text.length > CONNECTION_RESULT_MAX_CHARS) {
     return fail({
       kind: "too_large",
@@ -223,17 +279,174 @@ export async function makeReading(
     `UPDATE connection_calls
         SET outcome = $2, result = $3, result_hash = $4, result_chars = $5, duration_ms = $6
       WHERE id = $1`,
-    [begun.id, called.isError ? "tool_error" : "answered", called.text, hash, called.text.length, durationMs]
+    [input.callId, called.isError ? "tool_error" : "answered", called.text, hash, called.text.length, durationMs]
   );
+  return { sent: true, systemError: called.isError, text: called.text, sha256: hash, chargedMicroUsd: charged };
+}
+
+/**
+ * Make one reading: send the call once, and store what came back whole.
+ * Never throws for anything the server or the network did; that comes back
+ * as a reading that was not made, with why. A call to a tool whose calls
+ * are held is recorded and not sent.
+ */
+export async function makeReading(
+  connection: RunConnection,
+  tool: OfferedTool,
+  args: Record<string, unknown>
+): Promise<ReadingMade> {
+  const begun = await beginCall(connection, tool, args);
+  if (!begun.ok) return { made: false, why: "rate", rate: begun.rate, nextAt: begun.nextAt.toISOString() };
+  // A hold is not a limit on the run and bounds nothing: it puts a person's
+  // attention before a write, which no budget prices. The agent was told of
+  // it on the tool and in its brief before it called, and is not kept
+  // waiting on it.
+  if (tool.writes?.held) {
+    return { made: false, why: "held", id: begun.id, heldAt: new Date(begun.calledAt).toISOString(), rate: begun.rate };
+  }
+  const sent = await sendRecordedCall({
+    callId: begun.id,
+    connection,
+    target: connection.target,
+    tool: tool.name,
+    args,
+    priceMicroUsd: tool.priceMicroUsd,
+  });
+  if (!sent.sent) return { made: false, why: "failed", id: begun.id, failure: sent.failure };
   return {
     made: true,
     id: begun.id,
     calledAt: new Date(begun.calledAt).toISOString(),
-    systemError: called.isError,
-    text: called.text,
-    sha256: hash,
+    systemError: sent.systemError,
+    text: sent.text,
+    sha256: sent.sha256,
     rate: begun.rate,
+    chargedMicroUsd: sent.chargedMicroUsd,
   };
+}
+
+// ---- a held call, decided ----------------------------------------------------
+
+export type HeldCallDecided =
+  | {
+      ok: true;
+      id: string;
+      /** declined | not_sent | answered | tool_error | failed */
+      outcome: string;
+      /** Why an approved call was not sent, or what failed when it was. */
+      problem: string | null;
+    }
+  | { ok: false; code: "NOT_FOUND" | "NOT_HELD"; message: string };
+
+/**
+ * An administrator decides a call that waited for one. Declined, nothing is
+ * sent and the call says so. Approved, the call is sent now, once, with the
+ * arguments the agent wrote, and its row takes what came back, as any
+ * call's does.
+ *
+ * Approval sends only what the agent was offered and the administrator can
+ * still stand behind: the connection is on, and the tool is offered,
+ * granted to write, and still the definition the arguments were written
+ * against. Otherwise the call is marked not sent, with why: switching a
+ * connection off, or revoking a grant, stops the calls that were waiting
+ * as well as the ones not yet made.
+ *
+ * The decision is taken under a lock on the call's row and committed before
+ * anything is sent, so two approvals cannot both send it.
+ */
+export async function decideHeldCall(
+  connectionId: string,
+  callId: string,
+  decision: "approve" | "decline",
+  note: string | null,
+  actorId: string
+): Promise<HeldCallDecided> {
+  const notFound = { ok: false as const, code: "NOT_FOUND" as const, message: "No such call through this connection." };
+  if (!UUID_RE.test(connectionId) || !UUID_RE.test(callId)) return notFound;
+  const cleanNote = note?.trim() ? note.trim() : null;
+  const taken = await withTransaction(async (tx) => {
+    const [row] = await tx.query<{
+      tool: string;
+      arguments: Record<string, unknown>;
+      outcome: string | null;
+      held_at: Date | null;
+      tool_definition_hash: string | null;
+      price_micro_usd: number;
+      charge_to: { userId?: string | null; apiKeyId?: string | null; jobId?: string | null } | null;
+      run_id: string | null;
+      agent: string | null;
+      claim_id: string | null;
+    }>(
+      `SELECT tool, arguments, outcome, held_at, tool_definition_hash, price_micro_usd, charge_to, run_id, agent, claim_id
+         FROM connection_calls WHERE id = $1 AND connection_id = $2 FOR UPDATE`,
+      [callId, connectionId]
+    );
+    if (!row) return notFound;
+    if (row.outcome !== "held") {
+      return {
+        ok: false as const,
+        code: "NOT_HELD" as const,
+        message:
+          row.held_at === null
+            ? "This call did not wait for an administrator: it was sent when the agent made it."
+            : "This call has already been decided.",
+      };
+    }
+    const settle = async (outcome: "declined" | "not_sent" | null, error: string | null) => {
+      await tx.query(
+        `UPDATE connection_calls
+            SET outcome = $2, error = $3, decided_by = $4, decided_at = now(), decision_note = $5
+          WHERE id = $1`,
+        [callId, outcome, error, actorId, cleanNote]
+      );
+    };
+    if (decision === "decline") {
+      await settle("declined", null);
+      return { ok: true as const, send: null, outcome: "declined", problem: null };
+    }
+    const now = await connectionForHeldCall(tx, connectionId, row.tool);
+    const problem =
+      now === null
+        ? "the connection could not be read"
+        : !now.enabled
+          ? "the connection was switched off while the call waited"
+          : !now.tool || !now.tool.offered || !now.tool.writes
+            ? "the tool is no longer offered to agents under a write grant"
+            : now.tool.definitionHash !== row.tool_definition_hash
+              ? "the tool's definition changed after the agent wrote this call, so its arguments were written against another tool"
+              : null;
+    if (problem !== null || now === null) {
+      await settle("not_sent", problem);
+      return { ok: true as const, send: null, outcome: "not_sent", problem };
+    }
+    await settle(null, null);
+    return {
+      ok: true as const,
+      send: {
+        connection: { id: connectionId, label: now.label, toolPrefix: now.toolPrefix },
+        target: now.target,
+        tool: row.tool,
+        args: row.arguments ?? {},
+        priceMicroUsd: row.price_micro_usd,
+        onBehalfOf: {
+          userId: row.charge_to?.userId ?? null,
+          apiKeyId: row.charge_to?.apiKeyId ?? null,
+          jobId: row.charge_to?.jobId ?? null,
+          claimId: row.claim_id,
+          runId: row.run_id,
+          agent: row.agent,
+        },
+      },
+      outcome: "in_flight",
+      problem: null,
+    };
+  });
+  if (!taken.ok) return taken;
+  if (taken.send === null) return { ok: true, id: callId, outcome: taken.outcome, problem: taken.problem };
+  const sent = await sendRecordedCall({ callId, ...taken.send });
+  return sent.sent
+    ? { ok: true, id: callId, outcome: sent.systemError ? "tool_error" : "answered", problem: null }
+    : { ok: true, id: callId, outcome: "failed", problem: sent.failure.message };
 }
 
 /** A reading no run at this label may be told of, and one that does not exist, read the same. */
@@ -260,6 +473,22 @@ const madeByOtherWork = (id: string) =>
     `Reading ${id} was made by other work, and a reading is kept by the work that made it. ` +
       `To rest a judgment on what it shows, make the call again in this run and keep that reading.`
   );
+
+/** Why a call has no stored result, as the rest of a sentence about it. */
+function noResultBecause(outcome: string | null, error: string | null, note: string | null): string {
+  switch (outcome) {
+    case "failed":
+      return `was not made (${error ?? "the call failed"})`;
+    case "held":
+      return "is held for an administrator's approval and has not been sent yet";
+    case "declined":
+      return `was declined by an administrator${note ? `, who said: ${JSON.stringify(note)},` : ""} and was not sent`;
+    case "not_sent":
+      return `was approved and then not sent (${error ?? "it could no longer be sent"})`;
+    default:
+      return "has no result yet: its call is still in flight";
+  }
+}
 
 /** The labels the enclosing run or request reads: its own, and those its own reads. */
 async function readableLabels(): Promise<Set<string>> {
@@ -291,10 +520,11 @@ export async function openReading(input: { readingId: string; offset?: number; m
     error: string | null;
     result: string | null;
     result_hash: string | null;
+    decision_note: string | null;
     sensitivity_label: string;
     connection_name: string;
   }>(
-    `SELECT k.tool, k.called_at, k.outcome, k.error, k.result, k.result_hash, k.sensitivity_label,
+    `SELECT k.tool, k.called_at, k.outcome, k.error, k.result, k.result_hash, k.decision_note, k.sensitivity_label,
             c.name AS connection_name
        FROM connection_calls k JOIN connections c ON c.id = k.connection_id
       WHERE k.id = $1`,
@@ -302,11 +532,7 @@ export async function openReading(input: { readingId: string; offset?: number; m
   );
   if (!row || !(await readableLabels()).has(row.sensitivity_label)) throw noSuchReading(id);
   if (row.result === null || row.result_hash === null) {
-    throw new ReadingError(
-      row.outcome === "failed"
-        ? `Reading ${id} was not made (${row.error ?? "the call failed"}), so there is no result to open.`
-        : `Reading ${id} has no result yet: its call is still in flight.`
-    );
+    throw new ReadingError(`Reading ${id} ${noResultBecause(row.outcome, row.error, row.decision_note)}, so there is no result to open.`);
   }
   return {
     reading: id,
@@ -389,10 +615,11 @@ export async function keepReading(readingId: string): Promise<KeptReading> {
       result_hash: string | null;
       party_id: string | null;
       source_id: string | null;
+      decision_note: string | null;
       sensitivity_label: string;
     }>(
       `SELECT connection_id, tool, arguments, called_at, outcome, error, result, result_hash, party_id,
-              source_id, sensitivity_label
+              source_id, decision_note, sensitivity_label
          FROM connection_calls WHERE id = $1 FOR UPDATE`,
       [id]
     );
@@ -422,10 +649,8 @@ export async function keepReading(readingId: string): Promise<KeptReading> {
     }
     if (row.result === null || row.result_hash === null) {
       throw new ReadingError(
-        row.outcome === "failed"
-          ? `Reading ${id} was not made (${row.error ?? "the call failed"}), so there is nothing to keep. ` +
-            `That the reading could not be made can be said in what you record.`
-          : `Reading ${id} has no result yet: its call is still in flight.`
+        `Reading ${id} ${noResultBecause(row.outcome, row.error, row.decision_note)}, so there is nothing to keep.` +
+          (row.outcome === "failed" ? ` That the reading could not be made can be said in what you record.` : "")
       );
     }
     const [party] = row.party_id

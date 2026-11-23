@@ -78,7 +78,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
 
       <div className="w-row w-small" style={{ color: "var(--w-soft)", flexWrap: "nowrap" }}>
         <Tip>{notice}</Tip>
-        <span>Connections are for reading. Use a read-only credential; agents get only the tools you pick.</span>
+        <span>A connection reads unless you grant one of its tools to write. Agents get only the tools you pick; give each connection the narrowest credential that allows them.</span>
       </div>
 
       {connections.length > 0 && (
