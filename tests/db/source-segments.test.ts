@@ -91,6 +91,52 @@ describe("segmentSource", () => {
     expect(await getSourceDocument(randomUUID())).toBeNull();
   });
 
+  it("divides a page at its own headings, and takes no short line of it for one (#1127)", async () => {
+    const source = await seedSource(
+      `<html><body><h1>Night work</h1><div>A. N. Author</div><button><div class="label">Share</div></button>` +
+        `<p><span>Risk was </span><a href="x">1.4-fold higher</a><span>. It held.</span></p><h2>Results</h2><p>More.</p></body></html>`
+    );
+    await segmentSource(source);
+    const doc = (await getSourceDocument(source))!;
+    expect(doc.segments.filter((s) => s.kind === "section").map((s) => s.label)).toEqual(["Night work", "Results"]);
+    expect(doc.segments.filter((s) => s.kind !== "section").map((s) => s.text)).toEqual([
+      "A. N. Author",
+      "Risk was 1.4-fold higher. It held.",
+      "More.",
+    ]);
+  });
+
+  it("segments again when the stored segments no longer match the text, and not otherwise", async () => {
+    const source = await seedSource(HTML);
+    const claim = await seedClaim("night work and diabetes, read again");
+    const instance = await seedInstance(claim, source, "Rotating night work was associated");
+    await segmentSource(source);
+    const ids = async () =>
+      (await rawQuery<{ id: string }>(`SELECT id FROM source_segments WHERE source_id = $1 ORDER BY ordinal`, [source])).map((r) => r.id);
+    const before = await ids();
+
+    // Nothing changed: the page and the hook leave the segments as they are.
+    await getSourceDocument(source);
+    await segmentSourceOnce(source);
+    expect(await ids()).toEqual(before);
+
+    // As a source segmented under an earlier reading of its markup is found:
+    // offsets and hashes that are not those of the text read now.
+    await rawQuery(`UPDATE source_segments SET char_start = char_start + 3, char_end = char_end + 3 WHERE source_id = $1`, [source]);
+    const doc = (await getSourceDocument(source))!;
+    const after = await ids();
+    expect(after).toHaveLength(before.length);
+    expect(after.some((id) => before.includes(id))).toBe(false);
+    const passage = doc.segments.find((s) => s.instances.some((i) => i.instance_id === instance))!;
+    expect(passage.text).toMatch(/^Rotating night work/);
+
+    // A page read does not start a segmentation; the hook does.
+    const fresh = await seedSource(HTML);
+    expect((await getSourceDocument(fresh))!.segmented).toBe(false);
+    await segmentSourceOnce(fresh);
+    expect((await getSourceDocument(fresh))!.segmented).toBe(true);
+  });
+
   it("anchors a quotation with cuts at its first piece and shows the reader what each cut left out", async () => {
     const source = await seedSource(HTML);
     const claim = await seedClaim("night work and metabolic risk");
@@ -111,7 +157,8 @@ describe("segmentSource", () => {
     const parts = at.instances.find((i) => i.instance_id === cut)!.quoted_parts!;
     expect(parts.map((p) => !!p.omitted)).toEqual([false, true, false]);
     expect(parts[0]!.text).toBe("Shift workers have long been suspected of higher metabolic risk.");
-    expect(parts[1]!.text).toBe("Results");
+    // What the cut left out is the readable text, where a page's heading is a markdown line.
+    expect(parts[1]!.text).toBe("## Results");
     expect(parts[2]!.text).toMatch(/^Rotating night work was associated with a 1\.4.fold higher risk\.$/);
     // Out of order is not the source's text.
     expect(doc.unanchored.map((i) => i.instance_id)).toEqual([swapped]);

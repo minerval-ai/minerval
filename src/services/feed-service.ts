@@ -33,7 +33,7 @@ import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { noteGiven } from "./given-addresses.js";
-import { decodeEntities, htmlToText, looksLikeHtml } from "./source-map-service.js";
+import { decodeEntities, htmlToText, looksLikeHtml, readableText } from "./html-text.js";
 import { segmentText } from "./source-segment-service.js";
 import { flagIngest, queueLookoutEvent } from "./lookout-service.js";
 import { normalizeFocus } from "./ingest-focus-service.js";
@@ -1337,8 +1337,9 @@ export async function readItem(input: {
   }
   if (!html) return { ok: false, problem: "The item has neither content in the feed nor a link to read" };
 
-  const text = htmlToText(html);
-  const segments = segmentText(text);
+  // A page's own headings are its sections, where it marks any (#1127).
+  const { text, headings } = readableText(html);
+  const segments = segmentText(text, { markedHeadingsOnly: headings > 0 });
   const sections = segments
     .filter((s) => s.kind === "section")
     .map((s, n) => ({ n, label: s.label, start: s.start, end: s.end }));
