@@ -149,6 +149,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   // ---- nodes ----
   "POST /claims/propose": { rule: "chosen", why: "A proposed node is new." },
   "POST /claims/propose-list": { rule: "chosen", why: "A proposed list is a new node." },
+  "POST /claims/propose-case": { rule: "chosen", why: "A proposed safety case is a new node." },
   "POST /claims/:claim_id/order": {
     ...from("claim", "claim_id", "An order is for an assessment of this node, at the node's label or at one that reads it."),
     orReader: true,

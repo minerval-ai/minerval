@@ -1796,6 +1796,18 @@ describe("every route that writes, driven against a private target", () => {
     },
     "POST /claims/propose": async () => () =>
       post(both, "/claims/propose", { claim: `The first partner renewed ${randomUUID()}`, label: A }),
+    // The conclusion it argues for is a claim at the same private label.
+    "POST /claims/propose-case": async () => () =>
+      post(both, "/claims/propose-case", {
+        title: `The first partner's deployment ${randomUUID()}`,
+        system: "The first partner's model, as delivered in October",
+        deployment: "Internal use by the first partner's staff",
+        conclusion_claim_id: claimAt[A],
+        standard: "The standard the partner's own policy requires",
+        standard_of: "The first partner",
+        confirm_new: true,
+        label: A,
+      }),
     "POST /claims/propose-list": async () => () =>
       post(both, "/claims/propose-list", {
         title: `The first partner's renewals ${randomUUID()}`,
@@ -1862,6 +1874,7 @@ describe("every route that writes, driven against a private target", () => {
     "DELETE /pages/:id",
     "POST /claims/propose",
     "POST /claims/propose-list",
+    "POST /claims/propose-case",
     "POST /sources",
     "POST /grants",
     "POST /grant-conversations",

@@ -140,10 +140,12 @@ interface NodeRow {
   origin: string;
 }
 
-const JUDGMENT_TABLES: Record<string, { table: string; kind: "assessment" | "quantity_estimate" | "question_assessment" }> = {
+const JUDGMENT_TABLES: Record<string, { table: string; kind: "assessment" | "quantity_estimate" | "question_assessment" | "artifact_assessment" }> = {
   claim: { table: "assessments", kind: "assessment" },
   quantity: { table: "quantity_estimates", kind: "quantity_estimate" },
   question: { table: "question_assessments", kind: "question_assessment" },
+  // An artifact's page (§7b): a list, or a safety case with its structure (#1211).
+  artifact: { table: "artifact_assessments", kind: "artifact_assessment" },
 };
 const judgmentOf = (nodeKind: string) => JUDGMENT_TABLES[nodeKind] ?? JUDGMENT_TABLES.claim!;
 
@@ -421,7 +423,8 @@ async function nodesCovered(release: ReleaseRow): Promise<Map<string, string | n
           SELECT 1 FROM (
             SELECT claim_id, funded_by_job_id, sensitivity_label FROM assessments_versions
             UNION ALL SELECT claim_id, funded_by_job_id, sensitivity_label FROM quantity_estimates_versions
-            UNION ALL SELECT claim_id, funded_by_job_id, sensitivity_label FROM question_assessments_versions) v
+            UNION ALL SELECT claim_id, funded_by_job_id, sensitivity_label FROM question_assessments_versions
+            UNION ALL SELECT claim_id, funded_by_job_id, sensitivity_label FROM artifact_assessments_versions) v
            WHERE v.claim_id = c.id AND v.sensitivity_label = $1
              AND ($2::uuid IS NULL OR v.funded_by_job_id = (SELECT budget_job_id FROM grants WHERE id = $2)))
         LIMIT ${WALK_LIMIT}`,
@@ -666,7 +669,9 @@ async function sourcesUnder(nodeIds: readonly string[], memo: Map<string, string
        UNION ALL
        SELECT claim_id, id, 'quantity_estimate', inputs_recorded FROM quantity_estimates_in_force WHERE claim_id = ANY($1::uuid[])
        UNION ALL
-       SELECT claim_id, id, 'question_assessment', inputs_recorded FROM question_assessments_in_force WHERE claim_id = ANY($1::uuid[])`,
+       SELECT claim_id, id, 'question_assessment', inputs_recorded FROM question_assessments_in_force WHERE claim_id = ANY($1::uuid[])
+       UNION ALL
+       SELECT claim_id, id, 'artifact_assessment', inputs_recorded FROM artifact_assessments_in_force WHERE claim_id = ANY($1::uuid[])`,
       [frontier]
     );
     const recorded = judged.filter((j) => j.inputs_recorded);
@@ -748,6 +753,13 @@ async function readPage(
   for (const p of paragraphsOf(version.summary as string | null)) whole("summary", p);
   for (const p of paragraphsOf((version.reasoning_trace ?? version.work) as string | null)) whole("reasoning", p);
   for (const p of paragraphsOf(version.incomplete as string | null)) whole("gap", p);
+  // An artifact (§7b): what its Steward knows is missing. A safety case's second judgment (#1211): what its
+  // verdict rests on is part of the summary a reader is given, and what would change it is what remains open.
+  if (judgmentKind === "artifact_assessment") {
+    for (const p of paragraphsOf(version.verdict_basis as string | null)) whole("summary", p);
+    for (const p of paragraphsOf(version.gaps as string | null)) whole("gap", p);
+    for (const p of paragraphsOf(version.would_change as string | null)) whole("gap", p);
+  }
 
   const requests = await rawQuery<{ id: string; ask: string; why: string; satisfied_by: string; state: string; addressed_to: string | null; created_at: Date }>(
     `SELECT q.id, q.ask, q.why, q.satisfied_by, q.state, q.addressed_to, q.created_at
@@ -869,9 +881,45 @@ async function readPage(
       ORDER BY r.created_at, r.id`,
     [node.id, label]
   );
+  // A safety case's structure at this label (#1211): each element a part, in the case's order, with what it
+  // hangs under by its number here. The node an element presents is named by its wording only where the node
+  // is itself at the page's label, and by its public id where the public graph holds it, as a subclaim is.
+  const elements =
+    node.kind === "artifact"
+      ? await rawQuery<{
+          id: string; element_type: string; parent_id: string | null; block: string | null; statement: string;
+          standing: string | null; standing_reason: string | null; accepted_by: string | null; acceptance: string | null;
+          departure: string | null; node_id: string | null; node_text: string | null; node_label: string | null; mirrored: boolean | null;
+        }>(
+          `SELECT e.id, e.element_type, e.parent_id, e.block, e.statement, e.standing, e.standing_reason, e.accepted_by,
+                  e.acceptance, e.departure, e.node_id, c.text AS node_text, c.sensitivity_label AS node_label,
+                  c.origin = 'mirror' AS mirrored
+             FROM case_elements e LEFT JOIN claims c ON c.id = e.node_id
+            WHERE e.case_id = $1 AND e.sensitivity_label = $2
+            ORDER BY e.position, e.created_at, e.id`,
+          [node.id, label]
+        )
+      : [];
+  const numberOf = new Map(elements.map((e, n) => [e.id, n + 1]));
+  for (const e of elements) {
+    const what = e.element_type.replace(/_/g, " ");
+    const under = e.parent_id === null ? "the case's top claim" : numberOf.has(e.parent_id) ? `under element ${numberOf.get(e.parent_id)}` : "under an element recorded at another label";
+    const text = [
+      `Case element ${numberOf.get(e.id)} (${what}${e.block ? `: ${e.block.replace(/_/g, " ")}` : ""}; ${under})`,
+      ...(e.node_text !== null && e.node_label === label ? [`Presents: ${e.node_text}`] : []),
+      e.statement,
+      ...(e.standing ? [`Standing in the case: ${e.standing}${e.standing_reason ? `. ${e.standing_reason}` : ""}`] : []),
+      ...(e.accepted_by ? [`Accepted as a residual doubt by: ${e.accepted_by}. ${e.acceptance ?? ""}`.trim()] : []),
+      ...(e.departure ? [`Departs from the framework: ${e.departure}`] : []),
+    ];
+    whole("case_element", text.join("\n\n"), null, e.node_id ? await sourcesUnder([e.node_id], memo) : [], null, e.node_id && e.mirrored ? [e.node_id] : []);
+  }
+  // The nodes a case draws on are in its elements, above; the edges that carry propagation to it would say them twice.
+  const drawnOnByElements = new Set(elements.map((e) => e.node_id).filter(Boolean));
   for (const e of edges) {
+    if (e.relation_type === "draws_on" && drawnOnByElements.has(e.child)) continue;
     const own = e.child_label === label;
-    const head = `Subclaim (${e.relation_type.replace(/_/g, " ")})${own ? `: ${e.child_text}` : ""}`;
+    const head = `${e.relation_type === "draws_on" ? "Entry" : `Subclaim (${e.relation_type.replace(/_/g, " ")})`}${own ? `: ${e.child_text}` : ""}`;
     // A child the public graph holds is named by its public id, so a reader on the other side can open it there.
     whole("subclaim", `${head}\n\n${e.reasoning}`, own ? null : e.child, await sourcesUnder([e.child], memo), null, e.mirrored ? [e.child] : []);
   }
@@ -885,6 +933,9 @@ async function readPage(
       ? { status: version.status, confidence: version.confidence, credence: version.claim_credence ?? null }
       : judgmentKind === "quantity_estimate"
         ? { estimate: version.estimate }
+        : judgmentKind === "artifact_assessment"
+          ? // An artifact's fidelity, and for a safety case whether it establishes its conclusion to its standard.
+            { fidelity: version.fidelity, case_verdict: version.verdict ?? null, confidence: version.confidence ?? null }
         : { standing: version.standing, confidence: version.confidence ?? null, favored_answers: version.favored_claim_ids ?? [] };
   const header = {
     format: FINGERPRINT_FORMAT,
@@ -1137,7 +1188,7 @@ export async function itemScopeOf(release: ReleaseRow, page: Pick<PageRow, "node
 async function payersOf(release: ReleaseRow, page: Pick<PageRow, "judgment_kind" | "judgment_id">): Promise<string[]> {
   const out: string[] = [];
   if (release.payer_grant_id) out.push(release.payer_grant_id);
-  const table = page.judgment_kind ? { assessment: "assessments", quantity_estimate: "quantity_estimates", question_assessment: "question_assessments" }[page.judgment_kind] : null;
+  const table = page.judgment_kind ? { assessment: "assessments", quantity_estimate: "quantity_estimates", question_assessment: "question_assessments", artifact_assessment: "artifact_assessments" }[page.judgment_kind] : null;
   const jobs =
     table && page.judgment_id
       ? await rawQuery<{ job: string | null }>(`SELECT funded_by_job_id AS job FROM ${table} WHERE id = $1`, [page.judgment_id])
