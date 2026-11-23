@@ -1258,14 +1258,6 @@ const configSchema = z.object({
   // DEFAULT_MODEL — the exact regression the production guard below was
   // written to prevent, through a door that guard did not cover.
   extractorModel: modelId(MODELS.sonnet),
-  // Where extraction retries when the chosen tier REFUSES. The strong tier's
-  // classifiers decline bio-adjacent material (issue #78; Fable did so on this
-  // graph's virology cluster, and Opus 5.5 carries the same bio classifier),
-  // and LlmRefusalError means the server-side Opus fallback refused too — so
-  // the retry has to leave the family. Without it, moving extraction to the
-  // strong tier would turn "this paper is about pathogens" into a
-  // cancelled ingest with the mandate's fetch money already spent.
-  extractorFallbackModel: modelId(MODELS.sonnet),
   // Shared by the Contribution Reviewer. The Audit Agent has its own knob
   // (auditModel) so it can run on Opus without also upgrading the reviewer.
   governanceModel: modelId(MODELS.sonnet),
@@ -1883,7 +1875,6 @@ export function loadConfig(): Config {
     stewardModel: process.env.STEWARD_MODEL,
     curatorModel: process.env.CURATOR_MODEL,
     extractorModel: process.env.EXTRACTOR_MODEL,
-    extractorFallbackModel: process.env.EXTRACTOR_FALLBACK_MODEL,
     governanceModel: process.env.GOVERNANCE_MODEL,
     auditModel: process.env.AUDIT_MODEL,
     redactorModel: process.env.REDACTOR_MODEL,

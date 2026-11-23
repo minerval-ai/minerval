@@ -27,10 +27,7 @@ export const MODELS = {
    * an omitted `effort` defaults to `high`, where Opus 5.5 defaults to
    * `medium`; the prefix check on replayed thinking blocks is enforced for
    * every account whatever its age, so an edited history is a 400 here even
-   * where Opus 5.5 lets it through; no other model reads its thinking blocks,
-   * so a refusal fallback runs without them; its server-side fallback targets
-   * are Opus 4.8 and Opus 5 only (MODELS.opus is one); it needs 30-day data
-   * retention; and its rate limit is its own, lower than Opus 5.5's.
+   * where Opus 5.5 lets it through; it needs 30-day data retention; and its rate limit is its own, lower than Opus 5.5's.
    */
   frontier: "claude-fable-5-2",
   /**
@@ -46,13 +43,13 @@ export const MODELS = {
    * one, and must not start; thinking blocks are bound to the model and the
    * conversation that produced them, so an agent loop replaying `rawContent`
    * has to stay append-only (client.ts is); and its cyber/bio safety
-   * classifiers can refuse benign-adjacent requests, so the client opts into
-   * the server-side Opus fallback for it — see modelNeedsRefusalFallback.
+   * classifiers can refuse, and a refusal is shown as one: the client asks
+   * for no server-side fallback on any model (#1044).
    *
    * Unlike Fable, an omitted `effort` defaults to `medium`, not `high`.
    */
   strong: "claude-opus-5-5",
-  /** The refusal-fallback target for the strong tier (and a direct override option). */
+  /** Opus 4.8, a direct override option. */
   opus: "claude-opus-4-8",
   sonnet: "claude-sonnet-5-5",
   /**
@@ -68,9 +65,8 @@ export const MODELS = {
    * headroom; non-default `temperature`/`top_p`/`top_k` 400 (it is off the
    * modelAcceptsTemperature allowlist); an assistant prefill 400s; `effort`
    * takes low through max and defaults to `medium`; and its safety
-   * classifiers can refuse with no server-side fallback (it is off
-   * modelRefusalFallbackForm — a `fallbacks` list is a 400), so a refusal
-   * fails loudly like any other model's. Like the 5.5 tiers above, its
+   * classifiers can refuse, and a refusal fails loudly like any other
+   * model's. Like the 5.5 tiers above, its
    * thinking blocks are bound to the conversation, so a tool loop on it stays
    * append-only.
    */
@@ -147,45 +143,6 @@ export function isAnthropicModelId(id: string): boolean {
  */
 export function modelAcceptsTemperature(id: string): boolean {
   return /^claude-(haiku-4|sonnet-4)-/.test(id);
-}
-
-/**
- * Whether the model's safety classifiers can refuse benign-adjacent requests
- * (HTTP 200 with stop_reason "refusal") and should opt into a server-side
- * fallback so a false positive degrades to another model instead of failing
- * the agent run. Currently the Fable / Mythos family, Opus 5.5 (whose
- * classifiers add `bio` and `reasoning_extraction` to Opus 5's `cyber`), and
- * Sonnet 5.5 (five decline categories to Sonnet 5's one). Opus 5 and Sonnet 5
- * are not listed — the match is exact on the 5.5 version, so `claude-opus-5`
- * and `claude-sonnet-5` stay out. Haiku 5.5 is not listed either: its
- * classifiers can refuse, but it has no server-side fallback (a `fallbacks`
- * list is a 400 and `"default"` leaves a decline declined), so its refusals
- * fail loudly in checkRefusal. See modelRefusalFallbackForm for which wire
- * form each takes.
- */
-export function modelNeedsRefusalFallback(id: string): boolean {
-  return modelRefusalFallbackForm(id) !== null;
-}
-
-/**
- * The server-side fallback form a classifier-gated model takes, or null when
- * it takes none.
- *
- *  - "array" (`fallbacks: [{model: MODELS.opus}]`, beta
- *    `server-side-fallback-2026-06-01`): Fable / Mythos and Opus 5.5, re-served
- *    on Opus 4.8.
- *  - "default" (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`):
- *    Sonnet 5.5, whose only fallback is Anthropic's routed one — `cyber` and
- *    `frontier_llm` declines are retried on Sonnet 5; `bio`,
- *    `reasoning_extraction` and `general_harms` declines come back as refusals
- *    and fail loudly like any other.
- *
- * Pairing either beta header with the other form is a 400.
- */
-export function modelRefusalFallbackForm(id: string): "array" | "default" | null {
-  if (/^claude-(fable-|mythos-|opus-5-5)/.test(id)) return "array";
-  if (/^claude-sonnet-5-5/.test(id)) return "default";
-  return null;
 }
 
 /**

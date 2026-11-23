@@ -121,7 +121,6 @@ services:
       - STEWARD_STRONG_MODEL=${STEWARD_STRONG_MODEL:?Set STEWARD_STRONG_MODEL in .env, the model the Steward's strong tier runs on}
       - CURATOR_MODEL=${CURATOR_MODEL:?Set CURATOR_MODEL in .env, the model the Curator runs on}
       - EXTRACTOR_MODEL=${EXTRACTOR_MODEL:?Set EXTRACTOR_MODEL in .env, the model the Extractor runs on}
-      - EXTRACTOR_FALLBACK_MODEL
       - MATCHER_MODEL
       - TAGGER_MODEL
       - GOVERNANCE_MODEL

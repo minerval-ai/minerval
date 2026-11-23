@@ -113,7 +113,6 @@ declares under `[[model_providers.endpoints]]`, below.
 | `steward_strong` | The Steward's strong pass and paid orders. `""` runs every pass on `steward`. | `STEWARD_STRONG_MODEL` |
 | `curator` | The Curator: merges, splits and structure. | `CURATOR_MODEL` |
 | `extractor` | The Extractor: the claims a document makes, in canonical wording. | `EXTRACTOR_MODEL` |
-| `extractor_fallback` | Where extraction retries when `extractor` refuses a document. | `EXTRACTOR_FALLBACK_MODEL` |
 | `matcher` | The Matcher: whether a statement is a claim the graph already holds. | `MATCHER_MODEL` |
 | `tagger` | The tagger: what a claim is about. | `TAGGER_MODEL` |
 | `contribution_reviewer` | The Contribution Reviewer. | `GOVERNANCE_MODEL` |

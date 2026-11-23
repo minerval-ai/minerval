@@ -25,7 +25,6 @@ import {
   OPENROUTER_MODELS,
   isAnthropicModelId,
   modelAcceptsTemperature,
-  modelNeedsRefusalFallback,
 } from "../../../src/llm/models.js";
 import { resolveProvider } from "../../../src/llm/providers/routing.js";
 import {
@@ -83,12 +82,10 @@ describe("model guard: every reachable model resolves, prices, and behaves", () 
       });
 
       it("has consistent Anthropic-only quirk predicates", () => {
-        // The temperature and refusal-fallback quirks are Anthropic-family
-        // behaviors; a model that isn't an Anthropic ID must never match them
-        // (they gate request parameters the other providers would reject).
+        // The temperature quirk is Anthropic-family behavior; a model that isn't an Anthropic ID must never match them
+        // (it gates a request parameter the other providers would reject).
         if (!isAnthropicModelId(model)) {
           expect(modelAcceptsTemperature(model)).toBe(false);
-          expect(modelNeedsRefusalFallback(model)).toBe(false);
         }
       });
     });

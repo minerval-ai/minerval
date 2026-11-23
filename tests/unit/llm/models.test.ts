@@ -3,8 +3,6 @@ import {
   MODELS,
   isAnthropicModelId,
   modelAcceptsTemperature,
-  modelNeedsRefusalFallback,
-  modelRefusalFallbackForm,
   modelSupportsLongRun,
 } from "../../../src/llm/models.js";
 
@@ -35,31 +33,6 @@ describe("model helpers", () => {
     // every Matcher run).
     expect(modelAcceptsTemperature("claude-haiku-5")).toBe(false);
     expect(modelAcceptsTemperature("claude-haiku-5-20270101")).toBe(false);
-  });
-
-  it("opts only Opus 5.5, Sonnet 5.5 and the Fable/Mythos family into the refusal fallback", () => {
-    expect(modelNeedsRefusalFallback(MODELS.frontier)).toBe(true);
-    expect(modelNeedsRefusalFallback(MODELS.strong)).toBe(true);
-    expect(modelNeedsRefusalFallback("claude-fable-5-1")).toBe(true);
-    expect(modelNeedsRefusalFallback("claude-mythos-5")).toBe(true);
-    expect(modelNeedsRefusalFallback(MODELS.sonnet)).toBe(true);
-    expect(modelNeedsRefusalFallback("claude-opus-5")).toBe(false);
-    expect(modelNeedsRefusalFallback("claude-sonnet-5")).toBe(false);
-    expect(modelNeedsRefusalFallback(MODELS.opus)).toBe(false);
-    // Haiku 5.5's classifiers can refuse, but it has no server-side fallback:
-    // a `fallbacks` list on it is a 400.
-    expect(modelNeedsRefusalFallback(MODELS.haiku)).toBe(false);
-    expect(modelRefusalFallbackForm(MODELS.haiku)).toBeNull();
-  });
-
-  it("gives Sonnet 5.5 the default form and the rest the array form", () => {
-    // Fable 5.2's permitted fallback targets are Opus 4.8 and Opus 5; the
-    // array form names MODELS.opus (4.8).
-    expect(modelRefusalFallbackForm(MODELS.frontier)).toBe("array");
-    expect(modelRefusalFallbackForm(MODELS.strong)).toBe("array");
-    expect(modelRefusalFallbackForm("claude-fable-5-1")).toBe("array");
-    expect(modelRefusalFallbackForm("claude-sonnet-5-5")).toBe("default");
-    expect(modelRefusalFallbackForm("claude-sonnet-5")).toBeNull();
   });
 });
 
