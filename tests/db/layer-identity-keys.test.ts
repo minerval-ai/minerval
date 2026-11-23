@@ -39,6 +39,8 @@ const KEPT: Record<string, string> = {
   assistant_pages_share_token_unique: "A random token minted for the page: nothing else can produce it.",
   uq_audit_runs_dedupe_key:
     "The key is made from the id of a row with one label (a contribution, a bounty, a page and its round, a prize claim, a source) by work on that row, or carries the label in its text where a sweep opens one audit at each label (keyAtLabel).",
+  passed_public_requests_pkey:
+    "The public request's id, and the note is one for the whole deployment: every row is at `public`, which every member reads, and is written as the tables' owner once the route has checked the person (passOnRequest). No work at another label writes one, so none is stopped by a row it may not read.",
   claim_predictions_pkey: "A prediction fixture's record, written by a script (scripts/predictions.ts) and by no run.",
   idx_claim_predictions_fixture: "As claim_predictions_pkey.",
   uq_connection_tools_name: PINNED,

@@ -200,7 +200,7 @@ describe("the labels table", () => {
         "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
         "mandate_events", "mandate_inbox", "mandate_policy_versions", "mandate_valuations", "node_changes",
         "node_message_reads", "node_messages", "outbound_packages", "outbound_proposals", "outbound_sends", "outward_acts",
-        "overlays", "petitions", "prize_claims", "proof_attempts", "published_mandates", "published_page_packages",
+        "overlays", "passed_public_requests", "petitions", "prize_claims", "proof_attempts", "published_mandates", "published_page_packages",
         "published_pages", "publishers", "quantity_cuts", "quantity_definitions", "quantity_estimates",
         "quantity_readings", "question_assessments", "reading_citations", "received_nodes", "received_pages", "received_parts",
         "received_releases", "reconciliation_events", "redaction_policies",

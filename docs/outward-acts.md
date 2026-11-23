@@ -58,6 +58,7 @@ decided there, by its settings and, where they say so, by holders of
 | Act | Takes | A person present | A tool |
 | --- | --- | --- | --- |
 | Adopt a public request (says nothing outside) | `direct` | session | no |
+| Pass on a public request, or put it back (says nothing outside) | `direct` | no | yes |
 | Offer to the gate to outside that the graph is taking a request up, or decline it | `PUBLIC_ACTS_BY` | session or card | yes |
 | Open a public mandate; write to the public Grantmaker | `PUBLIC_ACTS_BY` | session | no: the words are a person's |
 | Fund a drafted public mandate; add public owls to one; fund a mirrored node; ask a public mandate about a node | `PUBLIC_ACTS_BY` | session or card | yes |
@@ -122,12 +123,37 @@ word of a contribution is in a package.
 A request on the public graph can be addressed to whoever holds the
 evidence, and what becomes of it is part of its record.
 
-**Adopting.** The public graph's requests come with the mirror
-(`feed_requests`, `feed_request_targets`; `GET /outside/requests`).
-Adopting one (`POST /outside/requests/:public_request_id/adopt`) files an
+**Which are this deployment's.** The public graph's requests come with the
+mirror (`feed_requests`, `feed_request_targets`; `GET /outside/requests`),
+and so does every public node, so that a request "bears on a node held
+here" is true of all of them. Most are asked of anyone and wait on nobody
+here. The list marks the few that are this deployment's in particular
+(`concerns_this_graph`): a request addressed to a mandate it published
+(`asked_of_this_graph`), or one that bears on a node it has work of its own
+on (`worked_on_here`: a node of its own, or a public node it has assessed,
+argued about, joined to another or filed a request on). The work is read as
+the person asking, so work at a label they do not read counts for nothing.
+Those are what the inbox and the sidebar count, and the Requests page opens
+on them; the rest are under "Open to anyone".
+
+**Passing on one.** A person who directs the graph can pass on a request
+(`POST /outside/requests/:public_request_id/pass`): it is set aside here and
+stops waiting on anyone in this deployment. That is the deployment's own
+note about a row of the mirror, one for the whole deployment
+(`passed_public_requests`, kept at `public`, where every member reads who
+passed and when). It says nothing outside and the request stays open on the
+public graph for whoever else can do it. `DELETE` on the same address puts
+it back. A request already adopted is not passed on: it is this
+deployment's own request by then, and that one is closed.
+
+**Adopting.** Adopting a public request (`POST /outside/requests/:public_request_id/adopt`) files an
 ordinary request here, at a label the person reads, with the public
 request's own words and the nodes it bears on, linked to the public one
-(`adopted_requests`). It says nothing outside. The work is an ordinary
+(`adopted_requests`). It says nothing outside. Where the deployment holds
+more than one label the label is one of its own and not `public`: the
+request is about the public graph's nodes, whose assessment at `public` is
+the public graph's to make, so no work on it is run here at that label
+([mirror.md](mirror.md), "Beside a deployment's own rows"). The work is an ordinary
 request and action: it runs when it is funded. Taking up a request filed
 at a label of the deployment's own, at a label that reads it, is the same
 act one layer up and uses the same table and the same code

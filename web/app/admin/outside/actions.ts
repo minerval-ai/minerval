@@ -27,6 +27,8 @@ import {
   fundPublicMandate,
   fundPublicNode,
   openPublicMandate,
+  passOnPublicRequest,
+  putBackPublicRequest,
   sayToPublicGrantmaker,
   takeUpPublicRequest,
 } from "../../../lib/outside-api";
@@ -72,11 +74,53 @@ async function act(run: (user: string) => Promise<FormState>): Promise<FormState
 
 // --- public requests --------------------------------------------------------------
 
+// Adopting, passing on and putting back each move the request to another tab
+// of the page, so the form that was pressed is gone when the page is drawn
+// again. Each ends at the tab the request went to, where the page says what
+// was done (app/admin/outside/requests, `done`).
+const REQUESTS = "/admin/outside/requests";
+const TABS = ["concerns", "anyone", "adopted", "passed", "closed"];
+
 export async function adoptRequestAction(_previous: FormState, form: FormData): Promise<FormState> {
-  return act(async (user) => {
-    const result = await adoptPublicRequest(user, text(form, "public_request_id"), text(form, "label") || undefined);
-    return { notice: result.already ? "Already adopted at that label." : "Adopted. It is an ordinary request here now, and nothing was said outside." };
-  });
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  const id = text(form, "public_request_id");
+  const label = text(form, "label");
+  if (text(form, "must_choose") === "yes" && !label) return { error: "Choose the label the work is to be done at." };
+  try {
+    await adoptPublicRequest(user, id, label || undefined);
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/admin/outside", "layout");
+  redirect(`${REQUESTS}?tab=adopted&done=adopted&id=${encodeURIComponent(id)}`);
+}
+
+export async function passOnRequestAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  const id = text(form, "public_request_id");
+  const from = text(form, "tab");
+  try {
+    await passOnPublicRequest(user, id);
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/admin/outside", "layout");
+  redirect(`${REQUESTS}?tab=${TABS.includes(from) ? from : "concerns"}&done=passed&id=${encodeURIComponent(id)}`);
+}
+
+export async function putBackRequestAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  const id = text(form, "public_request_id");
+  try {
+    await putBackPublicRequest(user, id);
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/admin/outside", "layout");
+  redirect(`${REQUESTS}?tab=passed&done=put-back&id=${encodeURIComponent(id)}`);
 }
 
 export async function takeUpRequestAction(_previous: FormState, form: FormData): Promise<FormState> {

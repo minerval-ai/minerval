@@ -292,6 +292,10 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "The log of acts on the public graph is kept at `public`, where every member reads it, and is written once the route has checked the person or the gate has let a thing through.",
       "Rows at `public` and nowhere else, each naming that label: one row for each act on the public graph, holding exactly what was sent there (ids the public graph already holds, amounts, a reason from a fixed list, words a person wrote for the outside from a signed-in session, or an item as the gate to outside let it through).",
     ],
+    [
+      "That this deployment passed on a public request is its own note about a row of the mirror, one for the whole deployment. It is kept at `public`, where every member reads the list of public requests, and written once the route has checked that the person directs the graph.",
+      "One row at `public`, naming that label, holding the public request's id, who passed on it and when; or that row's removal when the request is put back. It reads whether any label has adopted the request, and tells the person only that one has.",
+    ],
   ],
   "src/services/inbound-service.ts": [
     [

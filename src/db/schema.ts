@@ -9755,6 +9755,19 @@ export const outwardActs = pgTable(
   ]
 );
 
+// Public requests this deployment has passed on (docs/outward-acts.md,
+// "Passing on one"): set aside from the list of requests that wait on
+// somebody here, and said to nobody outside. The public request is the
+// mirror's row and is not written to; this is the deployment's own note
+// about it, one for the whole deployment, kept at `public` where every
+// member reads the list it tidies. Putting a request back deletes the row.
+export const passedPublicRequests = pgTable("passed_public_requests", {
+  publicRequestId: uuid("public_request_id").primaryKey(),
+  passedBy: uuid("passed_by").references((): AnyPgColumn => contributors.id),
+  passedAt: timestamp("passed_at", { withTimezone: true }).notNull().defaultNow(),
+  sensitivityLabel: sensitivityLabelColumn(),
+});
+
 // A contribution made on the public graph through a page this deployment
 // published, as it came in with the mirror. The contribution's own text is
 // in feed_contributions, at `public`, and is given as written to the node's

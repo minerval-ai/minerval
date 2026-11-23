@@ -92,13 +92,22 @@ export interface PublicRequest {
   satisfied_by: string;
   who_could: string | null;
   addressed_to: string | null;
-  bears_on: Array<{ id: string; text: string }>;
+  /** worked_on_here: this deployment has work of its own on the node that the reader may read. Absent from an older API. */
+  bears_on: Array<{ id: string; text: string; worked_on_here?: boolean }>;
   bears_on_text: string | null;
   state_on_the_public_graph: string;
   filed_at: string;
+  /** Addressed to a mandate this deployment published. Absent from an older API. */
+  asked_of_this_graph?: boolean;
+  /** Asked of this graph, or bearing on a node it has worked on: the few that are this deployment's in particular. Absent from an older API. */
+  concerns_this_graph?: boolean;
+  /** Set where someone here passed on it: set aside in this deployment, nothing said outside. Absent from an older API. */
+  passed_on?: { at: string; by: string | null } | null;
   here: Array<{
     adoption_id: string;
     request_id: string;
+    /** The label it was adopted at, where its work is done and read. Absent from an older API. */
+    label?: string;
     adopted_at: string;
     state_here: string;
     taken_up_in_public_at: string | null;
@@ -112,6 +121,8 @@ export interface PublicRequests {
   what_funding_it_there_shows?: string;
   requests: PublicRequest[];
   as_of: string;
+  /** What passing on a request does, in the API's words. Absent from an older API. */
+  passing?: string;
   adopting: string;
   taking_up_in_public: string;
 }
@@ -217,13 +228,15 @@ export const checkConnection = (who: string) => post<{ connection: ConnectionVie
 export const disconnectConnection = (who: string) =>
   accountFetch<{ retired_there: boolean; said: string | null }>("/outside/connection", { method: "DELETE", actingUser: who });
 export const fetchOutwardLog = async (who: string) => (await get<{ acts: OutwardAct[] }>("/outside/log?limit=100", who)).acts;
-export const fetchPublicRequests = (who: string, nodeId?: string) => get<PublicRequests>(`/outside/requests${nodeId ? `?node_id=${seg(nodeId)}` : ""}`, who);
+export const fetchPublicRequests = (who: string, nodeId?: string) => get<PublicRequests>(`/outside/requests?limit=200${nodeId ? `&node_id=${seg(nodeId)}` : ""}`, who);
 export const fetchSaidBack = (who: string) => get<{ contributions: ReceivedContribution[]; how_it_works: string }>("/outside/said-back", who);
 export const fetchReportsForSending = (who: string) => get<ReportsForSending>("/outside/reports", who);
 export const fetchPublicConversations = (who: string) => get<PublicConversations>("/outside/mandates/conversations", who);
 export const fetchPublicConversation = (who: string, id: string) => get<Record<string, any>>(`/outside/mandates/conversations/${seg(id)}`, who);
 
 export const adoptPublicRequest = (who: string, id: string, label?: string) => post<{ adoption_id: string; request_id: string; already: boolean }>(`/outside/requests/${seg(id)}/adopt`, who, label ? { label } : {});
+export const passOnPublicRequest = (who: string, id: string) => post<Record<string, unknown>>(`/outside/requests/${seg(id)}/pass`, who);
+export const putBackPublicRequest = (who: string, id: string) => post<Record<string, unknown>>(`/outside/requests/${seg(id)}/pass`, who, undefined, "DELETE");
 export const takeUpPublicRequest = (who: string, adoptionId: string) => post<Record<string, unknown>>(`/outside/requests/adopted/${seg(adoptionId)}/take-up`, who);
 export const declinePublicRequest = (who: string, adoptionId: string, reason: string, note?: string) =>
   post<Record<string, unknown>>(`/outside/requests/adopted/${seg(adoptionId)}/decline`, who, note ? { reason, note } : { reason });
