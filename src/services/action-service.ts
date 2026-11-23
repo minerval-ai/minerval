@@ -19,6 +19,7 @@
  *    metered cost is consumed pro rata from the winner's covering
  *    allocations.
  */
+import { outcomeClause, type PassOutcome } from "../llm/agents/pass-outcome.js";
 import { oneSourceForAddressSql } from "./layer-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -3093,7 +3094,15 @@ async function endFaultWaits(actionId: string, waitedOn: string | null): Promise
 export async function completeAction(
   actionId: string,
   meteredMicroUsd: number,
-  opts: { meteredJobId?: string | null } = {}
+  opts: {
+    meteredJobId?: string | null;
+    /**
+     * What came of the run (§19, #1027): for a Steward pass, what it
+     * concluded (llm/agents/pass-outcome.ts). Stored on the row and told in
+     * run_settled; left out by kinds that do not report one yet.
+     */
+    outcome?: PassOutcome | null;
+  } = {}
 ): Promise<number> {
   // A row that runs ends the wait its kind and tier were in (endFaultWaits),
   // whether or not it had been waiting itself; `waitedOn` is the platform
@@ -3110,11 +3119,11 @@ export async function completeAction(
       waited_on: string | null;
     }>(
       `UPDATE actions a SET status = 'done', metered_cost_micro_usd = $2,
-              metered_job_id = $3, updated_at = now()
+              metered_job_id = $3, outcome = $4::jsonb, updated_at = now()
          FROM (SELECT id, fault_reason FROM actions WHERE id = $1 FOR UPDATE) prior
         WHERE a.id = prior.id AND a.status IN ('running', 'open')
         RETURNING a.id, a.exclusion_group, prior.fault_reason AS waited_on`,
-      [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null]
+      [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null, opts.outcome ? JSON.stringify(opts.outcome) : null]
     );
     if (!action) return 0;
     closed = true;
@@ -3304,8 +3313,10 @@ export async function completeAction(
           nodeId: done.claim_id,
           grantId: done.grants[0] ?? null,
           refs: { work_kind: done.kind, target_ref: done.target_ref, grants: done.grants },
-          summary: `${done.label} finished, spending ${Math.round(meteredMicroUsd / 10_000) / 100} owls.`,
-          payload: { spent_micro_usd: Math.round(meteredMicroUsd) },
+          summary:
+            `${done.label} finished, spending ${Math.round(meteredMicroUsd / 10_000) / 100} owls` +
+            (opts.outcome ? `: ${outcomeClause(opts.outcome)}` : "."),
+          payload: { spent_micro_usd: Math.round(meteredMicroUsd), ...(opts.outcome ? { outcome: opts.outcome } : {}) },
         },
         tx
       );

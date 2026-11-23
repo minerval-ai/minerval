@@ -17,6 +17,7 @@
  * checkpoint and waits for a top-up; when the subtree is exhausted it
  * completes and refunds the unspent budget.
  */
+import { outcomeClause, type PassOutcome } from "../llm/agents/pass-outcome.js";
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { currentLabel, runAtLabel, runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
@@ -249,7 +250,7 @@ async function advanceBudgetJob(job: JobRow, model: string): Promise<BudgetJobPr
     ".";
 
   try {
-    await withStewardLease({ claimId: target.id }, () =>
+    const { value: outcome } = await withStewardLease({ claimId: target.id }, () =>
       runWithUsageContext({ userId: job.user_id, jobId: job.id }, () =>
         // The pass spends from what the funder's budget has left.
         withPassBudget(
@@ -276,6 +277,10 @@ async function advanceBudgetJob(job: JobRow, model: string): Promise<BudgetJobPr
           assessed: assessedSoFar + 1,
           last_claim_id: target.id,
           subtree: await subtreeCounts(rootClaimId),
+          // What each pass concluded (#1027), for the person who started the
+          // job: counts by outcome, and the nodes whose pass ended without a
+          // conclusion, so a pass counted above is not read as a judgment.
+          ...tallyOutcome(job.checkpoint, target.id, outcome),
         }),
       ]
     );
@@ -333,4 +338,31 @@ export async function runnableBudgetJobCount(): Promise<number> {
     `SELECT count(*)::int AS n FROM budget_jobs WHERE status = 'running'`
   );
   return row?.n ?? 0;
+}
+
+/**
+ * The job's checkpoint fields for one more pass's outcome: `outcomes` counts
+ * passes by what they concluded, and `unconcluded` lists the nodes whose pass
+ * ended without a conclusion, newest first, with what the pass did (#1027).
+ */
+export function tallyOutcome(
+  checkpoint: Record<string, unknown> | null | undefined,
+  claimId: string,
+  outcome: PassOutcome
+): { outcomes: Record<string, number>; last_outcome: string; unconcluded?: Array<{ claim_id: string; outcome: string }> } {
+  const prior = (checkpoint?.outcomes ?? {}) as Record<string, number>;
+  const outcomes = { ...prior, [outcome.kind]: Number(prior[outcome.kind] ?? 0) + 1 };
+  const clause = outcomeClause(outcome);
+  const priorUnconcluded = Array.isArray(checkpoint?.unconcluded)
+    ? (checkpoint!.unconcluded as Array<{ claim_id: string; outcome: string }>)
+    : [];
+  return {
+    outcomes,
+    last_outcome: clause,
+    ...(outcome.kind === "unconcluded"
+      ? { unconcluded: [{ claim_id: claimId, outcome: clause }, ...priorUnconcluded].slice(0, 50) }
+      : priorUnconcluded.length > 0
+        ? { unconcluded: priorUnconcluded }
+        : {}),
+  };
 }

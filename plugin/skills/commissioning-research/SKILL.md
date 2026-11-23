@@ -184,6 +184,20 @@ budget for the Grantmaker that plans the work and the rest refunded when
 it is done. Its page shows your user as "a reader". Each spends or escrows
 owls; check `get_account` first.
 
+**What a pass concluded.** A pass that finished is not the same as a pass
+that judged. When it ends, its `outcome` says which: it recorded a new
+assessment (with the status before and after), it concluded that the
+assessment in force stands, it paused waiting on what it asked for, or it
+ended without a conclusion, saying how and what it did on the way.
+`get_order` carries it, and `get_claim` gives the node's `last_pass`
+beside `stewarded_at` (which moves when a pass starts). Report it as it
+is: "the assessment stands" is a finding, and a pass that ended without a
+conclusion has left the earlier assessment in force. An order whose pass
+ended without a conclusion for a reason on the platform's side is
+refunded whole (`outcome.refunded`); any other order is charged for what
+it used. Whether to pay for another pass is your user's decision; nothing
+is retried on its own.
+
 **One request.** The work on an open request is commissioned like any
 other work, and anyone may commission it. `get_request` shows its budget
 (what doing it should cost) and whether it is already commissioned. A

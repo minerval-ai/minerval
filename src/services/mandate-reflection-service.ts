@@ -12,6 +12,7 @@ import { microUsdToOwls } from "./owl.js";
 import { waitsForPassAt } from "./inbox-service.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { outcomeClause, unconcludedWhy, type PassOutcome } from "../llm/agents/pass-outcome.js";
 
 const owls = (micro: number | string | null | undefined) => microUsdToOwls(Number(micro ?? 0));
 
@@ -33,7 +34,7 @@ const owls = (micro: number | string | null | undefined) => microUsdToOwls(Numbe
 const SETTLED_RUNS = `
   WITH settled_runs AS (
     SELECT * FROM (
-      SELECT al.action_id, a.kind, a.claim_id,
+      SELECT al.action_id, a.kind, a.claim_id, a.outcome,
              al.amount_micro_usd AS budget,
              al.spent_micro_usd + COALESCE((
                SELECT SUM(o.spent_micro_usd) FROM minerval_whole.allocation_money o
@@ -69,21 +70,28 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
        FROM settled_runs GROUP BY kind ORDER BY spent DESC`,
     [grantId, sinceIso]
   );
-  const [outcomes] = await rawQuery<{ changed: number; stood: number }>(
-    `WITH commissioned AS (
-       SELECT DISTINCT a.claim_id FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
-        WHERE al.grant_id = $1 AND a.claim_id IS NOT NULL AND al.created_at >= $2::timestamptz
-     ),
-     passes AS (
-       SELECT x.claim_id, x.status,
-              (SELECT p.status FROM assessments p WHERE p.claim_id = x.claim_id AND p.assessed_at < x.assessed_at
-                ORDER BY p.assessed_at DESC LIMIT 1) AS prev
-         FROM assessments x JOIN commissioned c ON c.claim_id = x.claim_id
-        WHERE x.assessed_at >= $2::timestamptz
-     )
-     SELECT count(*) FILTER (WHERE prev IS DISTINCT FROM status)::int AS changed,
-            count(*) FILTER (WHERE prev IS NOT DISTINCT FROM status)::int AS stood
-       FROM passes`,
+  // What each settled pass concluded, from the outcome its ledger row
+  // carries (#1027; llm/agents/pass-outcome.ts), one count per run.
+  const [outcomes] = await rawQuery<{
+    changed: number;
+    same: number;
+    stood: number;
+    left: number;
+    logged: number;
+    waiting: number;
+    unconcluded: number;
+  }>(
+    `${SETTLED_RUNS}, runs AS (SELECT DISTINCT ON (action_id) action_id, outcome FROM settled_runs)
+     SELECT count(*) FILTER (WHERE outcome->>'kind' = 'recorded'
+                               AND (outcome->'before'->>'status') IS DISTINCT FROM (outcome->>'status_after'))::int AS changed,
+            count(*) FILTER (WHERE outcome->>'kind' = 'recorded'
+                               AND (outcome->'before'->>'status') IS NOT DISTINCT FROM (outcome->>'status_after'))::int AS same,
+            count(*) FILTER (WHERE outcome->>'kind' = 'stood')::int AS stood,
+            count(*) FILTER (WHERE outcome->>'kind' = 'left_standing')::int AS left,
+            count(*) FILTER (WHERE outcome->>'kind' = 'logged')::int AS logged,
+            count(*) FILTER (WHERE outcome->>'kind' = 'waiting')::int AS waiting,
+            count(*) FILTER (WHERE outcome->>'kind' = 'unconcluded')::int AS unconcluded
+       FROM runs`,
     [grantId, sinceIso]
   );
   const petitions = await rawQuery<{ requester_agent: string | null; kind: string; status: string; n: number; asked: number; granted: number }>(
@@ -93,11 +101,24 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
       GROUP BY requester_agent, kind, status ORDER BY n DESC`,
     [grantId, sinceIso]
   );
+  // Passes that ended without a conclusion, whatever they spent (#1027).
+  const unconcluded = await rawQuery<{ action_id: string; claim_id: string | null; kind: string; spent: number; budget: number; outcome: PassOutcome }>(
+    `${SETTLED_RUNS}
+     SELECT DISTINCT ON (r.settled_at, r.action_id) r.action_id, r.claim_id, r.kind, r.spent, r.budget, r.outcome
+       FROM settled_runs r
+      WHERE r.outcome->>'kind' = 'unconcluded'
+      ORDER BY r.settled_at DESC, r.action_id LIMIT 10`,
+    [grantId, sinceIso]
+  );
+  // Runs that spent their whole budget without petitioning, among those
+  // that report no outcome. A run that reports one is in the list above
+  // when it concluded nothing, and concluded otherwise: a deliberate
+  // decision that the assessment stands is never a shortfall.
   const short = await rawQuery<{ action_id: string; claim_id: string | null; kind: string; spent: number; budget: number }>(
     `${SETTLED_RUNS}
      SELECT r.action_id, r.claim_id, r.kind, r.spent, r.budget
        FROM settled_runs r
-      WHERE r.spent >= r.budget
+      WHERE r.spent >= r.budget AND r.outcome IS NULL
         AND NOT EXISTS (SELECT 1 FROM petitions p WHERE p.requester_action_id = r.action_id AND p.created_at >= $2::timestamptz)
       ORDER BY r.settled_at DESC LIMIT 10`,
     [grantId, sinceIso]
@@ -160,7 +181,7 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
         : `Spent ${owls(money!.spent)} owls over ${money!.runs} runs, using ${used}% of their budgets; ` +
           `${money!.heavy} used more than 90%. By kind: ` +
           byKind.map((k) => `${k.kind} · ${k.runs} · ${owls(k.spent)} of ${owls(k.budget)} owls`).join("; ") +
-          `. Outcomes on the nodes you paid for: ${outcomes?.changed ?? 0} assessments changed status, ${outcomes?.stood ?? 0} stood.`),
+          `. ${outcomesLine(outcomes)}`),
     `## Petitions\n\n` +
       (petitionTotals.n === 0
         ? "None since then."
@@ -170,6 +191,19 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
           petitions
             .slice(0, 5)
             .map((p) => `${p.kind} from ${p.requester_agent ?? "agents"} (${p.status}) ×${p.n}, asking ${owls(p.asked)} owls`)
+            .join("; ") +
+          "."),
+    `## Passes that ended without a conclusion\n\n` +
+      (unconcluded.length === 0
+        ? "None."
+        : `${unconcluded.length} pass(es) recorded no judgment, no logged decision that the one in force stands, ` +
+          `and nothing they were waiting on: ` +
+          unconcluded
+            .map(
+              (r) =>
+                `${r.kind}${r.claim_id ? ` on ${r.claim_id}` : ""} (${owls(r.spent)} of ${owls(r.budget)} owls; ` +
+                `${r.outcome.kind === "unconcluded" ? unconcludedWhy(r.outcome) : outcomeClause(r.outcome)})`
+            )
             .join("; ") +
           "."),
     `## Runs that ran short without asking\n\n` +
@@ -196,4 +230,21 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
         ? "None active."
         : lookouts.map((l) => `"${l.title}": raised ${l.raised}, commissioned ${l.commissioned}`).join("; ") + "."),
   ].join("\n\n");
+}
+
+/** The briefing's line on what the passes it paid for concluded (#1027). */
+export function outcomesLine(
+  o: { changed: number; same: number; stood: number; left: number; logged: number; waiting: number; unconcluded: number } | undefined
+): string {
+  const n = (k: keyof NonNullable<typeof o>) => Number(o?.[k] ?? 0);
+  const parts = [
+    `${n("changed")} recorded an assessment that changed status`,
+    `${n("same")} recorded one at the same status`,
+    `${n("stood")} concluded by a logged decision that the assessment stands`,
+  ];
+  if (n("left") > 0) parts.push(`${n("left")} left another label's assessment standing`);
+  if (n("logged") > 0) parts.push(`${n("logged")} concluded with another logged decision`);
+  if (n("waiting") > 0) parts.push(`${n("waiting")} paused, waiting on what they asked for`);
+  parts.push(`${n("unconcluded")} ended without a conclusion`);
+  return `What the passes you paid for concluded: ${parts.join(", ")}.`;
 }

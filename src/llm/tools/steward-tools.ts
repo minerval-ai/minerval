@@ -1339,7 +1339,11 @@ export function getStewardToolDefinitions(): Tool[] {
       name: "log_stewardship_decision",
       description:
         "Log a stewardship decision for the audit trail. Use this to record " +
-        "significant decisions you make about a claim.",
+        "significant decisions you make about a claim. Set judgment_stands to " +
+        "true when your decision is that the judgment in force stands unchanged: " +
+        "that logged decision is then the outcome of the pass. A decision that " +
+        "names a change (reassessed, restructured) concludes the pass only with " +
+        "the tool that records it.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -1352,12 +1356,18 @@ export function getStewardToolDefinitions(): Tool[] {
             description:
               "What action was taken (e.g. 'reassessed', 'updated_canonical_form', 'no_action_needed')",
           },
+          judgment_stands: {
+            type: "boolean",
+            description:
+              "True when this decision is that the current assessment stands unchanged and " +
+              "nothing is recorded in its place this pass; false otherwise.",
+          },
           reasoning: {
             type: "string",
             description: "Full reasoning for the decision",
           },
         },
-        required: ["claim_id", "action_taken", "reasoning"],
+        required: ["claim_id", "action_taken", "judgment_stands", "reasoning"],
       },
     },
     getNotifyStewardToolDefinition("steward"),
@@ -3505,13 +3515,16 @@ export async function executeStewardTool(
         // The durable audit trail the constitution promises (#100) — an
         // append-only row per decision, not just a bumped timestamp.
         const db = getDb();
-        await db.insert(auditLog).values({
-          claimId,
-          sensitivityLabel: currentLabel(),
-          action: actionTaken,
-          reasoning,
-          createdBy: "claim_steward",
-        });
+        const [logged] = await db
+          .insert(auditLog)
+          .values({
+            claimId,
+            sensitivityLabel: currentLabel(),
+            action: actionTaken,
+            reasoning,
+            createdBy: "claim_steward",
+          })
+          .returning({ id: auditLog.id });
         // The node's own row is touched only by work at its own label; the
         // decision itself is the row above, at this run's label.
         // A mirrored node's row is the public graph's, at every label.
@@ -3526,7 +3539,10 @@ export async function executeStewardTool(
           success: true,
           message: `Stewardship decision logged for claim ${claimId}: ${actionTaken}`,
           action: actionTaken,
+          ...(typeof input.judgment_stands === "boolean" ? { judgment_stands: input.judgment_stands } : {}),
           reasoning,
+          // The row the pass's outcome points to (pass-outcome.ts, #1027).
+          audit_log_id: logged?.id ?? null,
         });
       }
 
