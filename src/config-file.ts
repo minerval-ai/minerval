@@ -135,7 +135,7 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   model("assistant", "ASSISTANT_MODEL", "assistantModel"),
   model("assistant_standard", "ASSISTANT_STANDARD_MODEL", "assistantStandardModel"),
   model("assistant_title", "ASSISTANT_TITLE_MODEL", "assistantTitleModel"),
-  model("extension", "EXTENSION_MODEL", "extensionModel"),
+  model("assistant_markup", "ASSISTANT_MARKUP_MODEL", "assistantMarkupModel"),
   model("researcher_strong", "RESEARCHER_STRONG_MODEL", "researcherStrongModel"),
   model("researcher_standard", "RESEARCHER_STANDARD_MODEL", "researcherStandardModel"),
   model("researcher_cheap", "RESEARCHER_CHEAP_MODEL", "researcherCheapModel"),

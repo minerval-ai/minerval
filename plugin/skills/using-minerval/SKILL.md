@@ -30,7 +30,9 @@ description: >-
   building paths from the table below.
 - **Browser extension** (Chrome Web Store, "Minerval"): marks claims on
   the page being read by what the graph holds, and its Chat tab is the
-  Assistant, told which page it was opened from. Analysing a page and
+  Assistant, told which page it was opened from. The marks are the
+  Assistant's own verdicts, so the chat can say why a passage was
+  marked; get_page_claims reads what a verdict was judged from. Analysing a page and
   chat need an API key pasted into its settings; passages the graph
   already recorded from a page show without one. A held action cannot
   be run from the extension: it links to the conversation on

@@ -102,11 +102,13 @@ describe("run visibility", () => {
   });
 
   // The account a run worked for reads it (run-view-service.ts): the
-  // Assistant's and the extension's runs whole, any other run only when
+  // Assistant's runs whole (its marks on a page among them), any other run only when
   // every reason is that account's own text.
   describe("what the account a run worked for reads", () => {
     it("is its own agent's runs whole, and another's only over its own text", () => {
       expect(ownerCoversRun("assistant", ["agent:assistant", "tool:delegate", "tool:raise_issue"])).toBe(true);
+      expect(ownerCoversRun("assistant", ["agent:assistant", "input:readers-own-content"])).toBe(true);
+      // A run the Extension Agent left on a record before #1132.
       expect(ownerCoversRun("extension", ["agent:extension"])).toBe(true);
       expect(ownerCoversRun("matcher", ["input:readers-own-content"])).toBe(true);
       for (const reasons of [["tool:cost_sheet"], ["agent:grantmaker"], ["input:readers-own-content", "tool:get_issue"]]) {

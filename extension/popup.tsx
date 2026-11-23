@@ -33,7 +33,7 @@ import {
 /**
  * Toolbar popup: the page view (what the analysis found, which claims the
  * graph holds, and proposing the ones it doesn't), the chat panel (talk to
- * the extension agent about the page, grounded in the claim graph), and the
+ * the Assistant about the page, grounded in the claim graph), and the
  * markup/privacy settings.
  */
 
@@ -575,6 +575,10 @@ function chatContext(page: PageState | null): ChatPageContext {
     claims: [...(page?.annotations ?? []), ...(page?.recorded ?? [])].slice(0, 50).map((a) => ({
       verbatim_text: a.verbatim_text.slice(0, 2000),
       verdict: a.verdict,
+      // The reason the mark was given and the page's stance, so the
+      // Assistant can explain a mark and not only name it.
+      why: a.why ? a.why.slice(0, 1000) : null,
+      stance: a.stance ?? null,
       claim_id: a.claim?.id ?? null,
       canonical_form: a.claim?.canonical_form?.slice(0, 2000) ?? null,
       status: a.claim?.status ?? null,

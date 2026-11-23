@@ -169,6 +169,8 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
                   properties: {
                     verbatim_text: { type: "string", maxLength: 2000 },
                     verdict: { type: "string", maxLength: 40 },
+                    why: { type: ["string", "null"], maxLength: 1000 },
+                    stance: { type: ["string", "null"], maxLength: 40 },
                     claim_id: { type: ["string", "null"], maxLength: 40 },
                     canonical_form: { type: ["string", "null"], maxLength: 2000 },
                     status: { type: ["string", "null"], maxLength: 40 },

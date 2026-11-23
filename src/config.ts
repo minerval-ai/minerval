@@ -1288,9 +1288,6 @@ const configSchema = z.object({
   // ARBITRATION_MODEL=claude-fable-5-2 (the frontier tier: few runs, each one
   // final).
   arbitrationModel: modelId(MODELS.sonnet),
-  // The extension agent judges on-page phrasings against graph state:
-  // user-facing latency-sensitive work (#72).
-  extensionModel: modelId(MODELS.sonnet),
   // The Grantmaker runs the granting conversation: mandate design, cost
   // quoting, and the authority to refuse mandates that would warp the
   // graph. Always the best available model — this is judgment-heavy,
@@ -1305,6 +1302,12 @@ const configSchema = z.object({
   // Names a conversation from its first message: a few words from a small
   // model. A Claude one, so a conversation's text goes to one provider.
   assistantTitleModel: modelId(MODELS.haiku),
+  // The Assistant's verdicts on a page's wording, which the browser
+  // extension draws (agents/page-markup.ts, #72, #1132): one structured call
+  // per analyzed page, with no conversation and a reader waiting on it, paid
+  // from the page analysis's flat charge. So it has a model of its own, a
+  // tier below the ones a conversation runs on.
+  assistantMarkupModel: modelId(MODELS.sonnet),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -1885,11 +1888,11 @@ export function loadConfig(): Config {
     auditModel: process.env.AUDIT_MODEL,
     redactorModel: process.env.REDACTOR_MODEL,
     arbitrationModel: process.env.ARBITRATION_MODEL,
-    extensionModel: process.env.EXTENSION_MODEL,
     grantmakerModel: process.env.GRANTMAKER_MODEL,
     assistantModel: process.env.ASSISTANT_MODEL,
     assistantStandardModel: process.env.ASSISTANT_STANDARD_MODEL,
     assistantTitleModel: process.env.ASSISTANT_TITLE_MODEL,
+    assistantMarkupModel: process.env.ASSISTANT_MARKUP_MODEL,
     judgeModel: process.env.JUDGE_MODEL,
     taggerModel: process.env.TAGGER_MODEL,
     lookoutModel: process.env.LOOKOUT_MODEL,

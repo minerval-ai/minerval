@@ -78,16 +78,13 @@ describe("traceLevel resolution", () => {
   });
 });
 
-// Per-agent policy (#356): the extension agent only ever sees a reader's own
-// page and conversation, so while the log is best-effort it is never traced,
-// whoever calls it.
+// No agent is kept off the log by its name. The one that was, the Extension
+// Agent (#356), is gone: its work is a call of the Assistant's (#1132), kept
+// off a best-effort log by untraced() around the page analysis.
 describe("per-agent trace policy", () => {
-  it("never records the extension agent, even at TRACE_LEVEL=full", () => {
-    expect(traceable("extension")).toBe(false);
-    expect(
-      startAgentRun("extension", { userId: "33333333-3333-3333-3333-333333333333" })
-    ).toBeNull();
-    expect(mocks.insertValues).not.toHaveBeenCalled();
+  it("leaves no agent out by name: a reader's own page is kept off the log by untraced()", () => {
+    expect(traceable("assistant")).toBe(true);
+    expect(traceable("extension")).toBe(true);
   });
 
   it("records every other agent at full, and none when off", () => {
@@ -323,20 +320,18 @@ describe("record mode", () => {
     mocks.config.traceLevel = "off";
     expect(traceLevel()).toBe("full");
     expect(traceable("steward")).toBe(true);
-    // The never-traced agents handle a reader's own page (#356). That
-    // exemption belongs to the best-effort log; a record has none.
-    expect(traceable("extension")).toBe(true);
+    expect(traceable("assistant")).toBe(true);
   });
 
   it("starts a run over a reader's own content private, whatever its agent's default", async () => {
     mocks.config.runLogMode = "record";
     startAgentRun("matcher", { userId: "33333333-3333-3333-3333-333333333333", untraced: true });
-    startAgentRun("extension", { untraced: true });
+    startAgentRun("assistant", { untraced: true });
     startAgentRun("matcher", {});
     const rows = mocks.insertValues.mock.calls.map((c) => c[0] as { agent: string; privateReasons: string[] });
     expect(rows.map((r) => [r.agent, r.privateReasons])).toEqual([
       ["matcher", [READERS_OWN_REASON]],
-      ["extension", ["agent:extension", READERS_OWN_REASON]],
+      ["assistant", ["agent:assistant", READERS_OWN_REASON]],
       ["matcher", []],
     ]);
     expect(READERS_OWN_REASON).toBe("input:readers-own-content");

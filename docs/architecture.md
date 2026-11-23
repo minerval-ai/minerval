@@ -1339,15 +1339,19 @@ and by meaning and filters on topic, the claim's status, importance, the
 role that noted it and how recently (`GET /findings`: `q`, `tag`,
 `claim_status`, `min_importance`, `agent`, `since`, with `total` and, on
 `facets=true`, the count each choice would leave). The
-Extension Agent, the MCP surface, the Extractor, the Matcher, the Lookout,
+Assistant, the MCP surface, the Extractor, the Matcher, the Lookout,
 and the solver do not carry the tool: an outside agent's discovery is a
 contribution, and a Lookout's is a flag for a Steward to judge.
 
-One agent lives outside governance entirely. The **Extension Agent** is the
-read-only companion behind the browser extension: it judges the phrasings on a
-live web page against graph state (verdicts range from "egregious" to "fine").
-It never writes to the graph. The extension's chat is no longer this agent's:
-it is the Assistant, opened from the page (docs/accounts.md).
+The browser extension has no agent of its own. Its marks are the
+**Assistant**'s (docs/accounts.md): when a page is analyzed, one structured
+call under the Assistant's prompt, with no conversation and no tools, judges
+the phrasings on the page against graph state (verdicts range from
+"egregious" to "fine"), and writes nothing to the graph. The extension's
+chat is the same agent, opened from the page, with the same verdict scale in
+its prompt and `get_page_claims` to read what a verdict was judged from.
+Until #1132 the marks were a separate Extension Agent's, and the chat
+talked about verdicts another agent had given.
 
 ### The Lean checker
 
@@ -1757,7 +1761,7 @@ Model choice follows the value of the judgment, not a single default:
 | Agent | Production model |
 |-------|------------------|
 | Tagger · Matcher · Lookout | GPT-6 Luna (via OpenRouter; `LOOKOUT_MODEL`, with a per-lookout override) |
-| Extractor · Contribution Reviewer · Extension Agent | Claude Sonnet 5.5 |
+| Extractor · Contribution Reviewer · the Assistant's page markup (`ASSISTANT_MARKUP_MODEL`) | Claude Sonnet 5.5 |
 | Claim Steward (standard pass) · Curator · Audit Agent | Claude Opus 5.5 |
 | Claim Steward (strong pass, money triggers) · Dispute Arbitrator · Grantmaker | Claude Fable 5.2 |
 | Assistant | Claude Fable 5.2 (`ASSISTANT_MODEL`); the user may pick Claude Opus 5.5 for a conversation (`ASSISTANT_STANDARD_MODEL`) |
@@ -2559,9 +2563,11 @@ A claim's page offers the three snippets under "Embed this claim", beside
 ### The browser extension
 
 The extension analyzes the page you are reading: captured text flows through
-the Extractor and Matcher, then the Extension Agent judges each on-page claim
-against graph state and the verdicts are anchored as a non-destructive overlay.
-The chat popup is the Assistant, told which page it was opened from. Analysis answers immediately when
+the Extractor and Matcher, then the Assistant judges each on-page claim
+against graph state, in one structured call made for the page
+(`src/llm/agents/page-markup.ts`), and the verdicts are anchored as a
+non-destructive overlay. The chat popup is the Assistant too, told which page
+it was opened from and what was marked on it. Analysis answers immediately when
 the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
@@ -2694,7 +2700,8 @@ Switching a feature off means three things, and they go together:
   the API does not have, and the route is absent from the OpenAPI document.
 - Its tools are not offered. The MCP tools generated from its routes are not
   built, because they are built from the routes that are mounted; its
-  hand-written MCP tools (`get_bounty_terms`, `get_page_analysis`) are not
+  hand-written MCP tools (`get_bounty_terms`, `get_page_analysis`,
+  `get_page_claims`) are not
   registered; and the graph's own agents are not given its tools (the Lean
   and proof-attempt tools, the prize tools, the Grantmaker's bounty tools).
   The Assistant's tools are the MCP list, so it follows.

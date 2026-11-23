@@ -42,7 +42,7 @@ export const FEATURES = [
       "The browser extension's API (analysing the page a reader has open, " +
       "sharing an analysis by the page's address, and chat over the page); " +
       "switching it off removes the /extension routes, the get_page_analysis " +
-      "tool, and the fill of page hashes on older sources that lets the " +
+      "and get_page_claims tools, and the fill of page hashes on older sources that lets the " +
       "extension find pages the graph has read.",
     agentPhrase: "the browser extension and its page analysis",
     requires: [],

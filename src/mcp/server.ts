@@ -100,6 +100,7 @@ import { decideRequestLabel } from "../server/plugins/request-label.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
 import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
+import { graphStateOf, loadMatchedClaim, PAGE_CLAIMS_MAX_IDS } from "../services/extension-service.js";
 import { REPORT_FIELD_GUIDANCE } from "../llm/tools/report-tools.js";
 import {
   CLAIM_VIEW_DESCRIPTION,
@@ -715,6 +716,56 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         // A page only the graph read has no analysis, which is not the same
         // as an analysis that found nothing: it gets no annotations at all.
         return jsonResult({ ...(analysis ?? { url: normalized, shared: false }), recorded });
+      }
+    );
+
+    server.registerTool(
+      "get_page_claims",
+      {
+        title: "Get the graph's state on claims a page makes",
+        description:
+          "What the graph holds now on nodes that passages of a web page were " +
+          "matched to, in the shape a verdict on the page's wording is judged " +
+          "from: for each id the node's wording and kind, a claim's status " +
+          "and the confidence in it, a quantity's definition and estimate, a " +
+          "question's standing, the reader-facing summary of the current " +
+          "judgment, and how many subclaims it has. The Minerval browser " +
+          "extension marks a passage egregious, contested, oversimplified, " +
+          "noteworthy or fine by setting how the page words a claim against " +
+          "this state; use it to explain or re-examine such a mark, or to " +
+          "judge a passage you hold yourself. A verdict is of the page's " +
+          "wording, not of the claim: report the graph's status as the " +
+          "graph's. It runs no model and changes no mark. An id the graph " +
+          "does not hold, or that you may not read, comes back in " +
+          `\`not_found\`. At most ${PAGE_CLAIMS_MAX_IDS} ids a call, which is ` +
+          "the most the extension lists for one page. Free.",
+        inputSchema: {
+          claim_ids: z
+            .array(z.guid())
+            .min(1)
+            .max(PAGE_CLAIMS_MAX_IDS)
+            .describe(`The nodes' ids, at most ${PAGE_CLAIMS_MAX_IDS}`),
+        },
+        annotations: { readOnlyHint: true },
+      },
+      async ({ claim_ids }) => {
+        const ids = [...new Set(claim_ids.map((id) => id.toLowerCase()))];
+        const loaded = await Promise.all(ids.map(async (id) => [id, await loadMatchedClaim(id)] as const));
+        return jsonResult({
+          claims: loaded.flatMap(([id, matched]) =>
+            matched
+              ? [
+                  {
+                    claim_id: id,
+                    canonical_form: matched.canonicalForm,
+                    page_url: matched.claimUrl,
+                    graph: graphStateOf(matched),
+                  },
+                ]
+              : []
+          ),
+          not_found: loaded.filter(([, matched]) => !matched).map(([id]) => id),
+        });
       }
     );
   }

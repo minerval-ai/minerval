@@ -380,6 +380,9 @@ describe("with every feature switched off", () => {
         .flatMap((key) => (ROUTE_TOOLS[key] ? [ROUTE_TOOLS[key]!.name] : [])),
       "get_bounty_terms",
       "get_page_analysis",
+      // Hand-written with no route of its own: a read for a conversation
+      // about the extension's marks, registered only while the feature is on.
+      "get_page_claims",
     ]);
     expect([...offTools].sort()).toEqual(allTools.filter((name) => !gone.has(name)).sort());
     expect(offTools).toEqual(
