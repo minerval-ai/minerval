@@ -299,6 +299,11 @@ const PROVIDER_NEEDS: Record<string, { name: string; env: string; present: (conf
   anthropic: { name: "Anthropic", env: "ANTHROPIC_API_KEY", present: (c) => c.anthropicApiKey.length > 0 },
   openai: { name: "OpenAI", env: "OPENAI_API_KEY", present: (c) => c.openaiApiKey.length > 0 },
   openrouter: { name: "OpenRouter", env: "OPENROUTER_API_KEY", present: (c) => c.openrouterApiKey.length > 0 },
+  // Bedrock and Vertex take the cloud's own credentials (a role, a service
+  // account), which this check cannot see without a call: what it can see
+  // is whether the calls have a region to go to.
+  bedrock: { name: "Bedrock", env: "BEDROCK_REGION", present: (c) => c.bedrockRegion.length > 0 },
+  vertex: { name: "Vertex", env: "VERTEX_REGION", present: (c) => c.vertexRegion.length > 0 },
 };
 
 /** Roles whose model is never called while a feature is off. */
@@ -401,12 +406,19 @@ function checkModels({ config, endpointKeysMissing }: PreflightFacts): Outcome {
     const said = problems.join("; ");
     return fail(`${said.charAt(0).toUpperCase()}${said.slice(1)}.`);
   }
-  const hosted = [...used].sort();
-  if (endpointsReady.size === 0) {
+  // Bedrock and Vertex are ready as far as this check can see once they
+  // have a region; their credentials are the cloud's, and the first call
+  // is what tries them.
+  const clouds: string[] = [...used].filter((name) => name === "Bedrock" || name === "Vertex").sort();
+  const hosted = [...used].filter((name) => !clouds.includes(name)).sort();
+  if (endpointsReady.size === 0 && clouds.length === 0) {
     return pass(`Each of the ${roles.length} roles names a model whose provider has its key set (${hosted.join(", ")}).`);
   }
   const has = [
     ...(hosted.length > 0 ? [`${listed(hosted)} ${hosted.length === 1 ? "has its key" : "have their keys"} set`] : []),
+    ...clouds.map(
+      (name) => `${name} has its region set (its credentials are the cloud's own, and the first call tries them)`
+    ),
     ...[...endpointsReady.keys()].sort().map((name) => endpointsReady.get(name)!),
   ];
   return pass(`Each of the ${roles.length} roles names a model whose provider has what it needs: ${has.join("; ")}.`);

@@ -114,6 +114,8 @@ describe("providerSettingProblems", () => {
       "anthropic",
       "openai",
       "openrouter",
+      "bedrock",
+      "vertex",
       "endpoint:local",
       "embeddings",
       "web_search",
@@ -132,7 +134,7 @@ describe("providerSettingProblems", () => {
       })
     ).toEqual([
       'PROVIDER_LABELS names "embedding", which is not a provider or an outside service. They are: ' +
-        "anthropic, openai, openrouter, endpoint:local, embeddings, web_search, web_pages, elicit, pangram.",
+        "anthropic, openai, openrouter, bedrock, vertex, endpoint:local, embeddings, web_search, web_pages, elicit, pangram.",
       'PROVIDER_LABELS names "endpoint:gpu", which is not an endpoint this deployment declares. ' +
         "MODEL_ENDPOINTS declares: local.",
       'RESEARCHER_STANDARD_MODEL is "endpoint:gpu/qwen3", which names the endpoint "gpu", but this ' +

@@ -8,10 +8,13 @@
  * no line: its adapter is built from the declaration (endpoint.ts).
  */
 import { anthropicAdapter } from "./anthropic.js";
+import { bedrockAdapter } from "./bedrock.js";
 import { endpointAdapterFor } from "./endpoint.js";
 import { openaiAdapter } from "./openai.js";
 import { openrouterAdapter } from "./openrouter.js";
+import { vertexAdapter } from "./vertex.js";
 import { assertModelPriced } from "../pricing.js";
+import { assertProviderAllowed } from "../../provider-labels.js";
 import { ENDPOINT_ID_PREFIX, providerForModel } from "./routing.js";
 import { requireLoggedRun } from "../logged-run.js";
 import type { HostedProviderName, ProviderAdapter } from "./types.js";
@@ -20,12 +23,15 @@ const ADAPTERS: Record<HostedProviderName, ProviderAdapter> = {
   anthropic: anthropicAdapter,
   openai: openaiAdapter,
   openrouter: openrouterAdapter,
+  bedrock: bedrockAdapter,
+  vertex: vertexAdapter,
 };
 
 /**
  * The adapter serving `modelId`. Throws if the id matches no known shape,
- * or names an endpoint this deployment does not declare, or, in a
- * deployment that creates its own owls, if the model has no price there
+ * or names an endpoint this deployment does not declare, or is on a
+ * provider MODEL_PROVIDERS_ALLOWED leaves out (../../provider-labels.ts,
+ * assertProviderAllowed), or, in a deployment that creates its own owls, if the model has no price there
  * (pricing.ts, assertModelPriced): every call takes its adapter from here,
  * so an unpriced model is refused before anything is sent. In record mode
  * it also throws if no agent run is open to log the call in
@@ -35,6 +41,7 @@ const ADAPTERS: Record<HostedProviderName, ProviderAdapter> = {
 export function getAdapter(modelId: string): ProviderAdapter {
   requireLoggedRun(`A model call (${modelId})`);
   const provider = providerForModel(modelId);
+  assertProviderAllowed(provider);
   assertModelPriced(modelId);
   // An endpoint's adapter is made for the endpoint the id names: which ones
   // exist is the deployment's configuration, not a list here.
@@ -42,6 +49,6 @@ export function getAdapter(modelId: string): ProviderAdapter {
   return ADAPTERS[provider as HostedProviderName];
 }
 
-export { anthropicAdapter, openaiAdapter, openrouterAdapter };
+export { anthropicAdapter, bedrockAdapter, openaiAdapter, openrouterAdapter, vertexAdapter };
 export * from "./routing.js";
 export type * from "./types.js";

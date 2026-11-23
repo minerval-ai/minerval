@@ -52,3 +52,27 @@ describe("modelSupportsLongRun", () => {
     expect(modelSupportsLongRun("qwen/qwen3-235b-a22b")).toBe(false);
   });
 });
+
+describe("claudeModelName: Claude on Bedrock and Vertex is the same Claude", () => {
+  it("names the Claude model a Bedrock or Vertex id is for", async () => {
+    const { claudeModelName } = await import("../../../src/llm/models.js");
+    expect(claudeModelName("claude-opus-5-5")).toBe("claude-opus-5-5");
+    expect(claudeModelName("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toBe("claude-opus-5-5");
+    expect(claudeModelName("bedrock:global.anthropic.claude-sonnet-5-5")).toBe("claude-sonnet-5-5");
+    expect(claudeModelName("bedrock:anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("claude-sonnet-4-5-20250929");
+    expect(claudeModelName("vertex:claude-sonnet-4-5@20250929")).toBe("claude-sonnet-4-5-20250929");
+    expect(claudeModelName("vertex:claude-opus-5-5@default")).toBe("claude-opus-5-5");
+    expect(claudeModelName("vertex:claude-opus-5-5")).toBe("claude-opus-5-5");
+    expect(claudeModelName("bedrock:meta.llama3-70b-instruct-v1:0")).toBeNull();
+    expect(claudeModelName("vertex:gemini-3-pro")).toBeNull();
+    expect(claudeModelName("anthropic/claude-opus-5-5")).toBeNull();
+  });
+
+  it("judges what a model can be sent by that Claude model", () => {
+    expect(modelAcceptsTemperature("vertex:claude-sonnet-4-5@20250929")).toBe(true);
+    expect(modelAcceptsTemperature("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toBe(false);
+    expect(modelSupportsLongRun("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toBe(true);
+    expect(modelSupportsLongRun("vertex:claude-fable-5-2")).toBe(true);
+    expect(modelSupportsLongRun("vertex:claude-sonnet-5-5")).toBe(false);
+  });
+});

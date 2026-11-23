@@ -19,8 +19,12 @@ export type LlmTool = Anthropic.Messages.ToolUnion;
 /** An assistant-turn content block, in the seam's Anthropic dialect. */
 export type LlmContentBlock = Anthropic.ContentBlock;
 
-/** The three hosted APIs behind the seam. */
-export type HostedProviderName = "anthropic" | "openai" | "openrouter";
+/**
+ * The hosted APIs behind the seam: Anthropic, OpenAI and OpenRouter, and
+ * Claude on the two clouds a deployment may hold an account with, Amazon
+ * Bedrock and Google Vertex AI.
+ */
+export type HostedProviderName = "anthropic" | "openai" | "openrouter" | "bedrock" | "vertex";
 /**
  * An endpoint a deployment declares in MODEL_ENDPOINTS, by its name
  * (providers/endpoint-config.ts): the prefix of the model ids it serves, up

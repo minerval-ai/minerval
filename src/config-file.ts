@@ -149,9 +149,14 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
     kind: "text",
     field: "openrouterProviderSort",
   },
+  { key: "model_providers.allowed", env: "MODEL_PROVIDERS_ALLOWED", kind: "list", field: "modelProvidersAllowed" },
+  { key: "model_providers.bedrock_region", env: "BEDROCK_REGION", kind: "text", field: "bedrockRegion" },
+  { key: "model_providers.vertex_region", env: "VERTEX_REGION", kind: "text", field: "vertexRegion" },
+  { key: "model_providers.vertex_project_id", env: "VERTEX_PROJECT_ID", kind: "text", field: "vertexProjectId" },
   secret("model_providers.anthropic_api_key", "ANTHROPIC_API_KEY"),
   secret("model_providers.openai_api_key", "OPENAI_API_KEY"),
   secret("model_providers.openrouter_api_key", "OPENROUTER_API_KEY"),
+  secret("model_providers.bedrock_api_key", "AWS_BEARER_TOKEN_BEDROCK"),
   // The deployment's own model endpoints (src/llm/providers/endpoint-config.ts).
   // Written last in its group: a [[...]] heading ends the plain settings above it.
   {

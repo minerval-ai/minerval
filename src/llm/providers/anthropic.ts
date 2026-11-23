@@ -1,5 +1,5 @@
 /**
- * Anthropic direct adapter.
+ * Anthropic direct adapter, and the Messages API adapter it is one case of.
  *
  * Everything Anthropic-specific lives here and NOWHERE else: prompt caching via
  * ephemeral cache_control breakpoints (one per system block, one on the tool
@@ -9,6 +9,14 @@
  * long-run path with its betas. No request opts into a refusal fallback. None of it is abstracted into a cross-provider layer, and none of
  * it is emulated by the other adapters — see providers/index.ts for what they
  * reject.
+ *
+ * Amazon Bedrock and Google Vertex AI serve Claude through the same Messages
+ * API, reached through Anthropic's own clients for each
+ * (providers/bedrock.ts, providers/vertex.ts). They are this adapter with
+ * another client: messagesApiAdapter below takes the platform's name and its
+ * clients, and sends what follows the "bedrock:" or "vertex:" prefix as the
+ * model. Anthropic's server tools are not offered on them (callers check the
+ * provider by name), so everything sent here is what those platforms take.
  */
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -16,6 +24,7 @@ import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
 import { modelAcceptsTemperature } from "../models.js";
 import { logCacheUsage, recordCallUsage, type ProviderUsage } from "./metering.js";
+import { platformModelId } from "./routing.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
 import { ANTHROPIC_WEB_SEARCH_MICRO_USD } from "../pricing.js";
 import type {
@@ -57,6 +66,9 @@ export const LONG_RUN_MAX_OUTPUT_TOKENS = 128_000;
 /** Default wall time one long-run turn may take before the SDK gives up on it. */
 const DEFAULT_LONG_RUN_TIMEOUT_MS = 3_600_000;
 
+/** Retries of one long-run turn: a dropped connection, not five copies of a long turn (getLongRunClient). */
+export const LONG_RUN_MAX_RETRIES = 2;
+
 let _client: Anthropic | null = null;
 let _longRunClient: Anthropic | null = null;
 
@@ -77,9 +89,11 @@ function getClient(): Anthropic {
   // Bound how long a single request can stall. The SDK default is 10 minutes,
   // so one wedged socket can freeze an entire ingestion run; cap it (override
   // with LLM_REQUEST_TIMEOUT_MS) and let the SDK's automatic retries recover.
-  const timeout = Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000);
-  const maxRetries = Number(process.env.LLM_MAX_RETRIES ?? 4);
-  _client = new Anthropic({ apiKey: requireApiKey(), timeout, maxRetries });
+  _client = new Anthropic({
+    apiKey: requireApiKey(),
+    timeout: requestTimeoutMs(),
+    maxRetries: requestMaxRetries(),
+  });
   return _client;
 }
 
@@ -93,10 +107,11 @@ function getClient(): Anthropic {
  */
 export function getLongRunClient(): Anthropic {
   if (_longRunClient) return _longRunClient;
-  const timeout = Number(
-    process.env.LLM_LONG_RUN_TIMEOUT_MS ?? DEFAULT_LONG_RUN_TIMEOUT_MS
-  );
-  _longRunClient = new Anthropic({ apiKey: requireApiKey(), timeout, maxRetries: 2 });
+  _longRunClient = new Anthropic({
+    apiKey: requireApiKey(),
+    timeout: longRunTimeoutMs(),
+    maxRetries: LONG_RUN_MAX_RETRIES,
+  });
   return _longRunClient;
 }
 
@@ -252,9 +267,10 @@ function toolMessages(req: ToolCompleteRequest): LlmMessage[] {
  * Minerval should publish from a model that was less careful about it.
  */
 async function createMessage(
+  platform: MessagesPlatform,
   params: Anthropic.MessageCreateParamsNonStreaming
 ): Promise<Anthropic.Message> {
-  return getClient().messages.create(params);
+  return platform.client().messages.create(params);
 }
 
 /**
@@ -279,10 +295,21 @@ function normalizeUsage(u: Anthropic.Usage): ProviderUsage {
   };
 }
 
-function meter(response: Anthropic.Message, model: string): ProviderUsage {
+function meter(
+  platform: MessagesPlatform,
+  response: Anthropic.Message,
+  model: string
+): ProviderUsage {
   const usage = normalizeUsage(response.usage);
-  recordCallUsage("anthropic", response.model ?? model, usage);
-  logCacheUsage("anthropic", usage);
+  // On Bedrock and Vertex the usage row keeps the id as configured, prefix
+  // and all: it is what a price the deployment states is matched against
+  // (pricing.ts), and what says where the call went.
+  recordCallUsage(
+    platform.name,
+    platform.name === "anthropic" ? (response.model ?? model) : model,
+    usage
+  );
+  logCacheUsage(platform.name, usage);
   // Server-side searches carry a per-search fee the token count does not
   // include. Metered as external usage, so it lands on the same meter, job,
   // and claim as the call that made them. Never throws.
@@ -397,7 +424,9 @@ function toolCompletionResult(
     toolUses: toolUsesOf(content),
     rawContent: content,
     container: response.container?.id ?? null,
-    ...servedModelFields(response, model),
+    // The served model is compared with what was sent: on Bedrock and Vertex
+    // that is the id without its prefix.
+    ...servedModelFields(response, platformModelId(model)),
   };
 }
 
@@ -414,138 +443,179 @@ function longRunBetas(req: LongRunRequest): string[] {
   return betas;
 }
 
-export const anthropicAdapter: ProviderAdapter = {
+/**
+ * A platform that serves the Anthropic Messages API: its provider name and
+ * its two clients, one for ordinary requests and one for the long-run path.
+ * Each client is made on first use, so a deployment that never routes a
+ * call to a platform never needs its credentials.
+ */
+export interface MessagesPlatform {
+  name: "anthropic" | "bedrock" | "vertex";
+  client(): Anthropic;
+  longRunClient(): Anthropic;
+}
+
+/** The request timeout for ordinary calls on any Messages API platform (see getClient). */
+export function requestTimeoutMs(): number {
+  return Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000);
+}
+
+/** The SDK's retries for ordinary calls on any Messages API platform. */
+export function requestMaxRetries(): number {
+  return Number(process.env.LLM_MAX_RETRIES ?? 4);
+}
+
+/** One long-run turn's wall time on any Messages API platform (see getLongRunClient). */
+export function longRunTimeoutMs(): number {
+  return Number(process.env.LLM_LONG_RUN_TIMEOUT_MS ?? DEFAULT_LONG_RUN_TIMEOUT_MS);
+}
+
+/**
+ * The adapter for a platform that serves the Messages API. The model a
+ * request names is sent as the platform knows it (routing.ts,
+ * platformModelId); everything else in the request is built the same way on
+ * every platform.
+ */
+export function messagesApiAdapter(platform: MessagesPlatform): ProviderAdapter {
+  return {
+    name: platform.name,
+
+    async complete(req: CompleteRequest): Promise<CompletionResult> {
+      const response = await createMessage(platform, {
+        model: platformModelId(req.model),
+        messages: req.messages,
+        max_tokens: req.maxTokens,
+        ...temperatureParam(req.model, req.temperature),
+        ...systemParam(req.system),
+        ...(req.tools ? { tools: cachedTools(req.tools) } : {}),
+        ...(req.container ? { container: req.container } : {}),
+        ...outputConfigParam(req.effort),
+      });
+      checkRefusal(response, req.model);
+      const usage = meter(platform, response, req.model);
+
+      return {
+        content: textOf(response.content),
+        model: req.model,
+        usage: tokenUsage(usage),
+        stopReason: response.stop_reason,
+        container: response.container?.id ?? null,
+      };
+    },
+
+    async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
+      const response = await createMessage(platform, {
+        model: platformModelId(req.model),
+        messages: toolMessages(req),
+        max_tokens: req.maxTokens,
+        ...temperatureParam(req.model, req.temperature),
+        tools: cachedTools(req.tools),
+        ...systemParam(req.system),
+        ...(req.container ? { container: req.container } : {}),
+        ...outputConfigParam(req.effort),
+      });
+      checkRefusal(response, req.model);
+      const usage = meter(platform, response, req.model);
+      return toolCompletionResult(response, req.model, usage);
+    },
+
+    /**
+     * Native structured outputs (`output_config.format`): the API constrains
+     * generation to the schema and returns the JSON as text content.
+     *
+     * Schema restrictions apply (a strict JSON Schema subset): every object must
+     * set `additionalProperties: false` with a complete `required` array; numeric
+     * bounds (minimum/maximum), string length constraints, and recursive schemas
+     * are not supported — validate those in code instead. The first request with
+     * a new schema pays a one-time server-side compilation cost; compiled schemas
+     * are cached for 24 hours.
+     */
+    async completeStructured<T>(req: StructuredRequest): Promise<T> {
+      // No tools on this request — the system blocks from cachedSystem are the
+      // only cache breakpoints, and their cache_control applies regardless.
+      const response = await createMessage(platform, {
+        model: platformModelId(req.model),
+        messages: req.messages,
+        max_tokens: req.maxTokens,
+        ...temperatureParam(req.model, req.temperature),
+        ...systemParam(req.system),
+        ...outputConfigParam(req.effort, {
+          format: { type: "json_schema", schema: req.schema },
+        }),
+      });
+      // On a refusal the output is not guaranteed to match the schema — fail
+      // loudly before attempting to parse.
+      checkRefusal(response, req.model);
+      meter(platform, response, req.model);
+
+      const text = textOf(response.content);
+
+      if (response.stop_reason === "max_tokens") {
+        // Truncated output is invalid/incomplete JSON (this bites on large inputs
+        // — a 9k-word document once overflowed the extractor). Fail with an
+        // actionable message instead of a bare JSON parse error.
+        throw new Error(
+          `Structured response "${req.schemaName}" was truncated at ` +
+            `max_tokens (${req.maxTokens}) and cannot be parsed. Increase ` +
+            `maxTokens or reduce the input size.`
+        );
+      }
+
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        throw new Error(
+          `Structured response "${req.schemaName}" was not valid JSON ` +
+            `(stop_reason: ${response.stop_reason ?? "unknown"}).`
+        );
+      }
+    },
+
+    /**
+     * One streamed turn of a long-running loop, on the long-run client. The
+     * stream is consumed to its final message here — the seam has no use for
+     * partial events — so the caller sees exactly the shape completeWithTools
+     * returns, plus the served model. Like createMessage, it asks for no
+     * refusal fallback: a decline surfaces as LlmRefusalError.
+     */
+    async completeWithToolsStreaming(req: LongRunRequest): Promise<ToolCompletionResult> {
+      const output: BetaOutputConfig = {
+        ...(req.effort ? { effort: req.effort } : {}),
+        ...(req.taskBudgetTokens !== undefined
+          ? { task_budget: { type: "tokens", total: req.taskBudgetTokens } }
+          : {}),
+      };
+      const betas = longRunBetas(req);
+      const base: Anthropic.MessageCreateParams = {
+        model: platformModelId(req.model),
+        messages: toolMessages(req),
+        max_tokens: Math.min(req.maxTokens, LONG_RUN_MAX_OUTPUT_TOKENS),
+        ...temperatureParam(req.model, req.temperature),
+        tools: cachedTools(req.tools),
+        ...systemParam(req.system),
+        ...(req.container ? { container: req.container } : {}),
+      };
+      // A structural-superset cast: the beta params only add fields to the
+      // non-beta shape for everything built above.
+      const params: BetaStreamParams = {
+        ...(base as unknown as BetaStreamParams),
+        ...(Object.keys(output).length > 0 ? { output_config: output } : {}),
+        ...(betas.length > 0 ? { betas } : {}),
+      };
+
+      const stream = platform.longRunClient().beta.messages.stream(params);
+      if (req.onText) stream.on("text", (delta) => req.onText!(delta));
+      const final = await stream.finalMessage();
+      const response = final as unknown as Anthropic.Message;
+      checkRefusal(response, req.model);
+      const usage = meter(platform, response, req.model);
+      return toolCompletionResult(response, req.model, usage);
+    },
+  };
+}
+
+export const anthropicAdapter: ProviderAdapter = messagesApiAdapter({
   name: "anthropic",
-
-  async complete(req: CompleteRequest): Promise<CompletionResult> {
-    const response = await createMessage({
-      model: req.model,
-      messages: req.messages,
-      max_tokens: req.maxTokens,
-      ...temperatureParam(req.model, req.temperature),
-      ...systemParam(req.system),
-      ...(req.tools ? { tools: cachedTools(req.tools) } : {}),
-      ...(req.container ? { container: req.container } : {}),
-      ...outputConfigParam(req.effort),
-    });
-    checkRefusal(response, req.model);
-    const usage = meter(response, req.model);
-
-    return {
-      content: textOf(response.content),
-      model: req.model,
-      usage: tokenUsage(usage),
-      stopReason: response.stop_reason,
-      container: response.container?.id ?? null,
-    };
-  },
-
-  async completeWithTools(req: ToolCompleteRequest): Promise<ToolCompletionResult> {
-    const response = await createMessage({
-      model: req.model,
-      messages: toolMessages(req),
-      max_tokens: req.maxTokens,
-      ...temperatureParam(req.model, req.temperature),
-      tools: cachedTools(req.tools),
-      ...systemParam(req.system),
-      ...(req.container ? { container: req.container } : {}),
-      ...outputConfigParam(req.effort),
-    });
-    checkRefusal(response, req.model);
-    const usage = meter(response, req.model);
-    return toolCompletionResult(response, req.model, usage);
-  },
-
-  /**
-   * Native structured outputs (`output_config.format`): the API constrains
-   * generation to the schema and returns the JSON as text content.
-   *
-   * Schema restrictions apply (a strict JSON Schema subset): every object must
-   * set `additionalProperties: false` with a complete `required` array; numeric
-   * bounds (minimum/maximum), string length constraints, and recursive schemas
-   * are not supported — validate those in code instead. The first request with
-   * a new schema pays a one-time server-side compilation cost; compiled schemas
-   * are cached for 24 hours.
-   */
-  async completeStructured<T>(req: StructuredRequest): Promise<T> {
-    // No tools on this request — the system blocks from cachedSystem are the
-    // only cache breakpoints, and their cache_control applies regardless.
-    const response = await createMessage({
-      model: req.model,
-      messages: req.messages,
-      max_tokens: req.maxTokens,
-      ...temperatureParam(req.model, req.temperature),
-      ...systemParam(req.system),
-      ...outputConfigParam(req.effort, {
-        format: { type: "json_schema", schema: req.schema },
-      }),
-    });
-    // On a refusal the output is not guaranteed to match the schema — fail
-    // loudly before attempting to parse.
-    checkRefusal(response, req.model);
-    meter(response, req.model);
-
-    const text = textOf(response.content);
-
-    if (response.stop_reason === "max_tokens") {
-      // Truncated output is invalid/incomplete JSON (this bites on large inputs
-      // — a 9k-word document once overflowed the extractor). Fail with an
-      // actionable message instead of a bare JSON parse error.
-      throw new Error(
-        `Structured response "${req.schemaName}" was truncated at ` +
-          `max_tokens (${req.maxTokens}) and cannot be parsed. Increase ` +
-          `maxTokens or reduce the input size.`
-      );
-    }
-
-    try {
-      return JSON.parse(text) as T;
-    } catch {
-      throw new Error(
-        `Structured response "${req.schemaName}" was not valid JSON ` +
-          `(stop_reason: ${response.stop_reason ?? "unknown"}).`
-      );
-    }
-  },
-
-  /**
-   * One streamed turn of a long-running loop, on the long-run client. The
-   * stream is consumed to its final message here — the seam has no use for
-   * partial events — so the caller sees exactly the shape completeWithTools
-   * returns, plus the served model. Like createMessage, it asks for no
-   * refusal fallback: a decline surfaces as LlmRefusalError.
-   */
-  async completeWithToolsStreaming(req: LongRunRequest): Promise<ToolCompletionResult> {
-    const output: BetaOutputConfig = {
-      ...(req.effort ? { effort: req.effort } : {}),
-      ...(req.taskBudgetTokens !== undefined
-        ? { task_budget: { type: "tokens", total: req.taskBudgetTokens } }
-        : {}),
-    };
-    const betas = longRunBetas(req);
-    const base: Anthropic.MessageCreateParams = {
-      model: req.model,
-      messages: toolMessages(req),
-      max_tokens: Math.min(req.maxTokens, LONG_RUN_MAX_OUTPUT_TOKENS),
-      ...temperatureParam(req.model, req.temperature),
-      tools: cachedTools(req.tools),
-      ...systemParam(req.system),
-      ...(req.container ? { container: req.container } : {}),
-    };
-    // A structural-superset cast: the beta params only add fields to the
-    // non-beta shape for everything built above.
-    const params: BetaStreamParams = {
-      ...(base as unknown as BetaStreamParams),
-      ...(Object.keys(output).length > 0 ? { output_config: output } : {}),
-      ...(betas.length > 0 ? { betas } : {}),
-    };
-
-    const stream = getLongRunClient().beta.messages.stream(params);
-    if (req.onText) stream.on("text", (delta) => req.onText!(delta));
-    const final = await stream.finalMessage();
-    const response = final as unknown as Anthropic.Message;
-    checkRefusal(response, req.model);
-    const usage = meter(response, req.model);
-    return toolCompletionResult(response, req.model, usage);
-  },
-};
+  client: getClient,
+  longRunClient: getLongRunClient,
+});
