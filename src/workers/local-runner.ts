@@ -24,7 +24,7 @@ import { handleArbitrationMessage } from "./arbitration-pipeline.js";
 import { processNextStewardTask, pendingStewardCount } from "./steward-pipeline.js";
 import { processNextOrderTask } from "./order-pipeline.js";
 import { processNextBudgetJobTask } from "./budget-job-pipeline.js";
-import { processNextEngineAction } from "./engine-executor.js";
+import { ledgerHousekeeping, processNextEngineAction } from "./engine-executor.js";
 import { processNextPrizeCheck } from "./prize-check-pipeline.js";
 import { runPrizeWindowCloser } from "./prize-window-closer.js";
 import { checkBudget } from "../llm/budget-tracker.js";
@@ -546,6 +546,15 @@ export const UNATTRIBUTED_BUDGET_PAUSE_MS = 60_000;
 export const IDLE_SLOT_RECHECK_MS = 5_000;
 
 /**
+ * How often the ledger's housekeeping runs on its own clock
+ * (engine-executor.ts, ledgerHousekeeping), whatever the runner slots are
+ * doing: a check-in is delivered within this of its time even while every
+ * slot is inside a long unit (#1028). The engine lane runs it too, before
+ * each row it picks.
+ */
+export const LEDGER_HOUSEKEEPING_MS = 5_000;
+
+/**
  * Continuously drain the queues on an interval. Used in BOTH dev and prod (in
  * prod alongside the SQS ingestion pollers) so the Steward and Curator actually
  * run everywhere.
@@ -565,6 +574,8 @@ export function startLocalRunner(options: {
   stewardModel?: string;
   /** Override STEWARD_CONCURRENCY. */
   concurrency?: number;
+  /** Override LEDGER_HOUSEKEEPING_MS. */
+  housekeepingIntervalMs?: number;
 }): { stop: () => void } {
   const interval = options.intervalMs ?? 500;
   const governor = new RunnerGovernor(
@@ -638,6 +649,26 @@ export function startLocalRunner(options: {
   };
 
   const timer = setInterval(tick, interval);
+
+  // The ledger's housekeeping on a clock of its own, apart from the slots,
+  // one pass at a time: a pass that is slow (a database that is) is not
+  // stacked on.
+  let housekeeping = false;
+  const keepHouse = async () => {
+    if (!running || housekeeping) return;
+    housekeeping = true;
+    try {
+      await withSystemClearance(
+        "The ledger's housekeeping reads and moves work at every label (events to route, holds to release, rows to fund); each delivery runs at its subscriber's label.",
+        () => ledgerHousekeeping()
+      );
+    } catch (err) {
+      options.logger.error("Ledger housekeeping error", err instanceof Error ? err.message : err);
+    } finally {
+      housekeeping = false;
+    }
+  };
+  const houseTimer = setInterval(() => void keepHouse(), options.housekeepingIntervalMs ?? LEDGER_HOUSEKEEPING_MS);
   options.logger.info(
     `In-process queue runner started (in-memory queues + DB Steward drain, ` +
       `up to ${governor.ceiling} at once)`
@@ -647,6 +678,7 @@ export function startLocalRunner(options: {
     stop: () => {
       running = false;
       clearInterval(timer);
+      clearInterval(houseTimer);
     },
   };
 }

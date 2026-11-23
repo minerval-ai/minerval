@@ -2216,6 +2216,16 @@ bounds how much work runs; this ceiling bounds how much runs at once, which
 money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
 
+The ledger's housekeeping does not wait for a slot (#1028). Routing
+subscriptions and due check-ins, releasing petition holds, closing deployment
+faults that are over and funding mandates' and lookouts' own rows is database
+work with no model in it (`ledgerHousekeeping`, `src/workers/engine-executor.ts`).
+The engine lane runs it before it picks each row, so a row opened a moment ago
+is funded at once, and the runner also runs it every five seconds on a timer
+of its own, one pass at a time, so it goes on while every slot is inside a long
+unit. Until that timer, a process whose slots were all held did no
+housekeeping at all, and a check-in arrived seventeen hours late.
+
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget, rejected credentials, a
 provider account out of credits) requeue the claim untouched

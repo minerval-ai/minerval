@@ -1872,11 +1872,16 @@ when they fire. Holding a subscription costs nothing.
 
 **The router** (src/services/subscription-router.ts) is plain code with no
 model in it. It reads the log in order from where it last stopped, as
-events are recorded and again on the engine executor's tick, and delivers
-each event to every active subscription it matches; on the tick it also
-delivers the check-ins that are due and the thresholds that have been
-crossed. A check-in that arrives more than five minutes after its time
-(the runner stalled or was down) says so: the time now and how late it is,
+events are recorded and again on the ledger's housekeeping tick, and
+delivers each event to every active subscription it matches; on the tick it
+also delivers the check-ins that are due and the thresholds that have been
+crossed. The tick (`ledgerHousekeeping` in src/workers/engine-executor.ts)
+runs before the engine lane picks each row and, apart from the runner's
+slots, every five seconds on a clock of its own (`LEDGER_HOUSEKEEPING_MS` in
+src/workers/local-runner.ts), so a check-in arrives on time even while every
+slot is inside a long run; before that clock, a check-in due at 04:06 on
+2026-11-13 arrived at about 21:30 (#1028). A check-in that arrives more than
+five minutes after its time (the process stalled or was down) says so: the time now and how late it is,
 so the agent does not take the world to be as it was when it set it. To a
 session, a delivery is an answer in its transcript, shown in
 its next tool result if it is running; a `wake` delivery resumes it if it
