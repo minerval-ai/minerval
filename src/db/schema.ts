@@ -1406,11 +1406,13 @@ export const sourceEvents = pgTable(
 // instance, an examination's coverage, a finding) is anchored to a segment,
 // so that the many claims a document carries share one map of it.
 //
-// Offsets index the document's READABLE text (htmlToText of raw_content),
-// the same text provenance_read_source returns and the quote check reads,
-// so an offset an agent sees and an offset stored here agree. text_hash is
-// the sha256 of the segment's text, so a later copy of the document that
-// differs can be detected rather than silently mis-anchored.
+// Offsets index the document's READABLE text (htmlToText of raw_content,
+// services/html-text.ts), the same text provenance_read_source returns and
+// the quote check reads, so an offset an agent sees and an offset stored
+// here agree. text_hash is the sha256 of the segment's text, so a copy of
+// the document that differs, or a changed reading of the same copy, is
+// detected and the document segmented again rather than silently
+// mis-anchored (segmentsStale in services/source-segment-service.ts).
 // ---------------------------------------------------------------------------
 export const sourceSegments = pgTable(
   "source_segments",

@@ -77,18 +77,19 @@ describe("htmlToText", () => {
       <script>var x = 1;</script></head><body><h1>Head&amp;line</h1>
       <p>First&nbsp;para<br>with a break.</p><p>Second &#8220;para&#8221;.</p></body></html>`;
     expect(looksLikeHtml(html)).toBe(true);
-    expect(htmlToText(html)).toBe("Head&line\n\nFirst para\nwith a break.\n\nSecond “para”.");
+    expect(htmlToText(html)).toBe("# Head&line\n\nFirst para\nwith a break.\n\nSecond “para”.");
     expect(looksLikeHtml("Just some text with 3 < 4 in it.")).toBe(false);
     expect(htmlToText("line one  \r\nline two\r\n")).toBe("line one\nline two");
   });
 
   it("keeps the edge cases of its stripping: unclosed comments and elements, tag case, `<>`", () => {
-    expect(htmlToText("<p>a<!-- x -->b <!-- never closed")).toBe("a b <!-- never closed");
+    // Markup leaves nothing in its place: no space the page does not have (#1127; html-text.test.ts).
+    expect(htmlToText("<p>a<!-- x -->b <!-- never closed")).toBe("ab <!-- never closed");
     expect(
-      htmlToText("<div><SCRIPT type=x>if (a < b) {}</script >Kept<scripts>too</scripts><style>p{}</STYLE\n>.</div>")
-    ).toBe("Kept too .");
-    // An unclosed <script> stays as text and does not hide a closed <style> after it.
-    expect(htmlToText("<p>x <script never closed <style>gone</style> y</p>")).toBe("x <script never closed y");
+      htmlToText("<div><SCRIPT type=x>if (a < b) {}</script >Kept<scripts> too</scripts><style>p{}</STYLE\n>.</div>")
+    ).toBe("Kept too.");
+    // An unclosed <script> is read on from its opening tag and does not hide a closed <style> after it.
+    expect(htmlToText("<p>x <script never closed>y <style>gone</style>z</p>")).toBe("x y z");
     expect(htmlToText("<p>1 <> 2 < 3</p>")).toBe("1 <> 2 < 3");
     // Plain text loses spaces and tabs before a line break, not a no-break space.
     expect(htmlToText("keep\u00a0 \t\nnext \t \r\nlast  ")).toBe("keep\u00a0\nnext\nlast");
