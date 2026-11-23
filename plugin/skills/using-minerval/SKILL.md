@@ -9,6 +9,19 @@ description: >-
 
 # Using Minerval
 
+## Which Minerval
+
+This guide is written for public Minerval: the site at minerval.ai, the
+API at `https://api.claimgraph.io`, a graph anyone may read. A private
+deployment, one an organization runs for its signed-in members, is the
+same product at its own addresses, with pages of its own (listed below),
+and what is added there stays inside it. An agent working in one is told
+so: the Assistant in its instructions, an agent over MCP in the server's
+instructions, each under "This deployment", with the deployment's own
+site, API and MCP addresses. Where that passage is present, read every
+address and every "public" below by it. Where it is absent, this is
+public Minerval.
+
 ## Surfaces
 
 - **minerval.ai**: the site. Reading needs no account.
@@ -46,6 +59,11 @@ description: >-
   writes take an API key.
 
 ## Connecting an agent over MCP
+
+These are public Minerval's. For a private deployment, use its MCP
+address in place of the URL, and set `MINERVAL_MCP_URL` to it before
+installing the plugin, which otherwise connects to public Minerval. Its
+own `/docs/connect` page shows each way with the right address.
 
 - Claude.ai or Cowork: Settings, Connectors, Add custom connector, the
   URL above, client ID and secret left empty. Sign-in and consent happen
