@@ -122,6 +122,14 @@ afterAll(async () => {
   await rawQuery(`DELETE FROM product_release_entries`);
   await rawQuery(`DELETE FROM release_steps_done`);
   await rawQuery(`DELETE FROM versions_run`);
+  // The scratch database is the next file's too: one that expects a deployment
+  // with no administrator yet must find none.
+  await rawQuery(`DELETE FROM administrative_events`);
+  await rawQuery(`DELETE FROM permission_grants`);
+  await rawQuery(`DELETE FROM account_groups`);
+  // The organization's own party, made when this file's first administrator signed in.
+  await rawQuery(`UPDATE sources SET party_id = NULL WHERE party_id IS NOT NULL`);
+  await rawQuery(`DELETE FROM parties`);
   await app?.close();
 });
 

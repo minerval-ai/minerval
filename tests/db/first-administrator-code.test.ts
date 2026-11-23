@@ -24,6 +24,7 @@ import {
   issueFirstAdministratorCode,
 } from "../../src/services/first-administrator-code.js";
 import { PERMISSIONS } from "../../src/permissions.js";
+import { PLATFORM_EXTERNAL_ID } from "../../src/services/platform-account.js";
 
 let app: FastifyInstance;
 
@@ -56,7 +57,14 @@ function as(person: Person, request: { method?: string; url: string; payload?: u
 const give = (person: Person, code: string) =>
   as(person, { method: "POST", url: "/setup/first-administrator", payload: { code } });
 
+let ownAccountNameBefore: string | null = null;
+
 beforeAll(async () => {
+  const [own] = await rawQuery<{ display_name: string }>(
+    `SELECT display_name FROM contributors WHERE external_id = $1`,
+    [PLATFORM_EXTERNAL_ID]
+  );
+  ownAccountNameBefore = own?.display_name ?? null;
   await rawQuery(`DELETE FROM administrative_events`);
   await rawQuery(`DELETE FROM permission_grants`);
   await rawQuery(`DELETE FROM account_groups`);
@@ -70,6 +78,21 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rawQuery(`DELETE FROM first_administrator_codes`);
+  // The scratch database is the next file's too: one that expects a deployment
+  // with no administrator yet must find none.
+  await rawQuery(`DELETE FROM administrative_events`);
+  await rawQuery(`DELETE FROM permission_grants`);
+  await rawQuery(`DELETE FROM account_groups`);
+  // The organization's own party, made when this file's first administrator signed in.
+  await rawQuery(`UPDATE sources SET party_id = NULL WHERE party_id IS NOT NULL`);
+  await rawQuery(`DELETE FROM parties`);
+  // Renaming the organization renamed its own account; the next file finds the name it had.
+  if (ownAccountNameBefore !== null) {
+    await rawQuery(`UPDATE contributors SET display_name = $2 WHERE external_id = $1`, [
+      PLATFORM_EXTERNAL_ID,
+      ownAccountNameBefore,
+    ]);
+  }
   await app?.close();
 });
 
