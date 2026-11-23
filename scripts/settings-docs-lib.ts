@@ -16,7 +16,7 @@ const WHO: Record<Setting["where"], string> = {
   app_secret: "administrators (sealed)",
 };
 
-const cell = (text: string): string => text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+const cell = (text: string): string => text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ");
 
 function defaultWords(row: Setting, defaultOf: (field: string) => string | null): string {
   if (row.secret) return "";

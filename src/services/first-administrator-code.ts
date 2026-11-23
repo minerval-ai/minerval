@@ -21,7 +21,7 @@
  *
  * FIRST_ADMINISTRATOR still works, for an install that is scripted.
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
@@ -48,8 +48,7 @@ const asOwner = <T>(fn: () => Promise<T>): Promise<T> => withSystemClearance(COD
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function newCode(): string {
-  const bytes = randomBytes(12);
-  const chars = [...bytes].map((b) => ALPHABET[b % ALPHABET.length]!);
+  const chars = Array.from({ length: 12 }, () => ALPHABET[randomInt(ALPHABET.length)]!);
   return `${chars.slice(0, 4).join("")}-${chars.slice(4, 8).join("")}-${chars.slice(8, 12).join("")}`;
 }
 

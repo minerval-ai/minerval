@@ -33,7 +33,9 @@ describe("docs/settings.md", () => {
 
   it("never shows a secret's default", () => {
     for (const row of SETTINGS.filter((s) => s.secret && !s.retired)) {
-      expect(page).toMatch(new RegExp(`\\| \`${row.key.replace(/\./g, "\\.")}\` \\| \`${row.env}\` \\| [^|]+ \\| [^|]+ \\|  \\|`));
+      const line = page.split("\n").find((l) => l.startsWith(`| \`${row.key}\` | \`${row.env}\` |`));
+      // The fifth cell is the default's.
+      expect(line?.split(" | ")[4], row.key).toBe("");
     }
   });
 });
