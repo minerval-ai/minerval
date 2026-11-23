@@ -29,6 +29,7 @@
  * by the party it belongs to, and how many connections there are. A count
  * names no row, and no label of any row is returned.
  */
+import { RELEASES_RECHECK_ON_HEALTH_MS, checkForReleases, versionPart, type VersionPart } from "./product-release-service.js";
 import { loadConfig, type Config } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
@@ -88,6 +89,11 @@ export interface ChecklistLabel {
 }
 
 export interface SetupChecklist {
+  /**
+   * What the deployment runs, what changed since the version it ran before,
+   * and what is newer (services/product-release-service.ts; docs/releases.md).
+   */
+  version: VersionPart;
   /**
    * The deployment's own checks of its configuration: the preflight's
    * report (services/deployment-checks.ts). The type allows null for a
@@ -396,7 +402,12 @@ export async function setupChecklist(): Promise<SetupChecklist> {
   const fixed = clearanceFixedBySettings(config);
   const stored = fixed ? {} : await readStoredClearance();
 
+  // Opening Health is one of the two times the list of releases is read:
+  // not more often than every few minutes, and never held up by it for long.
+  await checkForReleases({ maxAgeMs: RELEASES_RECHECK_ON_HEALTH_MS }).catch(() => null);
+
   return {
+    version: await versionPart(preflight.versions?.sandbox ?? null),
     preflight,
     permissions: permissionHolders(grants, ownLabels, parties),
     labels: checklistLabels(labels, config, stored),

@@ -23,7 +23,7 @@ RUN apt-get update \
 COPY requirements.txt /opt/minerval-sandbox/requirements.txt
 RUN pip install --no-cache-dir -r /opt/minerval-sandbox/requirements.txt
 
-COPY server.py confine.py VERSION /opt/minerval-sandbox/
+COPY server.py confine.py VERSION MINERVAL_VERSION /opt/minerval-sandbox/
 
 # An unprivileged user. The service never needs to be root: a command is
 # held to its run's sets by Landlock, which an unprivileged process applies
@@ -36,7 +36,11 @@ RUN useradd --system --uid 10002 --no-create-home --shell /usr/sbin/nologin sand
 # the digest the deployment runs; it is also settable when the container
 # starts.
 ARG SANDBOX_IMAGE="not stated"
+# The commit the image is built from (docs/releases.md, "Versions"). The
+# release it is part of is in MINERVAL_VERSION, the file beside the server.
+ARG MINERVAL_COMMIT=""
 ENV SANDBOX_IMAGE=${SANDBOX_IMAGE} \
+    MINERVAL_COMMIT=${MINERVAL_COMMIT} \
     SANDBOX_STORE_DIR=/sets \
     SANDBOX_DIRECTORY_ROOT=/registered \
     SANDBOX_SCRATCH_DIR=/scratch \

@@ -925,6 +925,7 @@ describe("the report as a whole", () => {
     expect(report.checks.filter((c) => c.blocking).map((c) => c.name)).toEqual([
       "database",
       "run_log",
+      "models_chosen",
       "provider_labels",
       "reports_stay_inside",
       "sandbox_confinement",

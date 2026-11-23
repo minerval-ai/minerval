@@ -85,6 +85,11 @@ const AREA_NAMES: Record<string, string> = {
 
 /** Each check's short title when it fails or is to do, and who puts it right. */
 const CHECK_SHORT: Record<string, { title: string; owner?: Owner }> = {
+  version: { title: "Parts were built from different versions" },
+  releases: { title: "A release needs looking at" },
+  unknown_settings: { title: "A variable is read by nothing" },
+  settings: { title: "Saved settings are not in force", owner: "admin" },
+  models_chosen: { title: "A role's model is nobody's choice", owner: "admin" },
   config_file: { title: "Config file can't be read" },
   database: { title: "Database not ready" },
   run_log: { title: "Run log not in record mode" },
@@ -683,6 +688,56 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
       tone: "warn",
       blocks: false,
     });
+  }
+
+  // Releases: a withdrawn release first, then a security release, then the
+  // steps of the upgrade just made that nobody has marked done. Being one
+  // release behind is a fact, not a fault, and is not raised.
+  const version = c.version;
+  if (version?.withdrawn) {
+    covered.add("releases");
+    out.push({
+      key: "release-withdrawn",
+      title: `Release ${version.running.version} was withdrawn`,
+      consequence: `Move to ${version.withdrawn.move_to}`,
+      owner: "operator",
+      href: "/admin#version",
+      action: "View",
+      tone: "bad",
+      blocks: false,
+      detail: `${version.withdrawn.reason} Minerval withdrew it on ${version.withdrawn.date}.`,
+    });
+  }
+  const security = (version?.newer ?? []).filter((r) => r.security && !r.withdrawn);
+  if (security.length > 0 && !version?.withdrawn) {
+    covered.add("releases");
+    out.push({
+      key: "release-security",
+      title: security.length === 1 ? `Security release ${security[0].version} is out` : `${security.length} security releases are out`,
+      consequence: "This deployment does not run it",
+      owner: "operator",
+      href: "/admin#version",
+      action: "View",
+      tone: "bad",
+      blocks: false,
+      detail: "Its notes say what was exposed and since when. Upgrading is done on the machine.",
+    });
+  }
+  for (const release of version?.changes ?? []) {
+    for (const step of release.operator_steps) {
+      if (step.done) continue;
+      out.push({
+        key: `release-step-${release.version}-${step.step}`,
+        title: `A step of the upgrade to ${release.version} is not marked done`,
+        consequence: firstLine(step.step),
+        owner: "operator",
+        href: "/admin#version",
+        action: "View",
+        tone: "warn",
+        blocks: false,
+        detail: `${step.step} Done on the machine by whoever runs the deployment; an administrator marks it done here.`,
+      });
+    }
   }
 
   // The deployment's own checks that fail or are to do, and that nothing above speaks for.

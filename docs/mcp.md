@@ -173,7 +173,14 @@ tools for a caller who holds `direct`, and adding a set, uploading into
 one, closing one and switching one off take a session. Registering a
 directory as a set takes a session and `administer`.
 `get_setup_checklist` is the administrators' read of how far the
-deployment's setup has got (docs/deployment.md, "The setup checklist").
+deployment's setup has got (docs/deployment.md, "The setup checklist"),
+with what the deployment runs and what it knows of newer releases
+(docs/releases.md). The deployment's settings are tools for a caller who
+holds `administer` (docs/settings.md): `list_settings`, `export_settings_file`,
+`set_setting` and `reset_setting`. A key someone outside issued is refused
+over MCP and given on the settings page, so that no key passes through a
+model's context, and starting the API again takes a session: it ends every
+run in flight.
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
@@ -621,7 +628,14 @@ read of a claim, use a card.
   to check a run's setup against), `list_features` (the optional parts of
   the product, each with whether this deployment has it on and what
   switching it off removes; a tool this document names that the deployment
-  does not list belongs to a feature that is off).
+  does not list belongs to a feature that is off), `get_version` (the
+  version of Minerval the deployment runs and the commit it was built from:
+  name it when you report a fault).
+- **Minerval's releases** (docs/releases.md): `list_product_releases`,
+  `get_latest_product_release` and `get_product_release` are the list of
+  releases of the software, each with what it asks of a deployment, as
+  Minerval signed it. They are not the gate's releases of pages
+  (`list_releases`).
 - **Agent runs:** `get_run` (a run's agent, times, outcome, cost, commit and
   setup by version; a run that read private data answers `public: false`
   with its reasons and nothing else), `list_run_steps` (its steps as

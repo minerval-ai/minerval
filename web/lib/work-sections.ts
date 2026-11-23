@@ -20,7 +20,7 @@ export type WorkIcon =
   | "inbox" | "review" | "ask" | "claims" | "mandates" | "findings" | "requests" | "docs"
   | "releases" | "boundaries" | "sources" | "file-sets" | "connections"
   | "globe" | "mirror" | "public-requests" | "replies" | "outbox"
-  | "health" | "people" | "labels" | "parties" | "budget" | "log";
+  | "health" | "people" | "labels" | "parties" | "budget" | "log" | "settings";
 
 /** What the sidebar shows beside an entry once the counts are read (app/api/work/counts). */
 export type WorkSignal = "inbox" | "review" | "public_requests" | "replies" | "health" | "connections" | "public_graph" | "mirror";
@@ -135,6 +135,8 @@ export const WORK_SECTIONS: WorkSection[] = [
       { href: "/admin/labels", name: "Labels", icon: "labels", shown: administers },
       { href: "/admin/parties", name: "Parties", icon: "parties", shown: administers },
       { href: "/admin/budget", name: "Budget", icon: "budget", also: ["/admin/owls", "/admin/usage-report"], shown: administers },
+      // How the deployment works: models, features, owls, keys (docs/settings.md).
+      { href: "/admin/settings", name: "Settings", icon: "settings", shown: administers },
       { href: "/admin/activity", name: "Activity log", icon: "log" },
     ],
   },

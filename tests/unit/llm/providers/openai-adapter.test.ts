@@ -10,6 +10,7 @@ const meterLlmUsage = vi.fn();
 
 vi.mock("../../../../src/config.js", () => ({
   loadConfig: () => ({
+    llmRequestTimeoutMs: 180_000, llmLongRunTimeoutMs: 3_600_000, llmMaxRetries: 4,
     openaiApiKey: "test-openai-key",
     anthropicApiKey: "",
     openrouterApiKey: "",
@@ -562,7 +563,7 @@ describe("openai adapter — configuration", () => {
   it("fails with a config error, not a 401, when no key is set", async () => {
     vi.resetModules();
     vi.doMock("../../../../src/config.js", () => ({
-      loadConfig: () => ({ openaiApiKey: "" }),
+      loadConfig: () => ({ openaiApiKey: "", llmRequestTimeoutMs: 180_000, llmLongRunTimeoutMs: 3_600_000, llmMaxRetries: 4 }),
     }));
     const mod = await import("../../../../src/llm/providers/openai.js");
     mod.resetOpenAiClient();

@@ -11,6 +11,7 @@ network. This directory is the whole of it:
 | `Dockerfile` | The image: Python, the data libraries, the shell tools, the service. |
 | `requirements.txt` | The Python libraries in the image, pinned. |
 | `VERSION` | The service's version, recorded on every kept analysis. Raise it when the service's behavior changes. |
+| `MINERVAL_VERSION` | The release of Minerval this image is part of, reported by `GET /health` beside `VERSION` so the deployment can tell when the sandbox was not rebuilt with the API and the web app. Written by `npm run version:set`, never by hand ([releases.md](../docs/releases.md)). |
 
 `deploy/compose.yml` runs it as part of a packaged deployment
 (`docs/self-hosting.md`). This page says what any packaging has to provide.

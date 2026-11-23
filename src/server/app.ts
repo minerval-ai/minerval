@@ -72,6 +72,8 @@ import { followsInApp } from "../services/mirror-following.js";
 import { connectionRoutes } from "../routes/connections.js";
 import { fileSetRoutes } from "../routes/file-sets.js";
 import { setupChecklistRoutes } from "../routes/setup-checklist.js";
+import { settingsRoutes } from "../routes/settings.js";
+import { productReleaseRoutes } from "../routes/product-releases.js";
 import { createdOwlRoutes, standingMandateRoutes } from "../routes/owls.js";
 import { usageReportReceivingRoutes, usageReportSendingRoutes } from "../routes/usage-reports.js";
 import { owlsCreatedHere } from "../services/owl.js";
@@ -224,7 +226,12 @@ export async function buildApp() {
     // What the administrators read to see how far setup has got, the
     // preflight's report included (routes/setup-checklist.ts).
     await app.register(setupChecklistRoutes);
+    // The settings the administrators change in the app (routes/settings.ts).
+    await app.register(settingsRoutes);
   }
+  // Minerval's releases (docs/releases.md): the list where anyone may read,
+  // a deployment's own copy of it where it is members-only.
+  await app.register(productReleaseRoutes);
   // Every graph admits pages other graphs publish, as sources their
   // publishers submit (docs/published-pages.md). It is the public graph
   // that these are built for and tested on.

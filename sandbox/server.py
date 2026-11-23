@@ -118,6 +118,16 @@ class Config:
         self.probe_resolve = os.environ.get("SANDBOX_PROBE_RESOLVE", "example.com")
         with open(os.path.join(HERE, "VERSION")) as f:
             self.version = f.read().strip()
+        # The release of Minerval this image is part of (docs/releases.md):
+        # one number for the API, the web app and this service, so that the
+        # deployment can say when one of them was not rebuilt with the rest.
+        # VERSION above is this service's own behaviour, kept on analyses.
+        try:
+            with open(os.path.join(HERE, "MINERVAL_VERSION")) as f:
+                self.minerval_version = f.read().strip()
+        except OSError:
+            self.minerval_version = ""
+        self.minerval_commit = os.environ.get("MINERVAL_COMMIT", "").strip()
 
     @staticmethod
     def _dir(name, required):
@@ -282,6 +292,8 @@ class Sandbox:
         return {
             "ok": self.abi >= 1,
             "version": c.version,
+            "minerval_version": c.minerval_version,
+            "minerval_commit": c.minerval_commit,
             "image": c.image,
             "python": "%d.%d.%d" % sys.version_info[:3],
             "libraries": self.libraries,

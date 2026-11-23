@@ -7,6 +7,8 @@ import { CopyId } from "./work/CopyId";
 import { WorkShell } from "./work/Shell";
 import { PageHead } from "./PageHead";
 import { signInOptions } from "./sign-in-options";
+import { WorkForm } from "./work/WorkForm";
+import { firstAdministratorAction } from "../app/admin/settings/actions";
 
 // The gate of a members-only deployment (lib/members.ts), placed round every
 // page by the root layout.
@@ -81,10 +83,36 @@ async function Gate({ children }: { children: ReactNode }) {
         }
       />
       <CopyId value={identity} />
-      <p className="w-help">
-        Setting this deployment up? Put that ID in its <code>FIRST_ADMINISTRATOR</code> setting and sign in
-        again. It works once, for the first administrator.
-      </p>
+      {mine.awaiting_first_administrator ? (
+        <>
+          <p className="w-help">
+            Setting this deployment up? It has no administrator yet. When its API started it printed a code in its
+            log, on a line that begins &ldquo;The first person to sign in&rdquo;. Give the code here and you are its
+            first administrator. It works once, and for a day; starting the API again prints a new one.
+          </p>
+          <WorkForm action={firstAdministratorAction} submit="Become the first administrator" primary>
+            <div className="w-field">
+              <label htmlFor="first-administrator-code">The code</label>
+              <input
+                id="first-administrator-code"
+                className="w-input"
+                name="code"
+                required
+                maxLength={64}
+                autoComplete="one-time-code"
+                spellCheck={false}
+                placeholder="XXXX-XXXX-XXXX"
+              />
+            </div>
+          </WorkForm>
+        </>
+      ) : (
+        <p className="w-help">
+          Setting this deployment up? Whoever runs it starts its API, which prints a one-time code for the first
+          administrator in its log; or they put that ID in its <code>FIRST_ADMINISTRATOR</code> setting. Either works
+          once, for the first administrator.
+        </p>
+      )}
       {signOutForm()}
     </GateCard>
   );

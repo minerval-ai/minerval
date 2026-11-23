@@ -13,6 +13,7 @@
  *   - The deployment is a members-only one and nothing in it names a kind
  *     of organization.
  */
+import { settingByEnv } from "../../../src/settings-registry.js";
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -93,9 +94,21 @@ describe("the settings a deployment gives", () => {
   const { interpolated, required, passedThrough } = takenFromDeployment();
 
   it("are each named in env.example", () => {
-    // GIT_SHA is stamped by whoever builds the image, not chosen by the deployment.
-    const taken = [...new Set([...interpolated, ...passedThrough])].filter((name) => name !== "GIT_SHA");
-    expect(taken.filter((name) => !named.has(name)).sort()).toEqual([]);
+    // The commit is stamped by whoever builds the image, not chosen by the deployment.
+    const taken = [...new Set([...interpolated, ...passedThrough])].filter(
+      (name) => name !== "GIT_SHA" && name !== "MINERVAL_COMMIT"
+    );
+    // A setting the administrators set in the app has no line in env.example
+    // (docs/settings.md): the Compose file still passes it through, so that a
+    // deployment that fixed it in .env before the app could set it keeps it.
+    const setInTheApp = (name: string) => {
+      const row = settingByEnv(name);
+      return row !== undefined && row.where !== "machine";
+    };
+    expect(taken.filter((name) => !named.has(name) && !setInTheApp(name)).sort()).toEqual([]);
+    // And env.example is cut to what stays on the machine: it names no setting of the app's, but for the one a
+    // private deployment's package starts differently from the code (the run log's mode).
+    expect([...named].filter(setInTheApp).sort()).toEqual(["RUN_LOG_MODE"]);
   });
 
   it("and env.example names none the Compose file does not take", () => {
@@ -130,6 +143,8 @@ describe("the settings a deployment gives", () => {
     for (const file of ["web/auth.ts", "web/next.config.mjs", "web/instrumentation.ts", "sandbox/server.py"]) {
       for (const m of readFileSync(join(ROOT, file), "utf8").matchAll(/(?:process\.env\.|["'])([A-Z][A-Z0-9_]{3,})/g)) read.add(m[1]!);
     }
+    // The config schema reads the layered environment it is handed (buildConfig in src/config.ts).
+    for (const m of readFileSync(join(ROOT, "src", "config.ts"), "utf8").matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)) read.add(m[1]!);
     // Auth.js reads its own address itself.
     read.add("AUTH_URL");
     const handed = new Set<string>();

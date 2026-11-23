@@ -557,10 +557,30 @@ matches.
 
 ### The first administrator
 
-Set `FIRST_ADMINISTRATOR` to the sign-in identity of the person setting the
-deployment up (`<provider>:<subject>`, for instance `oidc:00u1abcd`). The
-first time that person signs in, while the deployment has never had an
-administrator, they are granted every permission: `direct`, `fund` and
+A deployment that has never had an administrator needs one person to hold
+every permission and hand them out. There are two ways to say who.
+
+**The code.** Each time the API starts while the deployment has no
+administrator, it prints a one-time code in its log
+(`[setup] The first person to sign in ... and give this code becomes the
+first administrator: XXXX-XXXX-XXXX`). A person who signs in and holds
+nothing is asked for it, and the first to give it is the first
+administrator (`POST /setup/first-administrator`,
+`src/services/first-administrator-code.ts`). Reading the API's log is
+something only whoever runs the machine can do, so the code says what the
+setting below says: that the machine's operator chose this person. A code
+works once and for a day. Only its hash is kept, in a table that is the
+database owner's alone, so each start prints a new one, and every code not
+yet used or expired works, since several API tasks may start together.
+After twenty wrong codes none works until the API is started again.
+
+**The setting.** For an install that is scripted, set `FIRST_ADMINISTRATOR`
+to the sign-in identity of the person setting the deployment up
+(`<provider>:<subject>`, for instance `oidc:00u1abcd`). The first time that
+person signs in, while the deployment has never had an administrator, they
+are made the first administrator.
+
+Either way, the first administrator is granted every permission: `direct`, `fund` and
 `administer`, `read` and `read_sources` at each label that exists besides
 `public`, and `consent` for each party that exists. The grants are rows
 like any other, marked as made by the setting. From then on they hand
@@ -570,14 +590,16 @@ The organization itself is a party from that moment. If the deployment has
 none, one is made then under the name "This organization", and the first
 administrator holds `consent` for it: a part of a released page that rests on
 no outside party's material is the organization's to consent to
-([releasing-a-page.md](releasing-a-page.md)). Adding a party as the organization
-itself (`POST /parties` with `is_own_organization`) while it still has that
-name gives it its name. A deployment whose first administrator was
+([releasing-a-page.md](releasing-a-page.md)). Health's first day asks for its
+name, which renames the party (`PATCH /parties/:id`, logged with the name it
+had; any party can be renamed the same way). Adding a party as the
+organization itself (`POST /parties` with `is_own_organization`) while it
+still has that name gives it its name too. A deployment whose first administrator was
 established before this existed has no such party until an administrator
 adds one, and is told so when a page is first asked to be shown.
 
-The setting works once. Once any administrator has existed, removed ones
-included, it does nothing whatever it says, so a person the administrators
+Each works once. Once any administrator has existed, removed ones
+included, neither the code nor the setting does anything, so a person the administrators
 later removed cannot return by signing in, and a stale setting grants no
 one anything. A person does not need to know their identity in advance:
 anyone who signs in and holds nothing is shown their own.

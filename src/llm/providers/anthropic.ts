@@ -21,6 +21,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 import { loadConfig } from "../../config.js";
+import { onConfigChange } from "../../config-changes.js";
 import { LlmRefusalError } from "../errors.js";
 import { modelAcceptsTemperature } from "../models.js";
 import { logCacheUsage, recordCallUsage, type ProviderUsage } from "./metering.js";
@@ -64,7 +65,6 @@ export const TASK_BUDGETS_BETA = "task-budgets-2026-03-13";
 export const LONG_RUN_MAX_OUTPUT_TOKENS = 128_000;
 
 /** Default wall time one long-run turn may take before the SDK gives up on it. */
-const DEFAULT_LONG_RUN_TIMEOUT_MS = 3_600_000;
 
 /** Retries of one long-run turn: a dropped connection, not five copies of a long turn (getLongRunClient). */
 export const LONG_RUN_MAX_RETRIES = 2;
@@ -457,17 +457,17 @@ export interface MessagesPlatform {
 
 /** The request timeout for ordinary calls on any Messages API platform (see getClient). */
 export function requestTimeoutMs(): number {
-  return Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000);
+  return loadConfig().llmRequestTimeoutMs;
 }
 
 /** The SDK's retries for ordinary calls on any Messages API platform. */
 export function requestMaxRetries(): number {
-  return Number(process.env.LLM_MAX_RETRIES ?? 4);
+  return loadConfig().llmMaxRetries;
 }
 
 /** One long-run turn's wall time on any Messages API platform (see getLongRunClient). */
 export function longRunTimeoutMs(): number {
-  return Number(process.env.LLM_LONG_RUN_TIMEOUT_MS ?? DEFAULT_LONG_RUN_TIMEOUT_MS);
+  return loadConfig().llmLongRunTimeoutMs;
 }
 
 /**
@@ -619,3 +619,6 @@ export const anthropicAdapter: ProviderAdapter = messagesApiAdapter({
   client: getClient,
   longRunClient: getLongRunClient,
 });
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(resetAnthropicClient);

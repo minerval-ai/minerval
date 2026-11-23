@@ -157,6 +157,17 @@ const PREFLIGHT_WORDS: Record<string, { title: string; todo?: string }> = {
   database_owner: { title: "The role that owns the tables" },
   owls: { title: "Owls" },
   model_prices: { title: "A price for each model" },
+  version: {
+    title: "One version for every part",
+    todo: "Put right where the deployment runs: build every image from the same checkout (docker compose build) and start them again.",
+  },
+  releases: { title: "Releases", todo: "Upgrading is done where the deployment runs: the commands are under Version, above." },
+  unknown_settings: {
+    title: "Variables that look like settings",
+    todo: "Put right where the deployment runs: correct the name in its environment, or take the variable out.",
+  },
+  settings: { title: "Settings saved in the app", todo: "Put right on Settings (/admin/settings)." },
+  models_chosen: { title: "A chosen model for every load-bearing role", todo: "Choose them on Settings (/admin/settings), under Models." },
   usage_report: { title: "The usage report" },
   standing_mandates: { title: "A General mandate at each label" },
   own_organization: { title: "The organisation as a party" },
@@ -781,11 +792,12 @@ export const LOG_TYPE_WORDS: Record<string, string> = {
   mandates: "Mandates",
   file_sets: "File sets",
   mirror: "Mirror",
+  settings: "Settings",
   other: "Other",
 };
 
 /** The kinds the Activity log offers as filters, in its order. */
-export const LOG_TYPES = ["access", "labels", "parties", "connections", "file_sets", "owls", "providers", "mandates", "mirror", "other"] as const;
+export const LOG_TYPES = ["access", "labels", "parties", "connections", "file_sets", "owls", "providers", "mandates", "mirror", "settings", "other"] as const;
 export type LogType = (typeof LOG_TYPES)[number];
 
 /** The word for an entry's kind, as the API gave it. */
@@ -931,9 +943,33 @@ export function logSentence(entry: LogEntry): string {
       return `${who} asked the mirror to check the feed now.`;
     case "mirror_feed_key_accepted":
       return `${who} accepted the feed key ${entry.key_id ? entry.key_id.slice(0, 16) : "named"}, having compared it with the key Minerval publishes.`;
+    case "setting_changed": {
+      const why = entry.why ? ` Their reason: ${entry.why}` : "";
+      if (entry.secret) {
+        return `${who} gave the key ${entry.setting ?? "of a setting"}${entry.before === "set" ? ", in place of the one set before" : ""}.${why}`;
+      }
+      const from = entry.before === null || entry.before === undefined ? "its default" : settingValueWords(entry.before);
+      return `${who} set ${entry.setting ?? "a setting"} to ${settingValueWords(entry.after ?? "")}, from ${from}.${why}`;
+    }
+    case "setting_reset": {
+      const why = entry.why ? ` Their reason: ${entry.why}` : "";
+      if (entry.secret) return `${who} removed the key ${entry.setting ?? "of a setting"}.${why}`;
+      return `${who} returned ${entry.setting ?? "a setting"} to its default, from ${settingValueWords(entry.before ?? "")}.${why}`;
+    }
+    case "restart_requested":
+      return `${who} started the API again.${entry.why ? ` Their reason: ${entry.why}` : ""}`;
+    case "party_renamed":
+      return `${who} renamed the party ${entry.previous_name ? `"${entry.previous_name}"` : ""} to ${partyWords(entry.party)}.`.replace("party  to", "party to");
+    case "release_step_done":
+      return `${who} marked a step of release ${entry.version ?? ""} done: ${entry.step ?? ""}`.trimEnd() + (/[.!?]$/.test(entry.step ?? "") ? "" : ".");
     default:
       return `${who}: ${entry.event.replace(/_/g, " ")}.`;
   }
+}
+
+/** A setting's value as the log shows it: in quotes, and "nothing" where it is empty. */
+function settingValueWords(value: string): string {
+  return value === "" ? "nothing" : `"${value.length > 120 ? `${value.slice(0, 120)}…` : value}"`;
 }
 
 // --- connections ----------------------------------------------------------------

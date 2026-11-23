@@ -1,0 +1,73 @@
+name: Release
+
+# Puts a release on the list of Minerval's releases (docs/releases.md, "Who
+# manages them"). A release is cut on main by a commit that sets the version
+# and turns releases/next.md into releases/<version>.md (`npm run release:cut
+# -- <version>`), tagged `v<version>`. Pushing the tag starts this: it checks
+# that the tag is the version the code states and that its notes are there
+# and read, signs an entry for it with the release key, and posts the entry
+# to the public graph's POST /operator/releases.
+#
+# Run from the Actions tab (Run workflow) it signs and posts the release of
+# the ref it is run on again, which is harmless: an entry already on the list
+# is left as it is. A correction or a withdrawal is signed by hand
+# (`npm run release:sign -- correct ...`, `... withdraw ...`) and posted with
+# `npm run release:sign -- post`, since each takes words only a person has.
+#
+# Needs two repository secrets and takes one variable:
+#   RELEASE_SIGNING_KEY    the release key's private half, PEM
+#                          (`npm run release:sign -- keygen`). Its public half
+#                          is in src/release-key.ts, which is what every
+#                          deployment checks a release against.
+#   MINERVAL_OPERATOR_KEY  the public graph's operator key.
+#   MINERVAL_API_URL       (variable) the public graph's API.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Read the version, and check the tag is it
+        id: version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::The tag is ${GITHUB_REF_NAME} and package.json says $version. A release's tag is v<its version>."
+            exit 1
+          fi
+          case "$version" in
+            *-dev*) echo "::error::$version is a build of main, not a release. Cut the release first (npm run release:cut)."; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check the notes and the versions
+        run: npm run release:check
+
+      - name: Sign the release
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: npm run --silent release:sign -- entries "${{ steps.version.outputs.version }}" --out=release-entries.json
+
+      - name: Put it on the list
+        env:
+          MINERVAL_OPERATOR_KEY: ${{ secrets.MINERVAL_OPERATOR_KEY }}
+        run: npm run --silent release:sign -- post release-entries.json --url="${{ vars.MINERVAL_API_URL || 'https://api.minerval.ai' }}"

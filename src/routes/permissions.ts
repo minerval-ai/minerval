@@ -48,6 +48,7 @@ import { requireAnyPermission, requirePermission } from "../server/require-permi
 import { choosableLabels } from "../services/label-service.js";
 import { getContributorById } from "../services/contributor-service.js";
 import { listProviderClearance, setProviderClearance } from "../services/provider-clearance-service.js";
+import { awaitingFirstAdministrator, becomeFirstAdministrator } from "../services/first-administrator-code.js";
 import {
   LABEL_DESCRIPTION_MAX_CHARS,
   LABEL_NAME_PATTERN,
@@ -65,6 +66,7 @@ import {
   PARTY_NAME_MAX_CHARS,
   addParty,
   listParties,
+  renameParty,
   setSourceParty,
 } from "../services/party-service.js";
 import {
@@ -146,6 +148,9 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
         clearance: standing.clearance,
         raw_source_labels: standing.rawSourceLabels,
         groups: standing.groups,
+        // Whether a person who holds nothing can become the first
+        // administrator by giving the code the API printed (POST /setup/first-administrator).
+        awaiting_first_administrator: standing.member ? false : await awaitingFirstAdministrator(),
         // Which labels are the bottom layers here (src/labels.ts), so that a
         // page can say "the public graph", "published" and "members" of
         // whatever this deployment calls them.
@@ -358,6 +363,70 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
           .send({ error: result.message, code: result.code });
       }
       return reply.code(201).send({ party: result.party });
+    },
+  });
+
+  app.patch<{ Params: { id: string }; Body: { name: string } }>("/parties/:id", {
+    schema: {
+      tags: ["permissions"],
+      summary: "Give a party another name (administrators, from a signed-in session)",
+      description:
+        "The party stays the same: its sources, its grants and whether it is the organization itself are unchanged. " +
+        "This is how the organization's own party, made at setup as \"This organization\", is given its name. " +
+        "The change is logged with the name it had.",
+      params: { type: "object", required: ["id"], properties: { id: UUID } },
+      body: {
+        type: "object",
+        required: ["name"],
+        additionalProperties: false,
+        properties: { name: { type: "string", minLength: 1, maxLength: PARTY_NAME_MAX_CHARS } },
+      },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const result = await renameParty({
+        partyId: request.params.id,
+        name: request.body.name,
+        actorId: request.auth!.userId!,
+      });
+      if (!result.ok) {
+        return reply
+          .code(result.code === "INVALID_NAME" ? 400 : result.code === "UNKNOWN_PARTY" ? 404 : 409)
+          .send({ error: result.message, code: result.code });
+      }
+      return reply.send({ party: result.party });
+    },
+  });
+
+  app.post<{ Body: { code: string } }>("/setup/first-administrator", {
+    schema: {
+      tags: ["setup"],
+      summary: "Become this deployment's first administrator, with the code its API printed when it started (signed in)",
+      description:
+        "A deployment that has never had an administrator prints a one-time code in its API's log each time it " +
+        "starts. The first signed-in person to give the code is granted every permission, as the " +
+        "FIRST_ADMINISTRATOR setting grants them. The code works once and for a day. Refused once the deployment " +
+        "has had an administrator.",
+      body: {
+        type: "object",
+        required: ["code"],
+        additionalProperties: false,
+        properties: { code: { type: "string", minLength: 1, maxLength: 64 } },
+      },
+    },
+    preHandler: [app.authenticate, app.requireSession, app.requireUser],
+    handler: async (request, reply) => {
+      const user = await getContributorById(request.auth!.userId!);
+      const result = await becomeFirstAdministrator({
+        account: { id: request.auth!.userId!, externalId: user?.externalId ?? null },
+        code: request.body.code,
+      });
+      if (!result.ok) {
+        return reply
+          .code(result.code === "WRONG_CODE" ? 403 : result.code === "TOO_MANY_ATTEMPTS" ? 429 : 409)
+          .send({ error: result.message, code: result.code });
+      }
+      return reply.send({ administrator: true });
     },
   });
 

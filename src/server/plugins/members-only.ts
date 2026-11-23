@@ -23,9 +23,10 @@
  *  - SERVICE_WITHOUT_A_PERSON: the deployment's own web tier, by its
  *    service key, before anyone is signed in. One route: the one that
  *    creates the account when a person signs in.
- *  - SIGNED_IN: any account that has signed in, member or not. Two routes:
- *    who the account is, and what it holds, so a person with no grant can
- *    be told so and shown the identity an administrator needs.
+ *  - SIGNED_IN: any account that has signed in, member or not. Who the
+ *    account is, and what it holds, so a person with no grant can be told
+ *    so and shown the identity an administrator needs; and the route by
+ *    which the first person becomes the first administrator.
  *  - everything else: a member, which is an account with at least one live
  *    grant. What a member may then do is the route's own guards.
  *
@@ -62,6 +63,8 @@ export type SignInClass = "anyone" | "own_credential" | "service" | "signed_in" 
 /** Reachable with no credential, each with the reason. */
 export const OPEN_TO_ANYONE: Readonly<Record<string, string>> = {
   "GET /health": "The load balancer's liveness probe. It says whether the API and its database are up and nothing else.",
+  "GET /setup/version":
+    "Which version of Minerval the server runs, and nothing else (docs/releases.md). It says nothing of the deployment's material, and a person reporting a fault needs it before they can sign in.",
   "GET /.well-known/oauth-authorization-server":
     "OAuth discovery: how an MCP client finds where to sign in.",
   "GET /.well-known/oauth-authorization-server/mcp": "The same document at the path some clients ask for.",
@@ -92,6 +95,8 @@ export const SERVICE_WITHOUT_A_PERSON: Readonly<Record<string, string>> = {
 export const SIGNED_IN: Readonly<Record<string, string>> = {
   "GET /users/me": "Who the signed-in account is.",
   "GET /permissions/mine": "What the signed-in account holds, which for an account with no grant is the news that it holds none.",
+  "POST /setup/first-administrator":
+    "A deployment that has never had an administrator has no member yet. The first signed-in person to give the code its API printed becomes one.",
 };
 
 export const SIGN_IN_REQUIRED_MESSAGE =

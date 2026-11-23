@@ -142,6 +142,8 @@ const OPERATOR =
   "(server/plugins/request-label.ts).";
 const ADMINISTRATION =
   "Changes who may read or do what. The route checks the administrator and the change is written on the database owner's connection, to tables that carry no label.";
+const SETTINGS =
+  "A setting is the deployment's, not any row's. The route checks the administrator, and the setting and its entry in the administrators' log are written on the database owner's connection, to tables that carry no label (services/settings-service.ts).";
 const ACCOUNT = "Writes only to the account's own tables, which carry no label.";
 const OAUTH = "The OAuth server's own tables, which carry no label.";
 const ORGANIZATION =
@@ -384,6 +386,32 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
       "Says which model providers and outside services a label's work may be sent to. The route checks the person " +
       "holds the permission to clear providers, and the rows are written on the database owner's connection to a " +
       "table that carries no label (services/provider-clearance-service.ts).",
+  },
+
+  "PATCH /parties/:id": { rule: "none", why: ADMINISTRATION },
+  "POST /setup/first-administrator": {
+    rule: "none",
+    why: "Grants the first administrator every permission, written on the database owner's connection to tables that carry no label (services/first-administrator-code.ts).",
+  },
+  // ---- Minerval's releases (routes/product-releases.ts) ----
+  "POST /operator/releases": {
+    rule: "none",
+    why: "The operator key, on the list of Minerval's releases, which carries no label.",
+  },
+  "POST /setup/releases/upload": {
+    rule: "none",
+    why: "Keeps signed entries of the list of Minerval's releases, a table that carries no label, on the database owner's connection.",
+  },
+  "POST /setup/releases/steps": {
+    rule: "none",
+    why: "Records that a step of an upgrade was done, and its entry in the administrators' log: tables that carry no label.",
+  },
+  // ---- the deployment's settings (routes/settings.ts) ----
+  "PUT /settings/:key": { rule: "none", why: SETTINGS },
+  "DELETE /settings/:key": { rule: "none", why: SETTINGS },
+  "POST /setup/restart": {
+    rule: "none",
+    why: "Ends the API's process to start it again. It writes one entry in the administrators' log, which carries no label.",
   },
 
   // ---- the gate: members-only deployments only ----

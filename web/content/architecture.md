@@ -2762,7 +2762,10 @@ A feature is an optional part of the product that a deployment can switch
 off. Each feature is its own switch, every one is on by default, and a
 deployment switches off the ones it does not want by naming them in one
 environment variable, `FEATURES_OFF` (comma-separated), or as `features.off`
-in its config file (docs/deployment.md). There are no named
+in its config file (docs/deployment.md); a members-only deployment's
+administrators can set it in the app instead (docs/settings.md), where
+switching a feature off is refused while it holds work that would be
+stranded. There are no named
 bundles: a deployment is described by the features it has off and by nothing
 else. A name in `FEATURES_OFF` that is not a feature stops the process at
 start with the list of names that are, so a typo cannot leave a feature on

@@ -22,7 +22,13 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 vi.mock("../../../../src/config.js", () => ({
-  loadConfig: () => ({ anthropicApiKey: "test-key" }),
+  loadConfig: () => ({
+    anthropicApiKey: "test-key",
+    llmRequestTimeoutMs: 180_000,
+    // The config schema reads LLM_LONG_RUN_TIMEOUT_MS; this stands in for it.
+    llmLongRunTimeoutMs: Number(process.env.LLM_LONG_RUN_TIMEOUT_MS ?? 3_600_000),
+    llmMaxRetries: 4,
+  }),
 }));
 
 vi.mock("../../../../src/services/usage-service.js", () => ({
@@ -478,7 +484,7 @@ describe("completeWithToolsStreaming", () => {
     expect(mocks.constructed[0]).toMatchObject({ timeout: 3_600_000, maxRetries: 2 });
   });
 
-  it("takes the long-run timeout from LLM_LONG_RUN_TIMEOUT_MS", async () => {
+  it("takes the long-run timeout from the setting (LLM_LONG_RUN_TIMEOUT_MS)", async () => {
     process.env.LLM_LONG_RUN_TIMEOUT_MS = "120000";
     await anthropicAdapter.completeWithToolsStreaming(longRun);
     expect(mocks.constructed[0]).toMatchObject({ timeout: 120_000, maxRetries: 2 });

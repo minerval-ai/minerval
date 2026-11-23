@@ -9,6 +9,7 @@
  */
 import Stripe from "stripe";
 import { loadConfig } from "../config.js";
+import { onConfigChange } from "../config-changes.js";
 import type { OwlPack } from "./owl.js";
 
 let _stripe: Stripe | null = null;
@@ -120,3 +121,8 @@ export function verifyWebhookEvent(
   if (!secret) throw new Error("STRIPE_WEBHOOK_SECRET is not configured");
   return Stripe.webhooks.constructEvent(rawBody, signatureHeader, secret);
 }
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(() => {
+  _stripe = null;
+});

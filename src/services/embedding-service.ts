@@ -10,6 +10,7 @@
  */
 import OpenAI from "openai";
 import { loadConfig } from "../config.js";
+import { onConfigChange } from "../config-changes.js";
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./embedding-model.js";
 import { assertProviderCleared } from "../llm/provider-clearance.js";
 
@@ -58,3 +59,8 @@ export async function generateEmbeddings(
     .sort((a, b) => a.index - b.index)
     .map((d) => d.embedding);
 }
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(() => {
+  _client = null;
+});

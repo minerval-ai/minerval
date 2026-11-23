@@ -148,6 +148,30 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A label, a pair in label_reads, and the administrators' log entry for each: what the administrator asked for and nothing read from elsewhere.",
     ],
   ],
+  "src/services/first-administrator-code.ts": [
+    [
+      "The first administrator's code is the owner's alone: its hash is read and written on the owner's connection, and the grants it leads to say what an account may read.",
+      "The hash of a code the API printed, and the first administrator's grants for the account that gave the code. Nothing read from a labelled table.",
+    ],
+  ],
+  "src/services/product-release-service.ts": [
+    [
+      "The list of Minerval's releases and the record of upgrade steps done are the deployment's own: they carry no label and name no row of the graph.",
+      "Signed entries of the list of releases, when the list was last read, and that a step of an upgrade was done with its entry in the administrators' log. Nothing read from a labelled table.",
+    ],
+  ],
+  "src/services/versions-service.ts": [
+    [
+      "The record of which versions of the software this deployment has run is the deployment's own: it carries no label and names no row of the graph.",
+      "A row for the version the API started as, with the time. Nothing read from a labelled table.",
+    ],
+  ],
+  "src/services/settings-service.ts": [
+    [
+      "The deployment's settings are the owner's alone, sealed keys among them, so they are read and written on the owner's connection. A write's caller has checked that the actor administers the deployment.",
+      "A setting's row and the administrators' log entry for the change: what the administrator asked for and nothing read from elsewhere. The guards before a change count rows at every label (accounts that hold owls, proof attempts running, prize claims open) and return the counts alone, to an administrator.",
+    ],
+  ],
   "src/services/label-split.ts": [
     [
       "The split restamps every row that was at `public` with the label that says which of three things it is, in every labelled table, and defines the two labels: the owner's to do, once.",

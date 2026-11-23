@@ -42,6 +42,7 @@
  * returns. The dev bypass does not exist there: nothing is served to a
  * request that presents no credential, whatever the environment.
  */
+import { noteWebVersion } from "../../version.js";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { loadConfig } from "../../config.js";
@@ -635,6 +636,14 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
           contributorExternalId: actingUser.externalId,
           isSession: true,
         };
+      }
+
+      // The web app says which version it runs on its own requests, which
+      // carry the deployment's service key (docs/releases.md, the `version`
+      // check). Nothing else is believed about it.
+      if (auth.isService) {
+        const said = request.headers["x-minerval-web-version"];
+        if (typeof said === "string") noteWebVersion(said);
       }
 
       // A person acting as an organization (docs/organizations.md, "Acting

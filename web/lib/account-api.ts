@@ -1,4 +1,5 @@
 import "server-only";
+import { WEB_VERSION, WEB_VERSION_HEADER } from "./version";
 import type { LabelLayers } from "./label-layers";
 import type {
   AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
@@ -107,6 +108,7 @@ export async function accountFetch<T>(
     method: options.method ?? "GET",
     headers: {
       ...(KEY ? { "x-api-key": KEY } : {}),
+      [WEB_VERSION_HEADER]: WEB_VERSION,
       ...(acting ? { "x-acting-user": acting } : {}),
       ...(options.actingOrganization ? { "x-acting-organization": options.actingOrganization } : {}),
       ...(options.body !== undefined
@@ -338,6 +340,11 @@ export interface MyPermissions {
   clearance: string[];
   raw_source_labels: string[];
   groups: string[];
+  /**
+   * Whether a person who holds nothing can become the first administrator by
+   * giving the code the API printed (docs/accounts.md, "The first administrator").
+   */
+  awaiting_first_administrator?: boolean;
   /** Which labels are the bottom layers here (lib/label-layers.ts). Absent from an API that predates them. */
   label_layers?: LabelLayers;
 }

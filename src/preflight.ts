@@ -54,7 +54,14 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, type Config } from "./config.js";
+import {
+  fixedOnTheMachine,
+  loadConfig,
+  modelsNobodyChose,
+  storedSettings,
+  storedSettingsProblem,
+  type Config,
+} from "./config.js";
 import { appliedConfigFile, CONFIG_FILE_KEYS, type AppliedConfigFile } from "./config-file.js";
 import { rawQuery } from "./db/client.js";
 import { withSystemClearance } from "./db/clearance.js";
@@ -73,7 +80,11 @@ import {
   type OutsideServiceName,
   type StoredClearance,
 } from "./provider-labels.js";
+import { givenVariable } from "./given-variables.js";
+import { releasesFacts, type ReleasesFacts } from "./services/product-release-service.js";
+import { isDevVersion, lastWebVersion, releaseOf, runningVersion, versionWithCommit, type RunningVersion } from "./version.js";
 import { readStoredClearance } from "./services/provider-clearance-service.js";
+import { SETTINGS, strayVariables, type RetiredVariable, type UnknownVariable } from "./settings-registry.js";
 import { labelsBesidesPublic, publicIsTheOnlyLabel } from "./services/label-service.js";
 import { verifyRunLog } from "./services/run-view-service.js";
 import { openAgentRun, recordAgentStep, sealAgentRun } from "./services/trace-service.js";
@@ -103,6 +114,12 @@ export interface PreflightReport {
   holds_private_material: boolean | null;
   /** No check failed. A check that is to do is not a failure. */
   ready: boolean;
+  /**
+   * What each part of the deployment says it runs, where it was read
+   * (docs/releases.md): the API, the web app once it has called, and the
+   * sandbox once it has answered.
+   */
+  versions?: { api: string; web: string | null; sandbox: string | null };
   /** Whether agent work may start: "refused" when a blocking check failed. */
   agent_work: "allowed" | "refused";
   checks: PreflightCheckResult[];
@@ -158,6 +175,36 @@ export interface PreflightFacts {
   runLog: RunLogSelfTest;
   /** What a private deployment's settings need looked at (src/preflight-deployment.ts). */
   deployment: DeploymentFacts;
+  /**
+   * The environment variables the API was given that look like settings and
+   * are none, and the retired ones still set (src/settings-registry.ts).
+   * Absent (facts made up for a test) reads as none.
+   */
+  strays?: { unknown: UnknownVariable[]; retired: RetiredVariable[] };
+  /**
+   * The settings the administrators set in the app (docs/settings.md): how
+   * many, why they are not in force when they could not be, and the ones
+   * saved that wait for a restart. Absent reads as none set.
+   */
+  storedSettings?: { set: number; problem: string | null; waiting: string[] };
+  /**
+   * What each part of the deployment says it runs (docs/releases.md, the
+   * `version` check): the API itself, the web app as it last named itself
+   * on a request (null until it has called), and the sandbox as its health
+   * answer says (in `deployment.sandbox`). Absent reads as the API alone.
+   */
+  versions?: { api: RunningVersion; web: string | null };
+  /**
+   * What the deployment knows of Minerval's releases
+   * (services/product-release-service.ts). Absent, or null where the tables
+   * could not be read, the check says so.
+   */
+  releases?: ReleasesFacts | null;
+  /**
+   * The load-bearing roles whose model nothing has set, by their variables
+   * (modelsNobodyChose in src/config.ts). Absent reads as every one chosen.
+   */
+  modelsNobodyChose?: string[];
 }
 
 type Outcome = { status: PreflightStatus; message: string };
@@ -212,6 +259,185 @@ function checkConfigFile({ configFile }: PreflightFacts): Outcome {
   return pass(
     `${read}; the environment overrides ${configFile.overridden.length} of them: ` +
       `${configFile.overridden.map((o) => `${o.key} (${o.env})`).join(", ")}.`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Variables that look like settings and are none
+// ---------------------------------------------------------------------------
+
+/**
+ * A misspelt variable is read by nothing and says nothing, and a retired one
+ * goes on sitting in a file on the machine. This names both. It does not
+ * block: neither changes what the deployment does, only what its operator
+ * believes it does.
+ */
+function checkUnknownSettings({ strays }: PreflightFacts): Outcome {
+  const { unknown, retired } = strays ?? { unknown: [], retired: [] };
+  if (unknown.length === 0 && retired.length === 0) {
+    return pass("Every environment variable the API was given that looks like a setting is one.");
+  }
+  const parts: string[] = [];
+  if (unknown.length > 0) {
+    parts.push(
+      `${plural(unknown.length, "environment variable")} the API was given ${unknown.length === 1 ? "looks" : "look"} like ` +
+        `${unknown.length === 1 ? "a setting and is" : "settings and are"} read by nothing: ` +
+        `${unknown.map((u) => (u.nearest ? `${u.env} (did you mean ${u.nearest}?)` : u.env)).join(", ")}.`
+    );
+  }
+  if (retired.length > 0) {
+    parts.push(
+      `${plural(retired.length, "setting")} still set ${retired.length === 1 ? "was" : "were"} retired and ` +
+        `${retired.length === 1 ? "is" : "are"} read by nothing: ` +
+        `${retired.map((r) => `${r.env} (retired in ${r.retiredIn}; in its place, ${r.replacedBy})`).join(", ")}. ` +
+        `Remove ${retired.length === 1 ? "it" : "them"} from the machine's environment.`
+    );
+  }
+  return fail(parts.join(" "));
+}
+
+// ---------------------------------------------------------------------------
+// One version for every part
+// ---------------------------------------------------------------------------
+
+/** Whether two parts were built from the same code, as far as their versions say. */
+function sameBuild(a: string, b: string): boolean {
+  if (a === b) return true;
+  // A build of main names its commit where the build passed it. One that did
+  // not cannot be told from another build of the same release-to-be.
+  const bare = (v: string) => /-dev$/.test(v);
+  return isDevVersion(a) && isDevVersion(b) && (bare(a) || bare(b)) && releaseOf(a) === releaseOf(b);
+}
+
+/**
+ * The API, the web app and the sandbox are released together, under one
+ * number. This fails when they do not report one: an image was rebuilt and
+ * another was not. It does not block agent work.
+ */
+/** The release the sandbox says it is part of, with its commit where it is a build of main. Null where it did not say. */
+function sandboxVersion(deployment: DeploymentFacts): string | null {
+  return deployment.sandbox?.answers && deployment.sandbox.minervalVersion
+    ? versionWithCommit(deployment.sandbox.minervalVersion, deployment.sandbox.minervalCommit ?? null)
+    : null;
+}
+
+function checkVersion({ versions, deployment }: PreflightFacts): Outcome {
+  if (!versions) return notApplicable("The parts' versions were not read.");
+  const sandbox = sandboxVersion(deployment);
+  const parts: Array<[string, string]> = [
+    ["the API", versions.api.version],
+    ...(versions.web ? ([["the web app", versions.web]] as Array<[string, string]>) : []),
+    ...(sandbox ? ([["the sandbox", sandbox]] as Array<[string, string]>) : []),
+  ];
+  const dev = isDevVersion(versions.api.version)
+    ? " This is a build of the main branch between releases, not a release: the release notes cover releases only."
+    : "";
+  const unheard = [
+    ...(versions.web ? [] : ["the web app has not called the API since it started, so its version is not known yet"]),
+    ...(deployment.sandbox?.answers && !sandbox ? ["the sandbox does not say which release it is part of, so it was built before this one"] : []),
+  ];
+  const differ = parts.filter(([, v]) => !sameBuild(v, versions.api.version));
+  if (differ.length > 0) {
+    return fail(
+      `The parts of this deployment were not built from one version: ${parts.map(([name, v]) => `${name} runs ${v}`).join(", ")}. ` +
+        `One image was rebuilt and another was not. Build all of them from the same checkout (docker compose build) and start them again.${dev}`
+    );
+  }
+  if (deployment.sandbox?.answers && !sandbox) {
+    return fail(
+      `The API runs ${versions.api.version}, and the sandbox does not say which release it is part of: its image was built before this release. ` +
+        `Build it again from the same checkout (docker compose build sandbox) and start it again.${dev}`
+    );
+  }
+  const who = parts.length === 1 ? "The API runs" : `${listed(parts.map(([name]) => name)).replace(/^t/, "T")} run`;
+  return pass(`${who} ${versions.api.version}${unheard.length > 0 ? `; ${unheard.join(", and ")}` : ""}.${dev}`);
+}
+
+/**
+ * Whether the deployment learns of new releases, and from where. It fails
+ * where the release it runs was withdrawn, where a security release is out
+ * that it does not run, and where it is set to read the list and cannot.
+ * It does not block agent work: an upgrade is the operator's to make.
+ */
+function checkReleases({ releases }: PreflightFacts): Outcome {
+  if (releases === undefined) return notApplicable("What this deployment knows of releases was not read.");
+  if (releases === null) return fail("What this deployment knows of releases could not be read from its database.");
+  if (releases.withdrawn) {
+    return fail(
+      `Release ${releases.withdrawn.version}, which this deployment runs, was withdrawn: ${releases.withdrawn.reason.replace(/\.$/, "")}. ` +
+        `Move to ${releases.withdrawn.move_to}: git fetch --tags, git checkout v${releases.withdrawn.move_to}, docker compose build, docker compose up -d.`
+    );
+  }
+  if (releases.securityNewer.length > 0) {
+    return fail(
+      `${releases.securityNewer.length === 1 ? "A security release is" : "Security releases are"} out that this deployment does not run: ` +
+        `${listed(releases.securityNewer)}. Its notes say what was exposed and since when; upgrade to it.`
+    );
+  }
+  if (releases.serves) {
+    return pass(`This deployment serves the list of releases itself; it holds ${plural(releases.known, "release")}.`);
+  }
+  if (releases.keys === 0) {
+    return pass(
+      "This version of Minerval carries no release key yet, so no list of releases can be checked: the deployment knows of releases from the notes in its own images."
+    );
+  }
+  if (!releases.reads) {
+    return pass(
+      `releases.check is "never", so this deployment asks nobody about releases: it learns of them only from the notes in its own images` +
+        (releases.known > 0 ? `, and from the list an administrator uploaded, which holds ${plural(releases.known, "release")}.` : ". A file of the list, downloaded from the public graph, can be uploaded on Health.")
+    );
+  }
+  if (releases.error) {
+    return fail(
+      `The list of releases could not be read (${releases.error}), so this deployment does not know whether a newer release is out. ` +
+        `It is asked for again daily and when Health is opened. A deployment that must reach nothing outside sets releases.check to "never".`
+    );
+  }
+  if (!releases.checkedAt) return pass("The list of releases has not been read yet; it is read shortly after the API starts, and daily.");
+  return pass(`The list of releases was read on ${releases.checkedAt.slice(0, 10)}, unsigned and with nothing that names this deployment; it holds ${plural(releases.known, "release")}.`);
+}
+
+// ---------------------------------------------------------------------------
+// The settings the administrators set in the app
+// ---------------------------------------------------------------------------
+
+function checkSettings({ storedSettings }: PreflightFacts): Outcome {
+  const { set, problem, waiting } = storedSettings ?? { set: 0, problem: null, waiting: [] };
+  if (problem) {
+    return fail(
+      `The settings saved in the app are not in force, because together with the machine's they cannot be used: ` +
+        `${problem.split("\n")[0]} The deployment is running on the machine's settings and the defaults. ` +
+        `Put the setting right on the settings page (/admin/settings), or return it to its default there.`
+    );
+  }
+  if (set === 0) return notApplicable("No setting has been set in the app: every one comes from the machine or its default.");
+  const inForce = `${plural(set, "setting")} set in the app ${set === 1 ? "is" : "are"} in force`;
+  if (waiting.length === 0) return pass(`${inForce}.`);
+  return pass(
+    `${inForce}, and ${plural(waiting.length, "change")} to ${listed(waiting)} ${waiting.length === 1 ? "waits" : "wait"} ` +
+      `for the API to be started again.`
+  );
+}
+
+/**
+ * In production, the load-bearing agents must run on a model somebody
+ * chose: the code's defaults are the cheap tier, kept cheap for tests. On
+ * the public graph the start itself refuses (src/config.ts). A members-only
+ * deployment starts, so that its administrators can choose in the app, and
+ * this says which are still nobody's choice.
+ */
+function checkModelsChosen({ config, modelsNobodyChose }: PreflightFacts): Outcome {
+  if (config.env !== "production") {
+    return notApplicable("Outside production the roles' models may be left on their defaults.");
+  }
+  const unchosen = modelsNobodyChose ?? [];
+  if (unchosen.length === 0) return pass("The model of every load-bearing role is one somebody chose.");
+  return fail(
+    `Nobody has chosen ${unchosen.length === 1 ? "the model" : "the models"} ${listed(unchosen)}: ` +
+      `${unchosen.length === 1 ? "that role" : "those roles"} would run on the code's default, which is the cheap tier ` +
+      `kept for tests. An administrator chooses them on the settings page (/admin/settings); whoever runs the ` +
+      `machine can set them in its environment or config file instead.`
   );
 }
 
@@ -888,9 +1114,14 @@ function checkWorkOutsideTheRunLog({ config, holdsPrivate }: PreflightFacts): Ou
 
 /** The checks, in the order they are reported. */
 export const PREFLIGHT_CHECKS: readonly PreflightCheck[] = [
+  { name: "version", blocking: false, run: checkVersion },
+  { name: "releases", blocking: false, run: checkReleases },
   { name: "config_file", blocking: false, run: checkConfigFile },
+  { name: "unknown_settings", blocking: false, run: checkUnknownSettings },
+  { name: "settings", blocking: false, run: checkSettings },
   { name: "database", blocking: true, run: checkDatabase },
   { name: "run_log", blocking: true, run: checkRunLog },
+  { name: "models_chosen", blocking: true, run: checkModelsChosen },
   { name: "models", blocking: false, run: checkModels },
   { name: "provider_labels", blocking: true, run: checkProviderLabels },
   { name: "model_clearance", blocking: false, run: checkModelClearance },
@@ -927,6 +1158,9 @@ export function evaluatePreflight(facts: PreflightFacts): PreflightReport {
   const refused = checks.some((c) => c.blocking && c.status === "fail");
   return {
     holds_private_material: facts.holdsPrivate,
+    ...(facts.versions
+      ? { versions: { api: facts.versions.api.version, web: facts.versions.web, sandbox: sandboxVersion(facts.deployment) } }
+      : {}),
     ready: checks.every((c) => c.status !== "fail"),
     agent_work: refused ? "refused" : "allowed",
     checks,
@@ -1046,8 +1280,17 @@ export async function runLogSelfTest(): Promise<RunLogSelfTest> {
   }
 }
 
-/** Gather what the checks look at from the running deployment. */
-export async function gatherPreflightFacts(): Promise<PreflightFacts> {
+/**
+ * Gather what the checks look at from the running deployment.
+ *
+ * `callOut: false` leaves out what reaches beyond the configuration and the
+ * tables: the run log's test run and the sandbox's probe. It is how a change
+ * to a setting is tried before it is saved (services/settings-service.ts):
+ * the same facts are evaluated with the configuration as it is and as it
+ * would be, and what differs is the change's doing.
+ */
+export async function gatherPreflightFacts(options: { callOut?: boolean } = {}): Promise<PreflightFacts> {
+  const callOut = options.callOut !== false;
   const config = loadConfig();
   const database = await readDatabaseFacts();
   let privateLabels: string[] | null = null;
@@ -1068,12 +1311,11 @@ export async function gatherPreflightFacts(): Promise<PreflightFacts> {
       storedClearance = null;
     }
   }
-  const endpointKeysMissing = (config.modelEndpoints ?? [])
-    .map((endpoint) => endpoint.keyEnv)
-    .filter((env): env is string => !!env && !process.env[env]);
-  const runLog: RunLogSelfTest = database.reachable
-    ? await runLogSelfTest()
-    : { ok: false, reason: "the database cannot be reached" };
+  const runLog: RunLogSelfTest = !callOut
+    ? { ok: true, steps: 0 }
+    : database.reachable
+      ? await runLogSelfTest()
+      : { ok: false, reason: "the database cannot be reached" };
   return {
     config,
     configFile: appliedConfigFile(),
@@ -1081,11 +1323,32 @@ export async function gatherPreflightFacts(): Promise<PreflightFacts> {
     privateLabels,
     bottomLayers,
     storedClearance,
-    endpointKeysMissing,
+    endpointKeysMissing: endpointKeysMissing(config),
     database,
     runLog,
-    deployment: await gatherDeploymentFacts(config, database.reachable),
+    deployment: await gatherDeploymentFacts(config, database.reachable, { callOut }),
+    strays: strayVariables(process.env),
+    storedSettings: storedSettingsFacts(),
+    modelsNobodyChose: modelsNobodyChose(),
+    versions: { api: runningVersion(), web: lastWebVersion() },
+    releases: database.reachable ? await releasesFacts().catch(() => null) : null,
   };
+}
+
+/** The variables that declared model endpoints read their keys from and that nothing has given. */
+export function endpointKeysMissing(config: Config): string[] {
+  return (config.modelEndpoints ?? [])
+    .map((endpoint) => endpoint.keyEnv)
+    .filter((env): env is string => !!env && !givenVariable(env));
+}
+
+/** What this process holds of the settings set in the app. */
+export function storedSettingsFacts(): NonNullable<PreflightFacts["storedSettings"]> {
+  const { now, atStart } = storedSettings();
+  const waiting = SETTINGS.filter(
+    (row) => row.applies === "restart" && row.where !== "machine" && !fixedOnTheMachine(row.env) && now[row.env] !== atStart[row.env]
+  ).map((row) => row.key);
+  return { set: Object.keys(now).length, problem: storedSettingsProblem(), waiting };
 }
 
 /** Run the preflight against the running deployment. */

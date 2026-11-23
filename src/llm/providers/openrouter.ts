@@ -31,6 +31,7 @@
 import OpenAI from "openai";
 
 import { loadConfig } from "../../config.js";
+import { onConfigChange } from "../../config-changes.js";
 import { LlmRefusalError } from "../errors.js";
 import { requireLoggedRun } from "../logged-run.js";
 import { OPENROUTER_MODELS } from "../models.js";
@@ -71,8 +72,8 @@ function getClient(): OpenAI {
   _client = new OpenAI({
     apiKey: config.openrouterApiKey,
     baseURL: OPENROUTER_BASE_URL,
-    timeout: Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000),
-    maxRetries: Number(process.env.LLM_MAX_RETRIES ?? 4),
+    timeout: loadConfig().llmRequestTimeoutMs,
+    maxRetries: loadConfig().llmMaxRetries,
     // Attribution headers OpenRouter recommends; they surface the app on their
     // dashboards and leaderboards.
     defaultHeaders: {
@@ -160,7 +161,7 @@ function firstChoice(
  * retries are spent throw it as the transient failure it is (a status of
  * 502 is what isTransientApiError keys off), naming the upstream message.
  */
-const UPSTREAM_ERROR_RETRIES = Number(process.env.LLM_MAX_RETRIES ?? 4);
+const upstreamErrorRetries = (): number => loadConfig().llmMaxRetries;
 /** Attempts at a forced structured call before its absence is reported as the model's. */
 const STRUCTURED_ATTEMPTS = 3;
 
@@ -182,7 +183,7 @@ async function createWithUpstreamRetry(
   choice: OpenAI.Chat.Completions.ChatCompletion.Choice;
 }> {
   let lastError = "";
-  for (let attempt = 0; attempt <= UPSTREAM_ERROR_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= upstreamErrorRetries(); attempt++) {
     const completion = await getClient().chat.completions.create(params);
     const choice = firstChoice(completion, model);
     const err = upstreamError(choice);
@@ -190,12 +191,12 @@ async function createWithUpstreamRetry(
     lastError = err;
     // The failed attempt is still billed for what it produced.
     meter(completion, model);
-    if (attempt < UPSTREAM_ERROR_RETRIES) {
+    if (attempt < upstreamErrorRetries()) {
       await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
     }
   }
   const error = new Error(
-    `OpenRouter upstream error for "${model}" after ${UPSTREAM_ERROR_RETRIES + 1} ` +
+    `OpenRouter upstream error for "${model}" after ${upstreamErrorRetries() + 1} ` +
       `attempts (bad gateway): ${lastError}`
   );
   (error as { status?: number }).status = 502;
@@ -386,3 +387,6 @@ export const openrouterAdapter: ProviderAdapter = {
     );
   },
 };
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(resetOpenRouterClient);

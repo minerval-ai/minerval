@@ -152,7 +152,7 @@ export class ApiStack extends cdk.Stack {
     const image = ecs.ContainerImage.fromAsset("..", {
       platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
       // The deployed commit, stamped on agent runs and setup parts.
-      buildArgs: { GIT_SHA: process.env.GITHUB_SHA ?? "" },
+      buildArgs: { MINERVAL_COMMIT: process.env.GITHUB_SHA ?? "" },
     });
 
     // What the API process is configured with. The mirror publisher worker

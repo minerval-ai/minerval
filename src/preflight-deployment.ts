@@ -39,7 +39,7 @@
 import { readConnection } from "./services/public-graph-client.js";
 import { createPrivateKey, X509Certificate } from "node:crypto";
 import { accessSync, constants, readFileSync, statSync } from "node:fs";
-import { settingsThatDisagree, type Config } from "./config.js";
+import { grantsSetBySettings, settingsThatDisagree, type Config } from "./config.js";
 import { rawQuery } from "./db/client.js";
 import { withSystemClearance } from "./db/clearance.js";
 import { baseLabel, byLayerThenName } from "./labels.js";
@@ -736,7 +736,11 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
 }
 
 /** Gather what the checks above look at. `reachable` is whether the database answered the preflight's first question. */
-export async function gatherDeploymentFacts(config: Config, reachable: boolean): Promise<DeploymentFacts> {
+export async function gatherDeploymentFacts(
+  config: Config,
+  reachable: boolean,
+  options: { callOut?: boolean } = {}
+): Promise<DeploymentFacts> {
   let tables: DeploymentTables | null = null;
   let tablesError: string | null = reachable ? null : "the database cannot be reached";
   if (reachable) {
@@ -760,17 +764,15 @@ export async function gatherDeploymentFacts(config: Config, reachable: boolean):
       caFileIsCertificate = paths.DATABASE_CA_FILE.readable ? false : null;
     }
   }
-  const sandbox = config.sandboxUrl.trim() ? await checkSandbox(config).catch(() => null) : null;
+  const sandbox =
+    options.callOut !== false && config.sandboxUrl.trim() ? await checkSandbox(config).catch(() => null) : null;
   return {
     tables,
     tablesError,
     sandbox,
     paths,
     caFileIsCertificate,
-    grantsSet: {
-      signup: Number(process.env.SIGNUP_GRANT_OWLS) || 0,
-      monthly: Number(process.env.MONTHLY_GRANT_OWLS) || 0,
-    },
+    grantsSet: grantsSetBySettings(),
     credentialKeyProblem: credentialKeys().problem,
     connection: reachable
       ? await readConnection()

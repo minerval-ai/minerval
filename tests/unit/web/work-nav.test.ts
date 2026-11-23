@@ -62,6 +62,6 @@ describe("the members' work pages", () => {
     // An administrator has the admin section and the organisation's connections.
     const admin = names({ permissions: ["administer"], clearance: ["public"] });
     expect(admin).toContain("Material: Sources, File sets, Connections");
-    expect(admin).toContain("Admin: Health, People, Labels, Parties, Budget, Activity log");
+    expect(admin).toContain("Admin: Health, People, Labels, Parties, Budget, Settings, Activity log");
   });
 });

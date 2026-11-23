@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
+import { WEB_VERSION } from "../../../web/lib/version";
 
 // web/lib/account-api.ts is the BFF's client for the account half of the
 // API: every request carries the service key, most also x-acting-user. Ids
@@ -209,7 +210,8 @@ describe("getOpenOrderForClaim", () => {
     const [req] = requests();
     expect(req!.raw).toBe(`${BASE}/orders?claim_id=${ID}`);
     expect(req!.method).toBe("GET");
-    expect(req!.headers).toEqual({ "x-api-key": KEY, "x-acting-user": EXT });
+    // The web app also names the version it runs, for the deployment's `version` check (docs/releases.md).
+    expect(req!.headers).toEqual({ "x-api-key": KEY, "x-acting-user": EXT, "x-minerval-web-version": WEB_VERSION });
   });
 
   it.each([...CRAFTED, ...DOT_IDS, `${ID}&limit=1000`])(

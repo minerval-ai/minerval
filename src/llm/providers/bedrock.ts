@@ -14,6 +14,7 @@
  * AWS_ACCESS_KEY_ID pair, a profile), with every request signed. The
  * deployment holds the account, so the prompts stay in it.
  */
+import { onConfigChange } from "../../config-changes.js";
 import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
 import type Anthropic from "@anthropic-ai/sdk";
 
@@ -72,3 +73,6 @@ export const bedrockAdapter: ProviderAdapter = messagesApiAdapter({
   client: getClient,
   longRunClient: getLongRunClient,
 });
+
+// A region or a key changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(resetBedrockClient);

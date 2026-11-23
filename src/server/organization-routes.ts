@@ -202,6 +202,7 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
   "POST /deployments/connect": "A deployment asks to connect with its own key, before it belongs to any organization.",
 
   "POST /operator/organizations/:id/admins": SERVICE,
+  "POST /operator/releases": SERVICE,
   "POST /operator/hosted-deployment-tokens": SERVICE,
   "DELETE /operator/hosted-deployment-tokens/:id": SERVICE,
   "POST /operator/platform-grantmaking-keys": SERVICE,

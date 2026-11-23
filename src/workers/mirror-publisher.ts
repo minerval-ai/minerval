@@ -15,6 +15,7 @@
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { loadConfig } from "../config.js";
+import { startStoredSettings } from "../services/settings-service.js";
 import { closeDb } from "../db/client.js";
 import { mirrorConfigProblems, mirrorRoles } from "../services/mirror-roles.js";
 import { cutBatches, MirrorPublishError, type CutResult } from "../services/mirror-feed-service.js";
@@ -66,6 +67,8 @@ const invokedDirectly =
 if (invokedDirectly) {
   (async () => {
     await import("../load-env.js");
+    // What the administrators set in the app, read before the configuration is used (docs/settings.md).
+    await startStoredSettings({ logger: console });
     const config = loadConfig();
     if (!mirrorRoles(config).publisher) {
       console.log("[mirror-publisher] MIRROR_PUBLISH is not true; nothing to do");

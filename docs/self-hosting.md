@@ -83,10 +83,20 @@ starts with public Minerval's own settings and you change the ones you need.
    Open `.env`. Every setting has a comment saying what it is. The lines
    that are not commented out have no starting value and must be filled in:
    the site's address, three passwords and keys of the deployment's own
-   (`openssl rand -hex 32` makes one), your identity provider's three
-   values, and the model for each of six roles (and the solver's, unless
-   you switch mathematics off with `FEATURES_OFF`). Leave the rest commented
-   out unless you want to change them.
+   (`openssl rand -hex 32` makes one), and your identity provider's three
+   values. Leave the rest commented out unless you want to change them.
+
+   Set `CREDENTIAL_ENCRYPTION_KEY` too (`openssl rand -base64 32`): it is
+   the key that seals what your administrators give in the app, the model
+   providers' keys among them, and without it those keys would have to go
+   in a file on the machine.
+
+   `.env` holds what stays on the machine: where the deployment is reached,
+   the database, sign-in, and the secrets between its own parts. The models,
+   the model providers' keys, the features, owls and every budget and limit
+   are your administrators' to set in the app once it runs (steps 5 and 6;
+   [settings.md](settings.md)). An install that is scripted can still fix
+   any of them from the machine, in `deploy/api.env` or a config file.
 
    `.env` is the one place this deployment's secrets live. It is ignored by
    git and is in no Docker volume, so keep a copy off the machine ("No
@@ -99,12 +109,6 @@ starts with public Minerval's own settings and you change the ones you need.
    the commands below from a shell that does not carry, say, an
    `OPENAI_API_KEY` meant for something else.
 
-   One choice most deployments make here:
-
-   - `OWLS=created`, if you pay your model providers yourself. Your
-     administrators then create the owls that budget the agents' work. Left
-     as it starts (`sold`), owls are bought through Stripe.
-
    Which model providers and outside services may be sent the text of each
    label you define is chosen in the web app, where the label is defined
    (step 8), and needs nothing here. Leave `PROVIDER_LABELS` unset unless
@@ -115,9 +119,9 @@ starts with public Minerval's own settings and you change the ones you need.
    kept whole. Leave it: once a label is defined, a deployment on
    `best_effort` starts no agent work.
 
-   To work beside the public graph and publish to it, fill in section 8 of
-   `env.example` as well ("The public graph", below). It can wait until
-   the deployment runs.
+   Working beside the public graph and publishing to it ("The public
+   graph", below) is set up in the app, and can wait until the deployment
+   runs.
 
 3. **Build the images.**
 
@@ -159,20 +163,37 @@ starts with public Minerval's own settings and you change the ones you need.
    health checks themselves are not logged unless they fail.
 
    If `docker compose` stops with `Set X in .env`, that setting is empty.
-   If the API's log ends in an error that names `SOLVER_MODEL`, mathematics
-   is on and the solver's model is missing or is not one the API accepts
-   (`env.example` says which it does). With mathematics in `FEATURES_OFF`
-   the setting is not read.
+   The log also says which version this is (`[version] Minerval 0.5.0`),
+   and, on a deployment that has no administrator yet, prints the code that
+   makes one:
+
+   ```
+   docker compose logs api | grep "\[setup\]"
+   ```
 
 5. **Sign in and become the first administrator.** Open the site. You are
-   asked to sign in, and sent to your identity provider. If you did not set
-   `FIRST_ADMINISTRATOR`, the page you land on shows your sign-in identity
-   (`oidc:` and your subject at the provider). Put it in `.env` as
-   `FIRST_ADMINISTRATOR`, run `docker compose up -d` again, and sign in
-   again. The first sign-in by that identity, while the deployment has never
-   had an administrator, is granted every permission. It works once.
+   asked to sign in, and sent to your identity provider. The page you land
+   on says you hold no permission yet and asks for the code: give the one
+   from the API's log. The first signed-in person to give it, while the
+   deployment has never had an administrator, is granted every permission.
+   The code works once and for a day; starting the API again prints a new
+   one. (A scripted install can name the person in `FIRST_ADMINISTRATOR`
+   instead, by the sign-in identity that page shows.)
 
-6. **Open Health.** It is the page at `/admin`, under Admin in the sidebar.
+6. **Open Health, and decide the first day's settings.** Health is the page
+   at `/admin`, under Admin in the sidebar. On a new deployment it opens
+   with "First day": name the organization, choose the model of each
+   load-bearing role (the Steward and its strong tier, the Curator, the
+   Extractor, Audit, Arbitration, and the solver unless you switch
+   mathematics off), decide the features, and decide where owls come from
+   (`created`, if you pay your model providers yourself: your administrators
+   then create the owls that budget the agents' work; left as `sold`, owls
+   are bought through Stripe). Give the model providers' keys on Settings
+   (`/admin/settings`), under Model providers. Until every load-bearing
+   role has a model somebody chose, the `models_chosen` check fails, and
+   once a label is defined it holds agent work.
+
+   Health
    It reads the deployment and says what needs someone now: the deployment's own checks
    of its configuration (the preflight; [deployment.md](deployment.md),
    "Preflight"), then permissions, labels, the General mandate, owls and
@@ -208,9 +229,24 @@ To stop: `docker compose down`. The database and the uploaded file sets are
 kept in Docker volumes and are there at the next start. `docker compose
 down -v` deletes them.
 
-To take a new version: `git pull`, `docker compose build`, `docker compose
-up -d`. The API applies new migrations and runs the enforcement step as it
-starts.
+To take a new version, check out its tag and build
+([releases.md](releases.md)):
+
+```
+git fetch --tags
+git checkout v0.5.0
+docker compose build
+docker compose up -d
+```
+
+The API applies new migrations and runs the enforcement step as it starts.
+Health then says which version the deployment runs, what it ran before,
+and what changed between the two: each step the release asks of you on the
+machine, each setting it retired that `.env` still sets, and each default it
+changed that you pin to the old value. Health also says when a newer
+release is out, and marks a security release. Following `main`
+(`git pull`) stays possible; Health then says the deployment runs a build
+of `main`, which the release notes do not cover.
 
 ## The public graph
 
@@ -264,12 +300,16 @@ is a guide of its own: `/docs/running-a-private-graph` on the site.
 
 ## The settings, and where each lives
 
-- `deploy/.env`: the settings in `deploy/env.example`. The Compose file
-  hands each to the container that reads it and to no other. The database
-  superuser's password goes to the database container alone.
-- `deploy/api.env` (optional): any other setting the API reads, such as a
-  budget, an interval, Stripe's keys, or a connection's credential
-  (`CONNECTION_...`). `.env.example` at the repository's root lists them.
+- The app (`/admin/settings`): everything that is a choice about how the
+  deployment works, set by its administrators, logged, and for most in
+  force within seconds ([settings.md](settings.md) lists every setting).
+- `deploy/.env`: the settings in `deploy/env.example`, which stay on the
+  machine. The Compose file hands each to the container that reads it and
+  to no other. The database superuser's password goes to the database
+  container alone.
+- `deploy/api.env` (optional): a connection's credential
+  (`CONNECTION_...`), and any setting you want fixed from the machine so
+  that the app shows it and does not offer to change it.
   It holds secrets too, so make it closed to other accounts before you
   write in it: `install -m 600 /dev/null api.env`. `docker compose` reads
   both files as the account that runs it, so that account alone needs to
@@ -361,8 +401,9 @@ sandbox, and an administrator registers directories under it as file sets.
     with the old key. The new key cannot continue it: each page's record
     starts again.
 
-  The rest of `.env` is choices (the models, which labels each provider is
-  cleared for) that can be written again, and are easier kept.
+  `CREDENTIAL_ENCRYPTION_KEY` matters more than it did: it opens the keys
+  your administrators gave in the app. Lost, those keys are given again.
+  The settings set in the app are in the database, and are kept with it.
 - **No model server.** The package runs no model. An endpoint of your own is
   yours to run and to name in `MODEL_ENDPOINTS`.
 - **No mirror of the public graph unless you set it up.** With

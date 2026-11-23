@@ -42,6 +42,11 @@ import { handleArbitrationMessage } from "./workers/arbitration-pipeline.js";
 import { abandonStewardLeases } from "./services/steward-lease.js";
 import { startGatedWork } from "./workers/agent-work-gate.js";
 import { ConfigFileError } from "./config-file.js";
+import { startStoredSettings } from "./services/settings-service.js";
+import { recordVersionStarted } from "./services/versions-service.js";
+import { startReleaseCheck } from "./services/product-release-service.js";
+import { runningVersion } from "./version.js";
+import { firstAdministratorCodeLines, issueFirstAdministratorCode } from "./services/first-administrator-code.js";
 import type {
   QueuedClaimPipelineMessage,
   UrlExtractionMessage,
@@ -224,7 +229,7 @@ function startWork(
 }
 
 async function main() {
-  const config = loadConfig();
+  let config = loadConfig();
   // Every tool a domain skill declares must have an executor and a name
   // that collides with nothing; a defective skill fails the process here,
   // not mid-run inside a Steward's toolset.
@@ -324,6 +329,38 @@ async function main() {
     console.error("[labels] the enforcement step failed; public is the only label, so nothing is held:", err);
   }
 
+  // What the administrators set in the app (docs/settings.md) is read here,
+  // once the database is migrated and before anything is built from the
+  // configuration, and kept fresh from then on: a setting that applies live
+  // is in force in this process within seconds of being changed in another.
+  // The settings that apply at a restart are the ones read now.
+  const storedSettings = await startStoredSettings({ logger: console });
+  if (storedSettings.problem) {
+    console.error(
+      `[settings] the settings saved in the app are not in force: ${storedSettings.problem} ` +
+        "The API is starting on the machine's settings and the defaults; the preflight's `settings` check says the same."
+    );
+  }
+  config = loadConfig();
+
+  // Which version this is, said once where a person looking at the log sees
+  // it, and recorded: what the deployment ran before is how it later says
+  // what changed since (services/versions-service.ts).
+  const running = runningVersion();
+  console.log(`[version] Minerval ${running.version}${running.commit ? ` (commit ${running.commit})` : ""}`);
+  await recordVersionStarted(running).catch((err) =>
+    console.error("[version] the version could not be recorded; Health will not say what was run before:", err)
+  );
+
+  // A members-only deployment that has never had an administrator prints
+  // the code that makes one (services/first-administrator-code.ts).
+  try {
+    const issued = await issueFirstAdministratorCode();
+    if (issued) for (const line of firstAdministratorCodeLines(issued)) console.log(`[setup] ${line}`);
+  } catch (err) {
+    console.error("[setup] the first administrator's code could not be made; FIRST_ADMINISTRATOR still works:", err);
+  }
+
   const app = await buildApp();
 
   const logger = {
@@ -346,7 +383,12 @@ async function main() {
   const prices = startModelPriceRefresh({
     logger: { ...logger, warn: (...args: unknown[]) => app.log.warn(args) },
   });
-  const pollers: Array<{ stop: () => void }> = [work, prices];
+  // The list of Minerval's releases (docs/releases.md), read once a day
+  // where the deployment reads it at all. Outside the gate: it is not agent
+  // work, it sends nothing of the deployment's, and it is how an operator
+  // learns that a security release is out.
+  const releases = startReleaseCheck({ logger: console });
+  const pollers: Array<{ stop: () => void }> = [work, prices, storedSettings, releases];
 
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands

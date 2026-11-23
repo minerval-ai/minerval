@@ -47,16 +47,23 @@ there is no config file, and everything works as it did before the file
 existed: settings come from environment variables and their defaults.
 
 **What it overrides, and what overrides it.** A setting in the file replaces
-that setting's default. An environment variable for the same setting
+that setting's default, and replaces what an administrator set in the app
+([settings.md](settings.md), "How a value is chosen"): a setting the file
+holds is fixed by whoever runs the machine, and the app shows it without
+offering to change it. An environment variable for the same setting
 overrides the file, including one set to nothing, and a `.env` file beside
-the server counts as the environment. So an
-operator can still change one setting for one process without editing the
-file, and the settings that must not be in a file have somewhere to go. The
-preflight says which settings the environment is overriding.
+the server counts as the environment. So an operator can still change one
+setting for one process without editing the file, and the settings that
+must not be in a file have somewhere to go. The preflight says which
+settings the environment is overriding.
 
 **Secrets are never in the file.** Keys, tokens and passwords are set as
 environment variables, and a file that holds one is refused, with the name
-of the variable to use. The secrets are:
+of the variable to use. The keys someone outside issued (the model
+providers', Elicit's, Pangram's, Stripe's, the GitHub App's) can instead be
+given in the app by an administrator, where they are kept sealed
+([settings.md](settings.md), "Keys issued by someone else"); the rest stay
+on the machine. The secrets are:
 
 | Environment variable | What it is |
 |---|---|
@@ -64,6 +71,7 @@ of the variable to use. The secrets are:
 | `AWS_BEARER_TOKEN_BEDROCK` | A Bedrock API key, for Claude on Amazon Bedrock. Optional: without one, calls to Bedrock are signed with the AWS credentials the server runs with (a task or instance role, `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`, a profile). Claude on Google Vertex takes Google's application default credentials (`GOOGLE_APPLICATION_CREDENTIALS`, or the machine's service account), which are not set through Minerval at all. |
 | `DB_PASSWORD`, or `DATABASE_URL` whole | The database password. A connection string carries one, so it is a secret too. |
 | `SQL_AGENT_DB_PASSWORD`, `SQL_CALLER_DB_PASSWORD`, `SQL_AGENT_DATABASE_URL`, `SQL_CALLER_DATABASE_URL` | The two read-only database roles that SQL queries run as. |
+| `CLEARED_ROLE_PASSWORD` | The password of the role every connection held to a clearance logs in as. Left out, it is derived from the owner's password. |
 | `API_KEYS` | The service keys the web app and first-party tools present. |
 | `MINERVAL_OPERATOR_KEY` | The operator's key ([accounts.md](accounts.md), "The operator key"). |
 | `ELICIT_API_KEY`, `PANGRAM_API_KEY` | The two paid research services. |
@@ -73,6 +81,8 @@ of the variable to use. The secrets are:
 | `OIDC_SIGNING_KEY` | Only on the public graph: the RSA private key, PEM, that minerval.ai signs its ID tokens with as an OpenID Connect provider for organizations ([organizations.md](organizations.md), "Signing in"). Its public half is served at `/oidc/jwks`. Unset in production, the provider says it is not set up. |
 | `MINERVAL_HOSTING_TOKEN` | Only on a deployment Minerval runs: the token its provisioning gave it. Sent when it connects to minerval.ai, which accepts "Minerval's machines" as where it runs only with a live token, and fixes that answer in the Connect drawer ([organizations.md](organizations.md), "Hosted by Minerval"). |
 | `SANDBOX_TOKEN` | The secret the API and the sandbox service share ([file-sets.md](file-sets.md)). |
+| `LEAN_CHECKER_TOKEN` | The secret the API and the Lean checker share, where mathematics is on ([mathematics.md](mathematics.md)). |
+| `MIRROR_SIGNING_KEY` | Only on a deployment that publishes a mirror feed: the Ed25519 private key its batches are signed with ([mirror.md](mirror.md)). |
 | `CONNECTION_...` | Each connection's credential, in a variable the connection names ([connections.md](connections.md)). There may be any number, so a file is refused for any name that begins this way. |
 | `CREDENTIAL_ENCRYPTION_KEY` | The key a credential given on a connection's page is kept sealed with: 32 random bytes in base64 (`openssl rand -base64 32`). Without it a credential can only be given in a `CONNECTION_...` variable. Losing it loses only those credentials, which are given again ([connections.md](connections.md), "A credential given here"). It also seals the signing secrets of webhook subscriptions; without it events are followed by poll only ([events.md](events.md)). |
 | `CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` | Keys that sealed credentials before the current one, separated by commas: they open, never seal. Kept while a key is replaced, until `scripts/reseal-connection-credentials.ts` has moved every credential to the new key. |
@@ -278,6 +288,7 @@ on when its key is set, which is how it worked before the file existed.
 | `api_base_url` | Where this API is reached from outside. | `PUBLIC_API_BASE_URL` |
 | `citation_url_base` | Where a claim's permanent citation address starts. `""` uses `web_base_url`. | `CITATION_URL_BASE` |
 | `cors_origins` | A list of other sites whose pages may call the API from a browser. | `CORS_ORIGINS` |
+| `webhook_allowed_hosts` | A list of hosts a webhook may deliver to although their addresses are not public: a receiver on the deployment's own network ([events.md](events.md)). Empty, deliveries reach public addresses only. | `EVENT_WEBHOOK_ALLOWED_HOSTS` |
 | `host`, `port` | The address and port the API listens on. | `HOST`, `PORT` |
 | `log_level` | `"fatal"`, `"error"`, `"warn"`, `"info"`, `"debug"` or `"trace"`. | `LOG_LEVEL` |
 | `anonymous_rate_limit_per_minute` | Requests a minute one address may make without a key. | `ANONYMOUS_RATE_LIMIT_PER_MINUTE` |
@@ -374,27 +385,35 @@ The signing key is a secret (above).
 | `url` | The address of the sandbox service agents run commands over file sets in. Left out, sets can be added and not explored. | `SANDBOX_URL` |
 | `hour_cost_micro_usd` | What an hour of sandbox time is charged to a run, in millionths of a dollar. `0` charges nothing, and each run is told so. | `SANDBOX_HOUR_COST_MICRO_USD` |
 
+#### `[releases]`
+
+| Setting | What it is | Environment variable |
+|---|---|---|
+| `check` | Whether the deployment reads the list of Minerval's releases from the public graph: `"daily"`, the starting value, or `"never"` for a deployment that must reach nothing outside. The read is unsigned and says nothing of the deployment ([releases.md](releases.md), "What is current"). | `RELEASES_CHECK` |
+| `url` | Where the list is read from. The starting value is the public graph's API. | `RELEASES_URL` |
+
+#### The tuning
+
+Every other setting the server reads can be written in the file too, under
+the name [settings.md](settings.md) lists it by: budgets and caps on runs
+(`[budgets]`), what the ledger prices and paces with (`[allocation]`), the
+schedulers and sweeps (`[sweeps]`), limits and timeouts (`[limits]`),
+read-only SQL (`[sql]`), the mathematics settings (`[mathematics]`), the
+mirror feed (`[mirror]`) and the rest. A deployment rarely decides these,
+so the example file does not show them; "Every setting" in
+[settings.md](settings.md) has each one with its default and what it
+decides.
+
 ### What is not in the file
 
-The file covers what a deployment has to decide. The rest of the settings
-stay environment variables, each described where it is defined in
-`src/config.ts`, and `.env.example` lists the common ones:
-
 - **Secrets**, above.
-- **Tuning of the agents and the allocation**: budgets and caps on runs,
-  priors, intervals of the schedulers and sweeps, rate limits other than the
-  anonymous one, the solver's and the researcher's switches, and the sizing
-  of the mathematics mandates and prizes. A deployment rarely changes these,
-  and each is described at length beside its definition.
-- **Amazon queue addresses** (`SQS_*`) and `AWS_REGION`. With none set, the
-  queues run inside the server process.
-- **The read-only SQL replica** (`SQL_DB_HOST` and the two roles). Without
-  it the SQL tools say they are not configured.
-- **The Lean checker's address** (`LEAN_CHECKER_URL`), which matters only
-  with the mathematics feature on.
-- **The model providers' timeouts and retries** (`LLM_REQUEST_TIMEOUT_MS`,
-  `LLM_LONG_RUN_TIMEOUT_MS`, `LLM_MAX_RETRIES`) and the breaker on
-  unattributed model calls (`LLM_*_LIMIT`).
+- **What an administrator set in the app.** Most settings are choices about
+  how the deployment works, and its administrators change them on the
+  Settings page without a file or a restart ([settings.md](settings.md)). A
+  setting written in the file is fixed there instead. `GET /settings/file`
+  gives what is set in the app as a file, for starting another deployment
+  the same way.
+- **The web app's own settings**, below.
 
 Four things an installer might look for have no setting at all today:
 
@@ -426,12 +445,14 @@ which features a deployment has from the API when it runs
 
 ### Writing the file from code
 
-A setup page will write this same file. The code it will call is in
+The app's settings page writes the database, not this file
+([settings.md](settings.md)). The code that writes a file is in
 `src/config-file.ts`: `renderConfigFile` and `writeConfigFile` take settings
 keyed by their dotted names, check them exactly as a file being read is
 checked, and write the file whole, with the line on each group above it.
-They refuse a secret, so the page cannot put one in the file. What is
-written reads back as the same settings.
+They refuse a secret, so a file never holds one. What is written reads back
+as the same settings. `GET /settings/file` uses it to give an administrator
+what is set in the app as a file.
 
 ## Preflight
 
@@ -491,7 +512,12 @@ at that label does not run at all.
 
 | Check | What it looks at | Blocks agent work |
 |---|---|---|
+| `version` | The API, the web app and the sandbox report one version. It fails, naming each part and its version, when one image was rebuilt and another was not ([releases.md](releases.md)). | no |
+| `releases` | Whether the deployment learns of new releases, and from where. It fails where the release it runs was withdrawn, where a security release is out that it does not run, and where it is set to read the list and could not. | no |
 | `config_file` | Which file the settings were read from, and which of its settings the environment overrides. | no |
+| `unknown_settings` | Every environment variable the API was given that looks like a setting and is read by nothing, with the nearest name, and every retired setting still set, with what replaced it ([settings.md](settings.md), "The registry"). | no |
+| `settings` | Whether the settings saved in the app are in force, and which wait for the API to be started again. It fails when together with the machine's they cannot be used, in which case the deployment runs without them. | no |
+| `models_chosen` | In production, the model of every load-bearing role is one somebody chose, in the app or on the machine, and not the code's default. | yes |
 | `database` | The database can be reached, has the pgvector extension, and has applied every migration the code has. It also fails when the database was migrated by newer code, and when a migration is waiting that the migrator would pass over. | yes |
 | `run_log` | A test run is written to the run log, sealed, checked against its seal and removed. Where private material is held, the log must also be in record mode. | yes |
 | `models` | Every role's model resolves to a provider whose key is set; for Claude on Bedrock or Vertex, whose region is set (their credentials are the cloud's own, and only a call tries them). A model on one of the deployment's own endpoints needs the endpoint declared, and the variable its `key_env` names set if it has one. Roles of a feature that is off are left out. No provider is called. | no |
@@ -591,6 +617,7 @@ holders of the permission to administer:
 
 | Part | What it says |
 |---|---|
+| `version` | What the deployment runs and when it was upgraded to it and from what, what changed since the version before, and what is newer with what each release would ask of this deployment ([releases.md](releases.md), "What a deployment shows"). |
 | `preflight` | The preflight's report, above: each check with pass, fail, to do or not applicable and a sentence saying why, and whether agent work may start. |
 | `permissions` | How many accounts and groups hold each permission now, by label and by party where the permission is granted at one. |
 | `labels` | Every label besides `public`, with the model providers and outside services cleared for it (on the labels page, or by `PROVIDER_LABELS` where it is set) and the roles whose model's provider is not cleared, whose runs at that label are refused. |

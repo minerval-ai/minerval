@@ -65,6 +65,13 @@ const GATE_ACT =
   "An act at a gate: it decides what goes to readers who do not read a label, and what has gone is not taken back. " +
   "It takes the account's own permission and is recorded under the account. The Assistant shows its user a card.";
 
+/** What a change to the deployment's settings says of itself. */
+const SETTING_ACT =
+  "Changes how the whole deployment works: which model reads its material, what a run may spend, what is switched on. " +
+  "Read the setting with list_settings first, give the reason, and report `in_force` and any `warnings` as returned. " +
+  "A key someone outside issued cannot be given through this tool: the route refuses it and says to give it on the " +
+  "settings page (/admin/settings), so that no key passes through a model's context. The Assistant shows its user a card.";
+
 export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- claims ----
   "GET /claims": { name: "list_claims" },
@@ -321,6 +328,18 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // What this deployment has switched on (src/features.ts): a route behind
   // a feature that is off is not mounted, so it is not a tool here either.
   "GET /setup/features": { name: "list_features" },
+  // Minerval's own releases (routes/product-releases.ts). Not the gate's
+  // releases of pages, which are list_releases and get_release.
+  "GET /setup/releases": {
+    name: "list_product_releases",
+    note: "Free. These are releases of the Minerval software, not pages released through a gate (list_releases).",
+  },
+  "GET /setup/releases/latest": { name: "get_latest_product_release" },
+  "GET /setup/releases/:version": { name: "get_product_release" },
+  "GET /setup/version": {
+    name: "get_version",
+    note: "Free. Name the version when you report a fault in the deployment.",
+  },
 
   // ---- the mirror feed (docs/mirror.md) ----
   // Mounted only on a deployment that publishes a feed or applies one
@@ -476,6 +495,24 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /setup/checklist": {
     name: "get_setup_checklist",
     note: "Free. Each call runs the preflight's checks afresh, which takes a few seconds.",
+  },
+
+  // The deployment's settings (routes/settings.ts; docs/settings.md), for its
+  // administrators. The restart is excluded below: it is a person's act.
+  "GET /settings": {
+    name: "list_settings",
+    note:
+      "Free. A setting whose `changeable` is false is fixed by whoever runs the machine: say so, with its `fixed_by`, " +
+      "and do not try to change it. A key (`secret`) is never returned.",
+  },
+  "GET /settings/file": { name: "export_settings_file" },
+  "PUT /settings/:key": {
+    name: "set_setting",
+    note: SETTING_ACT,
+  },
+  "DELETE /settings/:key": {
+    name: "reset_setting",
+    note: SETTING_ACT,
   },
 
   // ---- tags, findings, platform health ----
@@ -735,12 +772,29 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
   "POST /parties": ADMINISTRATION_SESSION,
   "PUT /sources/:source_id/party": ADMINISTRATION_SESSION,
+  "PATCH /parties/:id": ADMINISTRATION_SESSION,
+  "POST /setup/first-administrator":
+    "Makes the first administrator of a deployment that has none, from the code its API printed: a person's act in " +
+    "their signed-in session, once, before there is anyone to hold a tool.",
   "POST /labels": ADMINISTRATION_SESSION,
   "POST /labels/:label/reads": ADMINISTRATION_SESSION,
   "PUT /labels/:label/face": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/face/:at": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
   "PUT /labels/:label/providers": PROVIDER_CLEARANCE_SESSION,
+  "POST /operator/releases":
+    "Adds signed entries to the list of Minerval's releases: the release workflow's act, on a tag, with the operator " +
+    "key, which is held outside every deployment surface on purpose. The list itself is a tool (list_product_releases).",
+  "POST /setup/releases/upload":
+    "Keeps a file of the list of releases that a person downloaded, for a deployment that reaches nothing outside: a " +
+    "person's act in their signed-in session. What the deployment knows of releases is in get_setup_checklist.",
+  "POST /setup/releases/steps":
+    "Says that a step of an upgrade was done on the machine. Only a person who did it, or saw it done, can say so; an " +
+    "agent cannot know. From a signed-in session, and logged.",
+  "POST /setup/restart":
+    "Ends the API's process, and with it every run in flight, to start it again with the settings as they now are. " +
+    "It is a person's act in their signed-in session: an agent that could restart the deployment could end other " +
+    "people's work whenever text it read told it to. The settings themselves are tools (list_settings, set_setting).",
   "POST /operator/administrators":
     "The way back in for a deployment whose administrators cannot sign in: requires the " +
     "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",

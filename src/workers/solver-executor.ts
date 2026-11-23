@@ -25,6 +25,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { rawQuery, closeDb } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { startStoredSettings } from "../services/settings-service.js";
 import { featureOn } from "../features.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
@@ -499,6 +500,8 @@ if (invokedDirectly) {
   (async () => {
     await import("../load-env.js");
     assertSkillToolsRegistered();
+    // What the administrators set in the app, read before the configuration is used (docs/settings.md).
+    await startStoredSettings({ logger: console });
     const config = loadConfig();
     if (!featureOn("mathematics", config)) {
       console.log(`[solver] not running: ${MATHEMATICS_OFF}`);

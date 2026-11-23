@@ -20,6 +20,7 @@
 import OpenAI from "openai";
 
 import { loadConfig } from "../../config.js";
+import { onConfigChange } from "../../config-changes.js";
 import { LlmRefusalError } from "../errors.js";
 import { getUsageContext } from "../usage-context.js";
 import { logCacheUsage, recordCallUsage } from "./metering.js";
@@ -60,8 +61,8 @@ function getClient(): OpenAI {
   }
   _client = new OpenAI({
     apiKey: config.openaiApiKey,
-    timeout: Number(process.env.LLM_REQUEST_TIMEOUT_MS ?? 180_000),
-    maxRetries: Number(process.env.LLM_MAX_RETRIES ?? 4),
+    timeout: loadConfig().llmRequestTimeoutMs,
+    maxRetries: loadConfig().llmMaxRetries,
     // The SDK's bundled HTTP client fails with "Premature close" against
     // api.openai.com in some environments (observed on ECS Fargate / Node 22);
     // native fetch works reliably there. Same override the embedding service
@@ -269,3 +270,6 @@ export const openaiAdapter: ProviderAdapter = {
     }
   },
 };
+
+// A key or a timeout changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(resetOpenAiClient);

@@ -165,6 +165,9 @@ api_base_url = "https://api.claimgraph.io"
 citation_url_base = "https://w3id.org/minerval/claim"
 # Other sites whose pages may call the API from a browser.
 cors_origins = []
+# Hosts a webhook may deliver to although their addresses are not public: a
+# receiver on the deployment's own network.
+# webhook_allowed_hosts = []
 host = "0.0.0.0"
 port = 3000
 log_level = "info"
@@ -258,3 +261,10 @@ cap_text_analysis_owls = 0.1
 # [sandbox]
 # url = "http://sandbox:8080"
 # hour_cost_micro_usd = 50000
+
+# Whether this deployment learns of new releases from the public graph
+# ("daily", or "never" where it must reach nothing outside), and where it
+# reads the list. It reads it unsigned and says nothing of itself.
+# [releases]
+# check = "daily"
+# url = "https://api.minerval.ai"

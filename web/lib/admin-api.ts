@@ -75,7 +75,44 @@ export interface StandingMandate {
   by_label?: Array<{ label: string; mandate: StandingMandateState | null }>;
 }
 
+/** What one release asks of this deployment (docs/releases.md, "What a deployment shows"). */
+export interface ReleaseAsks {
+  version: string;
+  date: string;
+  security: boolean;
+  operator_steps: Array<{ step: string; done: boolean; done_at: string | null; done_by: string | null }>;
+  retired_still_set: Array<{ key: string; env: string; where: "environment" | "file"; replaced_by: string; note: string }>;
+  defaults_pinned: Array<{ key: string; env: string; from: string; to: string; why: string; where: "environment" | "file" | "app" }>;
+  added: Array<{ key: string; note: string; set: boolean }>;
+}
+
+/** What the deployment runs, what changed since the version before, and what is newer. */
+export interface VersionPart {
+  running: { version: string; commit: string | null; since: string | null };
+  parts: { api: string; web: string | null; sandbox: string | null };
+  dev: boolean;
+  before: { version: string; until: string } | null;
+  changes: ReleaseAsks[];
+  notes_problems: string[];
+  list: {
+    check: "daily" | "never";
+    reads: boolean;
+    url: string;
+    checked_at: string | null;
+    error: string | null;
+    known: number;
+    keys: number;
+  };
+  withdrawn: { date: string; reason: string; move_to: string } | null;
+  newer: Array<ReleaseAsks & { withdrawn: boolean; upgrades_from: string | null }>;
+  latest: string | null;
+  through: string | null;
+  upgrade_commands: string[] | null;
+}
+
 export interface SetupChecklist {
+  /** What the deployment runs and what it knows of releases; absent from an API built before versions. */
+  version?: VersionPart;
   /** The deployment's own checks of its configuration; null in a build that has no preflight. */
   preflight: PreflightReport | null;
   permissions: PermissionHolders[];
@@ -233,6 +270,21 @@ export interface LogEntry {
   changed?: string[];
   offered?: string[];
   no_longer_offered?: string[];
+  /**
+   * For setting_changed and setting_reset: the setting, its value before and
+   * after as the environment would hold it (for a key, "set" or "not set"),
+   * and the reason given (`why`, on a restart too).
+   */
+  setting?: string;
+  before?: string | null;
+  after?: string | null;
+  secret?: boolean;
+  why?: string;
+  /** For party_renamed: the name the party had. */
+  previous_name?: string;
+  /** For release_step_done: the release and the step. */
+  version?: string;
+  step?: string;
   /** For provider_clearance_set: the providers cleared for the label, and those no longer cleared. */
   cleared?: string[];
   no_longer_cleared?: string[];
@@ -816,4 +868,100 @@ export function submitSource(
   body: { url: string; title?: string; content?: string; label?: string }
 ): Promise<SubmittedSource> {
   return accountFetch("/sources", { method: "POST", actingUser: externalId, body });
+}
+
+// --- the deployment's settings (docs/settings.md) -------------------------------
+
+/** A setting's value as the config file would write it. */
+export type SettingValue =
+  | string
+  | number
+  | boolean
+  | string[]
+  | Array<Record<string, string | number | boolean>>
+  | Record<string, string[]>;
+
+/** One setting, as GET /settings gives it. */
+export interface SettingView {
+  key: string;
+  env: string;
+  group: string;
+  kind: "text" | "number" | "boolean" | "list" | "groups" | "lists";
+  about: string;
+  /** "machine": whoever runs the machine alone changes it. "app" and "app_secret": the administrators do, here. */
+  where: "machine" | "app" | "app_secret";
+  applies: "live" | "restart";
+  tuning: boolean;
+  secret: boolean;
+  source: "environment" | "file" | "app" | "default";
+  changeable: boolean;
+  fixed_by: string | null;
+  value: SettingValue | null;
+  default: SettingValue | null;
+  is_set: boolean | null;
+  last_four: string | null;
+  set_by: { id: string; name: string } | null;
+  set_at: string | null;
+  waiting: { value: SettingValue | null } | null;
+  unopened: boolean;
+}
+
+export interface SettingsListing {
+  problem: string | null;
+  waiting_for_restart: number;
+  settings: SettingView[];
+}
+
+export interface SettingChanged {
+  setting: SettingView;
+  in_force: "now" | "at_restart";
+  warnings: Array<{ check: string; message: string }>;
+}
+
+export function fetchSettings(externalId: string): Promise<SettingsListing> {
+  return accountFetch("/settings", { actingUser: externalId });
+}
+
+export function setSetting(
+  externalId: string,
+  key: string,
+  body: { value: SettingValue; reason?: string }
+): Promise<SettingChanged> {
+  return accountFetch(`/settings/${encodeURIComponent(key)}`, { method: "PUT", actingUser: externalId, body });
+}
+
+export function resetSetting(externalId: string, key: string, body: { reason?: string } = {}): Promise<SettingChanged> {
+  return accountFetch(`/settings/${encodeURIComponent(key)}`, { method: "DELETE", actingUser: externalId, body });
+}
+
+export async function fetchSettingsFile(externalId: string): Promise<string> {
+  return (await accountFetch<{ toml: string }>("/settings/file", { actingUser: externalId })).toml;
+}
+
+export function restartApi(externalId: string, body: { reason?: string } = {}): Promise<{ restarting: true; waiting: string[] }> {
+  return accountFetch("/setup/restart", { method: "POST", actingUser: externalId, body });
+}
+
+export function renameParty(externalId: string, partyId: string, name: string): Promise<{ party: PartyView }> {
+  return accountFetch(`/parties/${encodeURIComponent(partyId)}`, { method: "PATCH", actingUser: externalId, body: { name } });
+}
+
+/** Become the first administrator of a deployment that has none, with the code its API printed. */
+export function becomeFirstAdministrator(externalId: string, code: string): Promise<{ administrator: true }> {
+  return accountFetch("/setup/first-administrator", { method: "POST", actingUser: externalId, body: { code } });
+}
+
+// --- Minerval's releases (docs/releases.md) -------------------------------------
+
+/** Keep a file of the list of releases, for a deployment that reaches nothing outside. */
+export function uploadReleaseList(
+  externalId: string,
+  entries: unknown[]
+): Promise<{ accepted: number; already: number; refused: Array<{ version: string | null; code: string; message: string }> }> {
+  return accountFetch("/setup/releases/upload", { method: "POST", actingUser: externalId, body: { entries } });
+}
+
+/** Say that an operator step of a release was done. */
+export function markReleaseStepDone(externalId: string, version: string, step: string): Promise<{ done: true }> {
+  return accountFetch("/setup/releases/steps", { method: "POST", actingUser: externalId, body: { version, step } });
 }

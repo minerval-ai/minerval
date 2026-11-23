@@ -15,6 +15,7 @@
  * credentials: GOOGLE_APPLICATION_CREDENTIALS, or the service account of the
  * machine. The deployment holds the project, so the prompts stay in it.
  */
+import { onConfigChange } from "../../config-changes.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { AnthropicVertex } from "@anthropic-ai/vertex-sdk";
 
@@ -71,3 +72,6 @@ export const vertexAdapter: ProviderAdapter = messagesApiAdapter({
   client: getClient,
   longRunClient: getLongRunClient,
 });
+
+// A region or a key changed in the app is in force at the next call: the client made with the old one is dropped.
+onConfigChange(resetVertexClient);
