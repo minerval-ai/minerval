@@ -111,7 +111,14 @@ body.w-body { background: var(--w-bg); }
 .w-me-tools { margin-left: auto; display: flex; gap: 4px; align-items: center; }
 .w-me .theme-toggle { margin: 0; }
 
-.w-main { flex: 1 1 auto; min-width: 0; }
+.w-main {
+  flex: 1 1 auto; min-width: 0;
+  /* A full-bleed page (the claim map, the claim page's margins, the source
+     page) spans the main column, not the viewport, or it runs under the
+     sidebar. Clip what a classic scrollbar's width would still push past. */
+  --bleed: calc(100vw - 232px);
+  overflow-x: clip;
+}
 /* A page of the graph itself (claims, mandates, ask) keeps its own reading
    column; the shell only puts the sidebar beside it. */
 .w-main > .w-reading { padding: 8px 32px 56px; }
@@ -401,6 +408,7 @@ details.w-menu > .w-pop { right: 0; top: calc(100% + 6px); }
 
 @media (max-width: 900px) {
   .w-shell { flex-direction: column; }
+  .w-main { --bleed: 100vw; }
   .w-side { position: static; width: auto; height: auto; flex: none; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--w-rule); }
   .w-side .w-nav-h, .w-side .w-search, .w-side .w-me { display: none; }
   .w-page { padding: 18px 16px 48px; }
