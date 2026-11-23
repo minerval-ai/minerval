@@ -1,4 +1,4 @@
-# Method skill: Sql (version 14)
+# Method skill: Sql (version 15)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -63,6 +63,12 @@ unknown.
   of the tag it reads, `residual` for the bucket of live claims no tag
   large enough to be swept on its own covers, or `graph` for a sweep of
   the whole graph; null too for a tag that is gone or you cannot see).
+  closed_reason (null unless the row is cancelled and its cancel said why:
+  for an ingest, the site refused the fetch, the page is not there, the
+  document is too long to read, or the extraction failed on the platform's
+  side; a reason that names a refused site or a missing page means another
+  address for the same text is the way to read it). A cancelled row holds
+  no money: what was placed on it is back with its payers.
   target_ref is the row's target in the ledger's own terms: for
   `ingest`, the source's URL; for `consistency_sweep`, the swept tag's
   id (not served by `tags`; join on partition instead), `residual` or

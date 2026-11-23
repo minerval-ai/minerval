@@ -3981,6 +3981,13 @@ export const actions = pgTable(
     faultSince: timestamp("fault_since", { withTimezone: true }),
     faultAttempts: integer("fault_attempts").notNull().default(0),
     retryAfter: timestamp("retry_after", { withTimezone: true }),
+    // Why a cancelled row was cancelled, in words its payer can read (a
+    // fetch the site refused, a document too long to read), written with
+    // the cancel by cancelActionGroup (#1045). Never a provider's or the
+    // database's own text: it is on the public ledger. Cleared when the row
+    // leaves cancelled (trigger actions_clear_closed_reason). Null on a row
+    // cancelled by a path that gives no reason.
+    closedReason: text("closed_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
