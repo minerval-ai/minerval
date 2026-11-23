@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { SeveralAssessments, SeveralCounted, severalAmong } from "@/components/SeveralAssessments";
 import type { ClaimDetail, ListDetail, ListEntry, ListFidelity } from "@/lib/types";
-import { DEFINED_IN, LIST_FIDELITY, isFidelity } from "@/lib/ontology";
+import { CASE_FIDELITY_DEF, DEFINED_IN, LIST_FIDELITY, isFidelity } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { modelDisplayName } from "@/lib/model-names";
 import { describeEstimate } from "@/lib/quantity";
@@ -29,17 +29,21 @@ function fmtDate(iso: string) {
 
 const KIND_WORD: Record<string, string> = { claim: "claim", quantity: "quantity", question: "question" };
 
-export function FidelityBadge({ fidelity, size = "sm" }: { fidelity: ListFidelity | string | null; size?: "sm" | "lg" }) {
+// `of` says which artifact the fidelity is of: the four words are every
+// artifact's, and what each means is said of a list or of a safety case.
+export function FidelityBadge({
+  fidelity, size = "sm", of = "list",
+}: { fidelity: ListFidelity | string | null; size?: "sm" | "lg"; of?: "list" | "case" }) {
   if (!isFidelity(fidelity)) {
     return (
-      <Term gloss="No Steward has judged this list yet." href={DEFINED_IN.list} className="badge standing unassessed">
+      <Term gloss={of === "case" ? "No Steward has judged this case yet." : "No Steward has judged this list yet."} href={DEFINED_IN.list} className="badge standing unassessed">
         Unjudged
       </Term>
     );
   }
   const f = LIST_FIDELITY[fidelity];
   return (
-    <Term gloss={f.def} href={DEFINED_IN.list} className={`badge standing ${styles.fidelity} ${styles[`f_${fidelity}`] ?? ""}${size === "lg" ? " lg" : ""}`}>
+    <Term gloss={of === "case" ? CASE_FIDELITY_DEF[fidelity] : f.def} href={DEFINED_IN.list} className={`badge standing ${styles.fidelity} ${styles[`f_${fidelity}`] ?? ""}${size === "lg" ? " lg" : ""}`}>
       <span className="badge-glyph" aria-hidden>{f.glyph}</span>
       {f.label}
     </Term>

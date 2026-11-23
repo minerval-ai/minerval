@@ -14,6 +14,8 @@ import { Term } from "../Term";
 import { HeldPart } from "./HeldPart";
 import { CheckPublishedPage } from "./CheckPublishedPage";
 import { estimateAsRecorded } from "@/lib/quantity";
+import { artifactVerdict } from "@/lib/gate-review";
+import { FidelityBadge } from "../list/ListView";
 
 // A page another graph publishes of this node, on this node's page
 // (docs/published-pages.md). The public assessment stays the default and
@@ -186,17 +188,52 @@ export function TakenOut({ view }: { view: PublishedPageView }) {
   );
 }
 
-/** A verdict that is not a status: a quantity's estimate or a question's standing, as recorded. */
+/**
+ * A verdict that is not a status: a quantity's estimate or a question's
+ * standing, as recorded, or an artifact's judgment. An artifact's page
+ * carries its fidelity, and a safety case's also whether the case establishes
+ * its conclusion to its standard: a statement about the case, never drawn as
+ * the status of the claim it argues for.
+ */
 export function OtherVerdict({ view }: { view: PublishedPageView }) {
   const v = (view.page?.verdict ?? null) as Record<string, unknown> | null;
   if (!v || "status" in v) return null;
+  const when = (
+    <span className="assess-when">
+      version of {day(view.released_version_of)}
+      {view.page?.assessed_by_model ? ` · ${modelDisplayName(view.page.assessed_by_model)}` : ""}
+    </span>
+  );
+  const artifact = artifactVerdict(v, view.page?.node_kind);
+  if (artifact) {
+    return (
+      <>
+        <div className="claim-assess">
+          <span className="verdict-pair">
+            <span className="sc">{artifact.isCase ? "How far the case can be relied on" : "Fidelity"}</span>
+            <FidelityBadge fidelity={artifact.fidelity?.key ?? null} size="lg" of={artifact.isCase ? "case" : "list"} />
+          </span>
+          {when}
+        </div>
+        {artifact.caseVerdict && (
+          <div className="published-case-verdict">
+            <p style={{ margin: "0 0 .2rem" }}>
+              <span className="sc" style={{ color: "var(--muted)", marginRight: ".5rem" }}>The case&rsquo;s verdict</span>
+              {artifact.caseVerdict}
+            </p>
+            <p style={{ ...quiet, margin: "0 0 1.2rem" }}>
+              The verdict is a statement about the case under its standard, where the burden is on the case. It is not the status of the claim
+              the case argues for, which is assessed on that claim&rsquo;s own page.
+            </p>
+          </div>
+        )}
+      </>
+    );
+  }
   return (
     <div className="claim-assess">
       <span>{"estimate" in v ? `Estimate: ${estimateAsRecorded(v.estimate)}` : `Standing: ${String(v.standing).replace(/_/g, " ")}`}</span>
-      <span className="assess-when">
-        version of {day(view.released_version_of)}
-        {view.page?.assessed_by_model ? ` · ${modelDisplayName(view.page.assessed_by_model)}` : ""}
-      </span>
+      {when}
     </div>
   );
 }
@@ -330,6 +367,37 @@ export function PublishedDecomposition({ view }: { view: PublishedPageView }) {
         </section>
       )}
     </div>
+  );
+}
+
+/** Whether the page carries a safety case's structure. The field is absent from a page shaped before it existed. */
+export function hasCaseStructure(view: PublishedPageView): boolean {
+  return (view.page?.case_elements ?? []).length > 0;
+}
+
+/**
+ * A safety case's structure as the page records it: an element to a block,
+ * in the case's order, each as written, with removals marked and a held
+ * element standing in its place. Within it, "defeater" names the part a
+ * claim plays in this case, and a standing given there is the doubt's
+ * standing in the case, not an assessment of that claim.
+ */
+export function PublishedCaseStructure({ view }: { view: PublishedPageView }) {
+  const elements: Block[] = view.page?.case_elements ?? [];
+  if (elements.length === 0) return null;
+  return (
+    <section>
+      <h2>The case&rsquo;s structure</h2>
+      <p style={{ ...quiet, marginTop: "-.3rem", marginBottom: ".6rem" }}>
+        {view.inside
+          ? "The elements of the case as its Steward recorded them at the label the page was written at, in the case's order."
+          : "The elements of the case as the publishing graph's Steward recorded them, in the case's order."}{" "}
+        Each says what kind of element it is, what it hangs under, and what the case needs of the claim it presents. A defeater is a doubt
+        the case raises against the element it hangs under, and its standing is where that doubt stands in the case. Neither is an assessment
+        of the claim, which is an ordinary claim assessed on its own page.
+      </p>
+      <Blocks blocks={elements} categories={Object.keys(view.page!.removals)} />
+    </section>
   );
 }
 

@@ -187,7 +187,7 @@ describe("the labels table", () => {
         "answer_relations", "appeals", "arbitration_results", "argument_evaluations", "argument_evidence_backlog",
         "argument_instances", "argument_subclaims", "arguments", "artifact_assessments", "artifact_specs", "assessment_orders", "assessments",
         "assistant_conversations", "assistant_held_actions", "assistant_pages", "attachments", "audit_findings",
-        "audit_log", "audit_notes", "audit_runs", "bounties", "budget_jobs",
+        "audit_log", "audit_notes", "audit_runs", "bounties", "budget_jobs", "case_elements",
         "claim_formalizations", "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
         "claim_predictions", "claim_provenance_edges", "claim_provenance_roots", "claim_relationships", "claim_source_maps",
         "claim_state_changes", "claims", "connection_calls", "connection_tools", "connections", "consent_rules", "consistency_flags",

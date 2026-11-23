@@ -9,6 +9,7 @@ import { DependentsRail } from "./DependentsRail";
 import { RelatedRail } from "./RelatedRail";
 import { QuestionView, QuestionRail } from "@/components/question/QuestionView";
 import { ListView, ListRail } from "@/components/list/ListView";
+import { CaseView, CaseRail } from "@/components/case/CaseView";
 import { RequestsRail } from "@/components/request/Requests";
 import { WaitingMessagesRail } from "./WaitingMessages";
 import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
@@ -96,6 +97,10 @@ export function ClaimMargins({
   // A list is an artifact (constitution §7b): made from other nodes and
   // judged for fidelity, with a page of its own shape in the same frame.
   const isList = detail.claim.kind === "artifact" && !!detail.list;
+  // A safety case is the other artifact (#1211): an argument for one
+  // conclusion to a stated standard, with a verdict of its own that is never
+  // the conclusion's status. An artifact is one or the other.
+  const isCase = detail.claim.kind === "artifact" && !isList && !!detail.safety_case;
   const hasSubclaims = (detail.tree?.children?.length ?? 0) > 0;
   return (
     <div className={styles.bleed}>
@@ -105,6 +110,8 @@ export function ClaimMargins({
         <div className={styles.leftRail}>
           {isList ? (
             <ListRail detail={detail} />
+          ) : isCase ? (
+            <CaseRail detail={detail} />
           ) : isQuestion ? (
             <QuestionRail detail={detail} />
           ) : hasSubclaims ? (
@@ -137,6 +144,8 @@ export function ClaimMargins({
           {above}
           {isList ? (
             <ListView detail={detail} fixture={source === "fixture"} />
+          ) : isCase ? (
+            <CaseView detail={detail} fixture={source === "fixture"} />
           ) : isQuestion ? (
             <>
               {/* A question's page reads its answer from the question's own

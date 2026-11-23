@@ -52,11 +52,19 @@ const KIND_TAG: Record<Exclude<NodeKind, "claim">, { label: string; gloss: strin
   },
 };
 
+// A safety case is an artifact too (constitution §7b), and its row says which artifact it is.
+const CASE_TAG = {
+  label: "Safety case",
+  gloss:
+    "A safety case: it argues one conclusion about one system in one deployment, to a stated standard. It is judged for how far it can be relied on, and for whether it establishes that conclusion, which is not the conclusion's own status (constitution §7b).",
+  href: DEFINED_IN.list,
+};
+
 // What stands where a claim's status would: a question's standing, a
 // quantity's estimate, or a claim's verdict.
 function Verdict({ c, href }: { c: SearchResultItem; href: string }) {
   if (c.kind === "question") return <StandingBadge standing={c.standing ?? null} linkTo={href} />;
-  if (c.kind === "artifact") return <FidelityBadge fidelity={c.fidelity ?? null} />;
+  if (c.kind === "artifact") return <FidelityBadge fidelity={c.fidelity ?? null} of={c.artifact_subtype === "safety_case" ? "case" : "list"} />;
   if (c.kind === "quantity") {
     return c.estimate && c.unit ? (
       <span className="qty-chip" title="This is a quantity; its estimate stands where a status would.">
@@ -247,7 +255,8 @@ export default async function ClaimsIndex({
         <div className="cards">
           {claims.map((c) => {
             const typeMeta = claimTypeMeta(c.claim_type);
-            const kindTag = c.kind && c.kind !== "claim" ? KIND_TAG[c.kind] : null;
+            const kindTag =
+              c.kind && c.kind !== "claim" ? (c.kind === "artifact" && c.artifact_subtype === "safety_case" ? CASE_TAG : KIND_TAG[c.kind]) : null;
             const claimHref = `/claims/${c.id}`;
             return (
               // A div with a stretched link, not a Link: the footer's ontology

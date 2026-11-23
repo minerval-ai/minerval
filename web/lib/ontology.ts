@@ -1,7 +1,7 @@
 import type {
   ArgumentVerdict, AssessmentStatus, CheckKind, ClaimType, LeanCheckSummary,
   QuestionStanding, RelationType, RequestOutcome, RequestState, Stance, TreeNode, ValueShown,
-  SetAside, ListFidelity,
+  SetAside, ListFidelity, CaseVerdict,
 } from "./types";
 import { orderByMention } from "./claim-links";
 
@@ -826,6 +826,36 @@ export const LIST_FIDELITY: Record<ListFidelity, { label: string; glyph: string;
 export function isFidelity(s: unknown): s is ListFidelity {
   return typeof s === "string" && s in LIST_FIDELITY;
 }
+
+// A safety case's fidelity (constitution §7b): the same four words every
+// artifact carries, said of a case. It is how far the case can be relied on
+// as a piece of work, and is neither the case's verdict nor the assessment of
+// its conclusion.
+export const CASE_FIDELITY_DEF: Record<ListFidelity, string> = {
+  faithful:
+    "The case's structure is accurate to the nodes it draws on, complete for its specification, current, and fair in what it selects and how it presents it.",
+  incomplete: "Parts the case needs under its specification are known to be missing; the case says which.",
+  misleading: "Its selection or presentation would lead a reader to a conclusion the nodes it draws on do not support.",
+  ill_specified: "Its specification does not fix which system, deployment or standard the case is about, or quietly asserts something contested.",
+};
+
+// A safety case's verdict: whether the case establishes its conclusion to the
+// standard in its specification. The burden is on the case, so there is no
+// third word. It is a statement about the case and is never shown as the
+// conclusion's status.
+export const CASE_VERDICT: Record<CaseVerdict, string> = {
+  established: "The case establishes its conclusion to this standard",
+  not_established: "The case does not yet establish its conclusion to this standard",
+};
+
+export function isCaseVerdict(s: unknown): s is CaseVerdict {
+  return typeof s === "string" && s in CASE_VERDICT;
+}
+
+export const CASE_FRAMEWORK: Record<string, string> = {
+  assurance_2_cae: "Assurance 2.0, Claims, Arguments, Evidence",
+  none: "No named framework",
+};
 
 // A request's life and what came back from work on it (Part VIII, Requests;
 // the Researcher role). Every outcome is a complete one.

@@ -178,7 +178,7 @@ describe("the catalog, with a second label defined", () => {
     expect(facts.on).toBe(true);
     expect(facts.labels).toEqual(expect.arrayContaining(ALL));
     // The schema's ninety-nine (tests/db/label-columns.test.ts lists them).
-    expect(facts.labelledTables.length).toBe(145);
+    expect(facts.labelledTables.length).toBe(146);
     expect(facts.uncoveredTables).toEqual([]);
     expect(facts.viewsReadingAsOwner).toEqual([]);
     expect(facts.sqlViewsUnheld).toEqual([]);
@@ -325,6 +325,10 @@ describe("every labelled table", () => {
     // A face stands for a label other than the one it is shown at, and that label is defined.
     label_faces: { for_label: "(SELECT name FROM labels WHERE name <> $1 ORDER BY name LIMIT 1)" },
     argument_instances: { argument_id: "gen_random_uuid()" },
+    // A list names its purpose and its criteria.
+    artifact_specs: { purpose: "'enf'", inclusion: "'enf'" },
+    // A claim of the case's structure presents a node.
+    case_elements: { node_id: "gen_random_uuid()" },
     // Kept by a Steward exactly when it names the node.
     requests: { keeper_kind: "'steward'", keeper_claim_id: "gen_random_uuid()" },
     // A source is an input by its id alone.
@@ -433,7 +437,7 @@ describe("every labelled table", () => {
   it("can be given a row at each label by this test", () => {
     // A table here needs a value this test does not know how to make: teach valueFor.
     expect(unwritable).toEqual([]);
-    expect(written.size).toBe(145);
+    expect(written.size).toBe(146);
   });
 
   for (const reader of READERS) {

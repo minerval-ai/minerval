@@ -125,8 +125,13 @@ const tagFilterProperties = {
 const kindItemProperties = {
   kind: { type: "string", enum: [...NODE_KINDS] },
   standing: { type: "string", nullable: true },
-  // A list's fidelity to its criteria (constitution §7b); absent on every other kind.
+  // An artifact's fidelity (constitution §7b); absent on every other kind.
   fidelity: { type: "string", nullable: true },
+  // Which artifact: list or safety_case. Absent on every other kind.
+  artifact_subtype: { type: "string", nullable: true },
+  // A safety case: whether the case establishes its conclusion to its standard
+  // (established, not_established). It is not the conclusion's status.
+  case_verdict: { type: "string", nullable: true },
   estimate: looseObject,
   unit: looseObject,
   // Only where more than one judgment of the node is in force for the reader (judgment-version-service.ts).

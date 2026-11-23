@@ -43,6 +43,7 @@ const TABLES = [
   "artifact_assessments",
   "artifact_specs",
   "assessments",
+  "case_elements",
   "claim_instances",
   "claim_links",
   "claim_relationships",
@@ -122,7 +123,7 @@ afterAll(async () => {
 });
 
 describe("the origin column, in the catalog", () => {
-  it("is on the twenty-four replicated tables, 'local' by default, and holds one of two values", async () => {
+  it("is on the twenty-five replicated tables, 'local' by default, and holds one of two values", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c

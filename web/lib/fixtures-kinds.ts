@@ -750,7 +750,197 @@ export const FLU_ORIGIN_LIST: ClaimDetail = {
   related: [],
 };
 
-export const KIND_CLAIMS: ClaimDetail[] = [FLU_DEATHS, FLU_OVER_50M, FLU_ORIGIN, FLU_ORIGIN_LIST];
+// A safety case (constitution §7b, #1211), about an invented model. The
+// graph's assessment of its conclusion and the case's verdict differ, which
+// is the ordinary state of a real case: the evidence supports the conclusion,
+// and the case does not yet establish it to its standard. One doubt is open,
+// one is a residual doubt a named party accepted, two claims are argued for
+// by no step, and one node has moved since the judgment.
+export const CASE_ID = "corvid-uplift-case";
+const CASE_CONCLUSION_ID = "corvid-no-uplift";
+
+export const SAFETY_CASE: ClaimDetail = {
+  claim: {
+    id: CASE_ID,
+    kind: "artifact",
+    text: "Safety case: Corvid-3 gives no meaningful uplift to biological weapons development through its public chat product",
+    claim_type: "empirical_derived",
+    state: "active",
+    decomposition_status: "complete",
+    importance: 0.6,
+    contestation: null,
+    steward_state: "done",
+    created_by: "user",
+    created_at: CREATED,
+    updated_at: ASSESSED,
+  },
+  subclaim_count: 7,
+  formalization: null, verification: null, bounty: null, attempts: [], prize_claims: [], research_runs: [],
+  // A case has no status; its judgments are safety_case.assessment.
+  assessment: null,
+  safety_case: {
+    spec: {
+      subtype: "safety_case",
+      system: "Corvid-3, the general-purpose language model, at its released weights.",
+      deployment: "The public chat product, with the input and output classifiers its developer runs in production. No fine-tuning access.",
+      conclusion_claim_id: CASE_CONCLUSION_ID,
+      standard: "A person with undergraduate training in biology gains no meaningful help toward producing a biological weapon beyond what public sources give.",
+      standard_of: "The developer's published scaling policy, version 2.",
+      framework: "assurance_2_cae",
+      not_covered: "Access through the developer's API, fine-tuned or later versions of the model, and theft of the weights.",
+    },
+    conclusion: {
+      id: CASE_CONCLUSION_ID, kind: "claim",
+      text: "Corvid-3, as deployed in its public chat product, gives no meaningful uplift to biological weapons development.",
+      judgment: { status: "supported", credence: 0.72 },
+    },
+    fidelity: "incomplete",
+    verdict: "not_established",
+    assessment: {
+      id: "corvid-uplift-case-a1",
+      fidelity: "incomplete",
+      verdict: "not_established",
+      verdict_basis:
+        "One doubt about the evaluations is open, and two claims the argument depends on are argued for by no step. The doubt about universal jailbreaks is sustained and was accepted by the developer's safety board as a residual doubt.",
+      would_change:
+        "An elicitation study that includes fine-tuning, or an argument that the deployment rules it out, would settle the open doubt. The claim about safeguards needs a step and evidence of its own.",
+      summary:
+        "Incomplete. The case presents [[claim:corvid-evals-below|the evaluation result]] and [[claim:corvid-redteam-trial|the trial behind it]] accurately, and each node it draws on is shown with the graph's own assessment. The branch on [[claim:corvid-safeguards-block|safeguards]] is stated and not yet argued.",
+      reasoning_trace:
+        "Read the developer's published case against the nodes the graph holds. The capability branch follows the published case and bottoms out in the uplift trial. The published case never raises how the model was elicited; the graph holds a claim that bears on it, added here as a doubt about the trial. The safeguards branch is asserted in the published case with no evidence the graph holds.",
+      gaps: "The safeguards branch has no step and no evidence. A request for the developer's classifier evaluation is open.",
+      confidence: 0.7,
+      model: "claude-opus-5-5",
+      run_id: null,
+      assessed_at: ASSESSED,
+    },
+    elements: [
+      {
+        id: "ce-top", type: "claim", parent: null, position: 1, changed_since: false, raised_in_published: true,
+        statement: "The conclusion the case argues for.",
+        node: {
+          id: CASE_CONCLUSION_ID, kind: "claim",
+          text: "Corvid-3, as deployed in its public chat product, gives no meaningful uplift to biological weapons development.",
+          judgment: { status: "supported", credence: 0.72 },
+        },
+      },
+      {
+        id: "ce-split", type: "step", parent: "ce-top", position: 1, changed_since: false, raised_in_published: true,
+        block: "decomposition",
+        statement: "The model gives no meaningful uplift if it lacks the capability to, and none in this deployment if the safeguards stop the attempts that remain.",
+      },
+      {
+        id: "ce-split-side", type: "side_claim", parent: "ce-split", position: 1, changed_since: false, raised_in_published: true,
+        statement: "That capability and safeguards together cover every route to uplift in this deployment.",
+        departure: "Taken as following from the specification, which excludes every other form of access; the case does not argue it further.",
+        node: {
+          id: "corvid-routes-covered", kind: "claim",
+          text: "In the public chat product, uplift from Corvid-3 can come only through the model's own answers as filtered by the product's classifiers.",
+          judgment: { status: "supported", credence: null },
+        },
+      },
+      {
+        id: "ce-evals", type: "claim", parent: "ce-split", position: 2, changed_since: false, raised_in_published: true,
+        statement: "That the model lacks the capability, measured against the standard's threshold.",
+        node: {
+          id: "corvid-evals-below", kind: "claim",
+          text: "Corvid-3 scores below the developer's uplift threshold on its biological risk evaluations.",
+          judgment: { status: "supported", credence: 0.8 },
+        },
+      },
+      {
+        id: "ce-evals-step", type: "step", parent: "ce-evals", position: 1, changed_since: false, raised_in_published: true,
+        block: "evidence_incorporation",
+        statement: "The uplift trial is taken as showing the score directly.",
+      },
+      {
+        id: "ce-evals-side", type: "side_claim", parent: "ce-evals-step", position: 1, changed_since: false, raised_in_published: false,
+        statement: "That the trial measures the capability the standard is about.",
+        node: {
+          id: "corvid-trial-valid", kind: "claim",
+          text: "The uplift trial's tasks are representative of the steps a person would need help with to produce a biological weapon.",
+          judgment: { status: "inconclusive", credence: null },
+        },
+      },
+      {
+        id: "ce-trial", type: "evidence", parent: "ce-evals-step", position: 2, changed_since: true, raised_in_published: true,
+        statement: "The result itself, as reported.",
+        node: {
+          id: "corvid-redteam-trial", kind: "claim",
+          text: "In the developer's uplift trial, participants with Corvid-3 did no better on weapons-relevant tasks than participants with internet search alone.",
+          judgment: { status: "supported", credence: 0.75 },
+        },
+      },
+      {
+        id: "ce-elicitation", type: "defeater", parent: "ce-trial", position: 1, changed_since: false, raised_in_published: false,
+        statement: "If the model was not elicited as a capable user would elicit it, the trial understates what it can do.",
+        standing: "open",
+        standing_reason: "No subcase answers it. The graph finds the claim inconclusive, which leaves the doubt open against a case that carries the burden.",
+        node: {
+          id: "corvid-under-elicited", kind: "claim",
+          text: "The uplift trial of Corvid-3 used prompting alone and understates the capability a determined user could elicit.",
+          judgment: { status: "inconclusive", credence: null },
+        },
+      },
+      {
+        id: "ce-safeguards", type: "claim", parent: "ce-split", position: 3, changed_since: false, raised_in_published: true,
+        statement: "That the safeguards stop the attempts the model could otherwise help with.",
+        node: {
+          id: "corvid-safeguards-block", kind: "claim",
+          text: "The public chat product's classifiers block requests for weapons-relevant biological assistance.",
+          judgment: null,
+        },
+      },
+      {
+        id: "ce-jailbreak", type: "defeater", parent: "ce-safeguards", position: 1, changed_since: false, raised_in_published: true,
+        statement: "A jailbreak that works across requests would pass the classifiers whatever they block otherwise.",
+        standing: "sustained",
+        standing_reason: "The developer's own red team found one during testing, and the case offers no argument that none remains.",
+        accepted_by: "The developer's safety board",
+        acceptance: "Accepted in the board's published deployment decision, on the ground that the capability branch is meant to hold without the safeguards.",
+        node: {
+          id: "corvid-universal-jailbreak", kind: "claim",
+          text: "Universal jailbreaks that bypass the public chat product's classifiers can be found by a skilled attacker.",
+          judgment: { status: "supported", credence: 0.85 },
+        },
+      },
+    ],
+    form: {
+      framework: "assurance_2_cae",
+      well_formed: false,
+      failures: [
+        {
+          element: "ce-split-side", rule: "undeveloped_claim",
+          message: "This side claim is argued for by no step, so it does not bottom out in evidence.",
+          departure: "Taken as following from the specification, which excludes every other form of access; the case does not argue it further.",
+        },
+        {
+          element: "ce-evals-side", rule: "undeveloped_claim",
+          message: "This side claim is argued for by no step, so it does not bottom out in evidence.",
+          departure: null,
+        },
+        {
+          element: "ce-safeguards", rule: "undeveloped_claim",
+          message: "This claim is argued for by no step, so it does not bottom out in evidence.",
+          departure: null,
+        },
+      ],
+    },
+    counts_against: [
+      { element: "ce-elicitation", kind: "open_defeater", message: "A defeater is open: it has been neither answered nor sustained." },
+      { element: "ce-evals-side", kind: "form", message: "This side claim is argued for by no step, so it does not bottom out in evidence." },
+      { element: "ce-safeguards", kind: "form", message: "This claim is argued for by no step, so it does not bottom out in evidence." },
+    ],
+    residual_doubts: ["ce-jailbreak"],
+    not_raised_in_published: ["ce-evals-side", "ce-elicitation"],
+    stale: true,
+    changed_nodes: 1,
+  },
+  dependents: [],
+  related: [],
+};
+
+export const KIND_CLAIMS: ClaimDetail[] = [FLU_DEATHS, FLU_OVER_50M, FLU_ORIGIN, FLU_ORIGIN_LIST, SAFETY_CASE];
 
 // The quantity and the question as the browse list and search serve them,
 // so the offline /claims shows every kind (the cut claim is a plain claim).
@@ -770,6 +960,12 @@ export const KIND_INDEX: SearchResultItem[] = [
   {
     id: FLU_ORIGIN_LIST_ID, kind: "artifact", text: FLU_ORIGIN_LIST.claim.text, claim_type: "empirical_derived",
     state: "active", similarity_score: 0.44, importance: FLU_ORIGIN_LIST.claim.importance,
+    assessment_status: null, assessment_confidence: null, prize_micro_usd: null, checked: null,
+    fidelity: "incomplete",
+  },
+  {
+    id: CASE_ID, kind: "artifact", text: SAFETY_CASE.claim.text, claim_type: "empirical_derived",
+    state: "active", similarity_score: 0.4, importance: SAFETY_CASE.claim.importance,
     assessment_status: null, assessment_confidence: null, prize_micro_usd: null, checked: null,
     fidelity: "incomplete",
   },
