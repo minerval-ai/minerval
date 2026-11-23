@@ -812,6 +812,10 @@ export async function publishCorrespondentUpdate(input: {
   await rawQuery(`UPDATE correspondents SET updates = updates + 1, updated_at = now() WHERE id = $1`, [
     input.correspondentId,
   ]);
+  // Outside accounts following this Correspondent by webhook have news
+  // (event-webhook-service.ts). Their delivery reads the update from here.
+  const { wakeWebhooksFollowing } = await import("./event-webhook-service.js");
+  await wakeWebhooksFollowing(input.correspondentId);
   return { updateId: row!.id };
 }
 

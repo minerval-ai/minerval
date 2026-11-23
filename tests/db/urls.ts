@@ -96,7 +96,7 @@ export function mirrorDatabaseUrl(side: (typeof MIRROR_DATABASE_SIDES)[number], 
  * Named after the worker's database (`<name>_own_<which>`), made by the
  * global setup as copies of it, and owned as it is.
  */
-export const OWN_DATABASES = ["split", "split_bare"] as const;
+export const OWN_DATABASES = ["split", "split_bare", "split_hooks"] as const;
 export function ownDatabaseUrl(which: (typeof OWN_DATABASES)[number], base: string = TEST_DATABASE_URL): string {
   const url = new URL(base);
   url.pathname = `${url.pathname}_own_${which}`;

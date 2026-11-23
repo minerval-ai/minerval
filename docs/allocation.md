@@ -1921,7 +1921,8 @@ Recording never fails the change it describes.
 
 **A subscription** (`subscriptions`, src/services/subscription-service.ts)
 is a standing interest held by a subscriber: a session, a mandate's inbox,
-a node's inbox or a lookout. It is one of four kinds:
+a node's inbox, a lookout, or an outside account's webhook
+([events.md](events.md)). It is one of four kinds:
 
 - **an event**, by kinds and refs: runs by action id, nodes, everything
   under a node, the nodes over it (resting on it), tags, sources,
@@ -1958,9 +1959,12 @@ its next tool result if it is running; a `wake` delivery resumes it if it
 has paused, and a `queue` one waits for its next turn. To a mandate's
 inbox it is an item its officers read; to a node's inbox, a message its
 Steward's next pass reads, never waking one; to a lookout, a queued input
-for its next run (src/services/subscription-sinks.ts). A delivery carries
+for its next run (src/services/subscription-sinks.ts); to a webhook, only
+the mark that it has news, since what is sent to its address is read from
+the change stream at its own cursor ([events.md](events.md)). A delivery carries
 an event's text only when the event is public or was recorded at the
-subscriber's own label; inboxes and lookouts receive only public events.
+subscriber's own label; inboxes and lookouts receive only public events,
+and a webhook only what anyone may read.
 
 **Agents subscribe for themselves** with `subscribe`, `unsubscribe` and
 `list_subscriptions` (src/llm/tools/subscription-tools.ts); the

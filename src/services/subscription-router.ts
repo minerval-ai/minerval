@@ -237,7 +237,7 @@ async function deliver(s: SubscriptionRow, e: EventRow | null, text?: string): P
     });
     took = Boolean(raised);
   } else {
-    // node_inbox, lookout and correspondent deliveries are routed by their own services.
+    // node_inbox, lookout, correspondent and webhook deliveries are routed by their own services.
     const { deliverToAgentSink } = await import("./subscription-sinks.js");
     took = await deliverToAgentSink(s, e, render(s, e, text));
   }

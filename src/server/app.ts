@@ -46,6 +46,7 @@ import { budgetJobRoutes } from "../routes/budget-jobs.js";
 import { queueRoutes } from "../routes/queue.js";
 import { monitorRoutes } from "../routes/monitors.js";
 import { changeRoutes } from "../routes/changes.js";
+import { eventRoutes } from "../routes/events.js";
 import { sqlRoutes } from "../routes/sql.js";
 import { correspondentRoutes } from "../routes/correspondents.js";
 import { consistencyRoutes } from "../routes/consistency.js";
@@ -154,6 +155,7 @@ export async function buildApp() {
   await app.register(monitorRoutes, { prefix: "/monitors" });
   // The change stream (#562) and Correspondents (#563).
   await app.register(changeRoutes, { prefix: "/changes" });
+  await app.register(eventRoutes, { prefix: "/events" });
   await app.register(sqlRoutes, { prefix: "/sql" });
   await app.register(correspondentRoutes, { prefix: "/correspondents" });
   // The Consistency Checker's record (#330): sweeps, flags, precision.
