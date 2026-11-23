@@ -47,7 +47,7 @@ before launch:
   record of credits, not funds held for the user. Review all of this against
   state gift-card and prepaid-credit statutes (expiry and dormancy limits),
   unclaimed-property law where a balance could be treated as abandoned
-  property, and the money-transmission analysis that docs/rewards.md relies
+  property, and the money-transmission analysis that the rewards design (issue #1201) relies
   on (owls never convert to money). Legacy balances were revalued at the
   credits-to-owls cutover (src/db/migrations/0039_money_reconciliation.sql;
   Section 6.9).
