@@ -116,6 +116,53 @@ export async function addParty(input: {
   }
 }
 
+export type RenamePartyFailure = "INVALID_NAME" | "NAME_TAKEN" | "UNKNOWN_PARTY";
+
+/**
+ * Give a party another name. The party stays the same row: its sources, its
+ * grants of consent and whether it is the organization itself are unchanged.
+ * The name it had goes in the log in the same transaction. This is how the
+ * organization's own party, made at setup under a placeholder, is named.
+ */
+export async function renameParty(input: {
+  partyId: string;
+  name: string;
+  actorId: string;
+}): Promise<{ ok: true; party: PartyView } | { ok: false; code: RenamePartyFailure; message: string }> {
+  const name = input.name.trim().replace(/\s+/g, " ");
+  if (!name || name.length > PARTY_NAME_MAX_CHARS) {
+    return {
+      ok: false,
+      code: "INVALID_NAME",
+      message: `A party needs a name of at most ${PARTY_NAME_MAX_CHARS} characters.`,
+    };
+  }
+  try {
+    const party = await withTransaction(async (tx) => {
+      const [before] = await tx.query<{ name: string }>(`SELECT name FROM parties WHERE id = $1 FOR UPDATE`, [
+        input.partyId,
+      ]);
+      if (!before) return null;
+      const [row] = await tx.query<PartyRow>(
+        `UPDATE parties SET name = $2 WHERE id = $1 RETURNING id, name, is_own_organization, created_at`,
+        [input.partyId, name]
+      );
+      if (before.name !== name) {
+        await logAdministrativeEvent(tx, "party_renamed", input.actorId, {
+          party_id: input.partyId,
+          previous_name: before.name,
+        });
+      }
+      return row!;
+    });
+    if (!party) return { ok: false, code: "UNKNOWN_PARTY", message: "This deployment has no such party." };
+    return { ok: true, party: partyView(party) };
+  } catch (err) {
+    if (sqlState(err) !== UNIQUE_VIOLATION) throw err;
+    return { ok: false, code: "NAME_TAKEN", message: `A party named "${name}" already exists.` };
+  }
+}
+
 export type SetSourcePartyFailure = "SOURCE_NOT_FOUND" | "UNKNOWN_PARTY";
 
 /**

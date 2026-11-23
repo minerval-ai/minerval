@@ -376,6 +376,11 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
       "table that carries no label (services/provider-clearance-service.ts).",
   },
 
+  "PATCH /parties/:id": { rule: "none", why: ADMINISTRATION },
+  "POST /setup/first-administrator": {
+    rule: "none",
+    why: "Grants the first administrator every permission, written on the database owner's connection to tables that carry no label (services/first-administrator-code.ts).",
+  },
   // ---- the deployment's settings (routes/settings.ts) ----
   "PUT /settings/:key": { rule: "none", why: SETTINGS },
   "DELETE /settings/:key": { rule: "none", why: SETTINGS },

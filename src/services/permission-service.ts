@@ -196,7 +196,23 @@ export async function establishFirstAdministrator(account: {
 }
 
 function establish(account: { id: string; externalId: string | null }): Promise<boolean> {
-  return withTransaction(async (tx) => {
+  return withTransaction((tx) => establishAsFirstAdministrator(tx, account));
+}
+
+/**
+ * Grant the account every permission, inside the caller's transaction, if
+ * the deployment has never had an administrator. Returns whether it
+ * granted. The caller has decided that this account is the one: the
+ * FIRST_ADMINISTRATOR setting named it, or it gave the code the API printed
+ * (services/first-administrator-code.ts). Either way the grants are marked
+ * as made for the first administrator, and the caller is on the owner's
+ * connection.
+ */
+export async function establishAsFirstAdministrator(
+  tx: TxQuery,
+  account: { id: string; externalId: string | null }
+): Promise<boolean> {
+  {
     await tx.query(ADMINISTRATOR_LOCK);
     const ever = await tx.query(
       `SELECT 1 FROM permission_grants WHERE permission = 'administer' LIMIT 1`
@@ -231,7 +247,7 @@ function establish(account: { id: string; externalId: string | null }): Promise<
     const parties = await tx.query<{ id: string }>(`SELECT id FROM parties ORDER BY created_at, id`);
     for (const { id } of parties) await insert("consent", null, id);
     return true;
-  });
+  }
 }
 
 // ---- granting and removing --------------------------------------------------

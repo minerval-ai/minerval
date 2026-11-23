@@ -130,6 +130,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A label, a pair in label_reads, and the administrators' log entry for each: what the administrator asked for and nothing read from elsewhere.",
     ],
   ],
+  "src/services/first-administrator-code.ts": [
+    [
+      "The first administrator's code is the owner's alone: its hash is read and written on the owner's connection, and the grants it leads to say what an account may read.",
+      "The hash of a code the API printed, and the first administrator's grants for the account that gave the code. Nothing read from a labelled table.",
+    ],
+  ],
   "src/services/settings-service.ts": [
     [
       "The deployment's settings are the owner's alone, sealed keys among them, so they are read and written on the owner's connection. A write's caller has checked that the actor administers the deployment.",

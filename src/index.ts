@@ -42,6 +42,7 @@ import { abandonStewardLeases } from "./services/steward-lease.js";
 import { startGatedWork } from "./workers/agent-work-gate.js";
 import { ConfigFileError } from "./config-file.js";
 import { startStoredSettings } from "./services/settings-service.js";
+import { firstAdministratorCodeLines, issueFirstAdministratorCode } from "./services/first-administrator-code.js";
 import type {
   QueuedClaimPipelineMessage,
   UrlExtractionMessage,
@@ -322,6 +323,15 @@ async function main() {
     );
   }
   config = loadConfig();
+
+  // A members-only deployment that has never had an administrator prints
+  // the code that makes one (services/first-administrator-code.ts).
+  try {
+    const issued = await issueFirstAdministratorCode();
+    if (issued) for (const line of firstAdministratorCodeLines(issued)) console.log(`[setup] ${line}`);
+  } catch (err) {
+    console.error("[setup] the first administrator's code could not be made; FIRST_ADMINISTRATOR still works:", err);
+  }
 
   const app = await buildApp();
 

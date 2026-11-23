@@ -716,6 +716,10 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
   "POST /parties": ADMINISTRATION_SESSION,
   "PUT /sources/:source_id/party": ADMINISTRATION_SESSION,
+  "PATCH /parties/:id": ADMINISTRATION_SESSION,
+  "POST /setup/first-administrator":
+    "Makes the first administrator of a deployment that has none, from the code its API printed: a person's act in " +
+    "their signed-in session, once, before there is anyone to hold a tool.",
   "POST /labels": ADMINISTRATION_SESSION,
   "POST /labels/:label/reads": ADMINISTRATION_SESSION,
   "PUT /labels/:label/face": ADMINISTRATION_SESSION,

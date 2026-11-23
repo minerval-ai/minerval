@@ -55,6 +55,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/sql-service.ts:parserReady": "The SQL parser, loaded once.",
 
   // ---- clients, configuration and files ---------------------------------------
+  "src/services/first-administrator-code.ts:wrongAttempts": "A count of wrong codes given to this process. No rows.",
   "src/services/restart.ts:endProcess": "The function that ends the process. No rows.",
   "src/services/settings-service.ts:storedMeta": "Who set each stored setting and when, from deployment_settings, which carries no label: the same for every reader, and returned only to an administrator.",
   "src/services/settings-service.ts:storedReadAt": "A time: when the stored settings were last read.",
