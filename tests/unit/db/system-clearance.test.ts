@@ -130,6 +130,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A label, a pair in label_reads, and the administrators' log entry for each: what the administrator asked for and nothing read from elsewhere.",
     ],
   ],
+  "src/services/label-split.ts": [
+    [
+      "The split restamps every row that was at `public` with the label that says which of three things it is, in every labelled table, and defines the two labels: the owner's to do, once.",
+      "The two labels, the label of each row that was at `public` and is not the mirror's, the pairs, grants and keys that named `public`, the providers cleared for the two labels, and the log entry. It returns names and counts and no row's content.",
+    ],
+  ],
   "src/services/provider-clearance-service.ts": [
     [
       "Which providers may be sent a label's text is part of the wall, so it is written on the owner's connection. The caller has checked that the actor may clear providers.",

@@ -16,7 +16,6 @@
  */
 import { getConstitution, UNTRUSTED_CONTENT } from "./constitution.js";
 import { listCallerSkills } from "../../mcp/caller-skills.js";
-import { PUBLIC_LABEL } from "../../labels.js";
 
 /**
  * Heads the constitution in the Assistant's prompt. The split into setup
@@ -491,16 +490,7 @@ started it and which cannot be changed. The tools that act for your user file wh
 \`${input.label}\`, and act only on things that carry it: a call about something at another label
 is refused and says so. That is so that nothing you read here can be filed where more people
 would see it. Your user can act on such a thing themselves from its page, or start a
-conversation at its label. A held action's card shows them the label it will write at.${
-        // Until the layer every member reads has a name of its own (#1203),
-        // it is called public, and a reader of that word alone takes
-        // it for the public graph (#1120). This sentence goes when it does.
-        input.label === PUBLIC_LABEL
-          ? `
-Here \`${PUBLIC_LABEL}\` is the name of the layer every member of this deployment reads. Nobody
-outside reads what is filed at it unless a member releases it outside. It is not the public graph.`
-          : ""
-      }
+conversation at its label. A held action's card shows them the label it will write at.
 `
     : "";
   return `Context for this reply (from the system, not from your user).

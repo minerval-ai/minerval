@@ -177,7 +177,13 @@ None of this is special to the mirror. The mirror is the lowest layer of a deplo
 
 ### What a run can and cannot do to a mirrored node
 
-Three rules, each with its reason.
+Three rules, each with its reason. The second is a rule only where the
+deployment's own bottom layer is `public`, which is an open deployment that
+mirrors. On a members-only deployment `public` holds the public graph's rows
+and nothing else, no run works there, and the deployment's own bottom layer
+is `members` ([architecture.md](architecture.md), "The three layers at the
+bottom"): there the second rule is simply how things are, and nothing has to
+refuse anything.
 
 - **Nothing here changes a mirrored row.** The next batch would overwrite the change, and until then readers would take it for the public graph's own. The database refuses it whatever the label (`mirror_row_guard`, and for a run at a private label `minerval_own_label_guard` would refuse too). An agent is told one thing whichever would have fired (`mirroredRowMessage`), with what it can do instead.
 - **The judgment of a mirrored node at the node's own label is the mirrored row.** No run records an assessment, an estimate, an answer or an argument's evaluation at `public` on a mirrored node, and no work on the node at `public` is opened, funded or run: no ledger row, no slot, no order, no commission, no note to its Steward, no request to the Curator anchored on it. A second public assessment made here would be the deployment's own, on the same public evidence, shown to readers as the public graph's. A fresh public assessment is funded on the public graph.
@@ -197,7 +203,9 @@ The Steward's tools against a mirrored node, for a run at a private label that r
 
 The tools are offered as on any node. A tool is refused when it is used on what the public graph holds, and the run's brief says so beforehand.
 
-A member who orders, funds or asks for a decomposition of a mirrored node without naming a label is refused (409, `PUBLIC_GRAPH_NODE`) and told why and what to do: fund the public assessment on the public graph, at the address the feed gives, or name a label that reads `public` to have the node assessed on the deployment's own material. A contribution to a mirrored node is filed at the node's own label, so it is refused the same way (`POST /contributions` and `submit_contribution`, before anything is counted against the contributor): its review, and what the node's Steward would do with it, are work at `public` on a node the public graph judges. The member is told to contribute on the public graph, and that the deployment's own material is weighed by an assessment at a label that reads `public`.
+On a members-only deployment a member who orders, funds or asks for a decomposition of a mirrored node without naming a label gets the work at `members`, the deployment's own bottom layer, and a contribution to a mirrored node is filed there: both are the deployment's own work on the node, recorded beside the public graph's. Naming `public` for either is refused (`LABEL_NOT_FILED_AT`), since nothing here is filed at the public graph's label.
+
+Where the deployment's bottom layer is `public` itself (an open deployment that mirrors), a member who orders, funds or asks for a decomposition of a mirrored node without naming a label is refused (409, `PUBLIC_GRAPH_NODE`) and told why and what to do: fund the public assessment on the public graph, at the address the feed gives, or name a label that reads `public` to have the node assessed on the deployment's own material. A contribution to a mirrored node is filed at the node's own label, so it is refused the same way (`POST /contributions` and `submit_contribution`, before anything is counted against the contributor): its review, and what the node's Steward would do with it, are work at `public` on a node the public graph judges. The member is told to contribute on the public graph, and that the deployment's own material is weighed by an assessment at a label that reads `public`.
 
 ### Kept current
 

@@ -460,11 +460,14 @@ describe("the functions that run with their owner's rights", () => {
           ORDER BY p.proname`
       );
       expect(definers.rows.map((d) => d.name)).toEqual([
+        "minerval_base_label",
         "minerval_enforcement_sync",
         "minerval_judgment_label_guard",
         "minerval_labels_changed",
         "minerval_note_node_change",
+        "minerval_open_labels",
         "minerval_overlay_follows_below",
+        "minerval_published_label",
         "minerval_sql_clearance",
         "minerval_unseen_collision_guard",
         "minerval_version_standing",

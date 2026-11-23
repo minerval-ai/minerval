@@ -49,7 +49,7 @@
  * one id: the two cannot come to disagree.
  */
 import { currentReadClearance, rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { baseLabel } from "../labels.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import { JUDGED_CTE } from "./judgment-inputs-service.js";
 
@@ -161,7 +161,7 @@ export async function summarizeCoverage(
   // Where `public` is the only label, that is the whole of it, as it always was.
   if (oneLabelOnly() || rows.length === 0) return out;
 
-  const reads = opts.saidTo?.reads ?? (await currentReadClearance()) ?? [PUBLIC_LABEL];
+  const reads = opts.saidTo?.reads ?? (await currentReadClearance()) ?? [baseLabel()];
   const sources = await rawQuery<{ node_id: string; readable: boolean; unreadable: boolean }>(
     // What the judgment was made on: the sources recorded against it, or,
     // for one whose inputs were not recorded, the sources attached to its

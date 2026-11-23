@@ -37,6 +37,7 @@ import { ClearanceMatrix, type MatrixProvider } from "./ClearanceMatrix";
 import { AddRead } from "./AddRead";
 import { ReadChip } from "./ReadChip";
 import { holdersCount, holdersInWords, readersOf, readsIndirectly, wideningOf } from "@/lib/label-chain";
+import { byLayerThenName, clearedByChoice, isOpenLabel, isWorkableLabel, layerLine, layerOf, layersOf, type LabelLayers } from "@/lib/label-layers";
 import "./labels.css";
 
 export const metadata: Metadata = { title: "Labels · Minerval" };
@@ -48,6 +49,12 @@ export const dynamic = "force-dynamic";
 // who reads at it, whether a General mandate pays for its upkeep, and which
 // model providers and outside services its text may be sent to. Parties,
 // which once shared this page, are on /admin/parties.
+//
+// Under the labels a deployment defines sit its bottom layers
+// (lib/label-layers.ts): the public graph's own material, what the
+// organization released outside, and the members' own. Each has a row,
+// drawn as what it is: the first two are read by anyone and read by every
+// label, nobody is granted them, and nothing here is filed at them.
 
 const PAGE = "/admin/labels";
 
@@ -86,8 +93,13 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
   const offered = clearance ? offeredProviders(clearance) : [];
   const clearedFor = new Map((clearance?.labels ?? []).map((l) => [l.label, l.cleared]));
   const facts = new Map((checklist?.labels ?? []).map((l) => [l.name, l]));
-  const ownLabels = labels.filter((l) => l.name !== "public");
-  const generalAt = generalMandateAt(checklist);
+  const layers = layersOf(who.mine);
+  // The labels a provider is cleared for by choice: every one but the public graph's.
+  const ownLabels = labels.filter((l) => clearedByChoice(l.name, layers));
+  // The labels a label can be made to read: not the two every label already reads.
+  const readable = labels.filter((l) => !isOpenLabel(l.name, layers));
+  const chip = (name: string) => <Lbl name={name} title={layerLine(name, layers)} />;
+  const generalAt = generalMandateAt(checklist, layers);
   const readGrants = grants.filter((g) => g.permission === "read" && !g.removed_at);
 
   return (
@@ -110,7 +122,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
             <th>
               Also reads{" "}
               <Tip>
-                Labels are not ranked. A holder reads at the labels granted to them and at whatever those labels read, and nothing else. An agent&apos;s run works at one label and reads on the same terms. Every label reads public.
+                {`Labels are not ranked. A holder reads at the labels granted to them and at whatever those labels read, and nothing else. An agent's run works at one label and reads on the same terms. Every label reads what anyone may read: the public graph${layers.split ? " and what this organization has published" : ""}.`}
               </Tip>
             </th>
             <th className="w-num">Readers</th>
@@ -125,26 +137,33 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
         </thead>
         <tbody>
           {labels.map((l) => {
-            const candidates = ownLabels.filter((o) => o.name !== l.name && !l.reads.includes(o.name));
+            const candidates = readable.filter((o) => o.name !== l.name && !l.reads.includes(o.name));
             const indirect = readsIndirectly(l.name, labels);
+            const layer = layers.split ? layerOf(l.name, layers) : l.name === layers.public_graph ? "public_graph" : null;
             return (
               <tr key={l.name}>
-                <td>
-                  <Lbl name={l.name} />
-                </td>
+                <td>{chip(l.name)}</td>
                 <td className="w-muted">{l.description}</td>
                 <td>
-                  {l.name === "public" ? (
+                  {layer === "public_graph" ? (
                     <span className="w-faint w-small">Never reads another label</span>
+                  ) : layer === "published" ? (
+                    <span className="w-row w-faint w-small" style={{ gap: 6 }}>
+                      {chip(layers.public_graph)} and nothing else
+                    </span>
+                  ) : layer === "base" ? (
+                    <span className="w-row w-faint w-small" style={{ gap: 6 }}>
+                      {chip(layers.public_graph)} {chip(layers.published)} and nothing else
+                    </span>
                   ) : (
                     <div className="w-row" style={{ gap: 6 }}>
                       {l.reads.length === 0 && <span className="w-faint w-small">Only itself</span>}
                       {l.reads.map((r) => (
-                        <ReadChip key={r} label={l.name} reads={r} chip={<Lbl name={r} />} />
+                        <ReadChip key={r} label={l.name} reads={r} chip={chip(r)} />
                       ))}
                       {indirect.map((i) => (
                         <span key={i.label} className="w-row w-faint w-small" style={{ gap: 4 }} title={`Read through ${i.via}`}>
-                          via {i.via}: <Lbl name={i.label} />
+                          via {i.via}: {chip(i.label)}
                         </span>
                       ))}
                       {candidates.length > 0 && (
@@ -157,14 +176,22 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                   )}
                 </td>
                 <td className="w-num">
-                  {l.name === "public" ? (
+                  {isOpenLabel(l.name, layers) && layers.split ? (
+                    <span className="w-muted" style={{ whiteSpace: "nowrap" }}>Anyone</span>
+                  ) : l.name === layers.base ? (
                     <span className="w-muted" style={{ whiteSpace: "nowrap" }}>Every member</span>
                   ) : (
                     <Readers label={l.name} labels={labels} grants={readGrants} />
                   )}
                 </td>
                 <td>
-                  <UpkeepCell label={l.name} state={generalAt(l.name)} />
+                  {isWorkableLabel(l.name, layers) || l.name !== layers.public_graph ? (
+                    <UpkeepCell label={l.name} state={generalAt(l.name)} />
+                  ) : (
+                    <span className="w-faint w-small" title="The public graph's material is kept up on the public graph">
+                      No work is done here
+                    </span>
+                  )}
                 </td>
                 <td className="w-num w-muted" style={{ whiteSpace: "nowrap" }}>{shortDay(l.created_at)}</td>
               </tr>
@@ -174,7 +201,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
       </Table>
 
       {ownLabels.length === 0 ? (
-        <Empty>The only label is public, so every member can read everything here. Add a label for material that is not for everyone.</Empty>
+        <Empty>The only label is {layers.base}, so every member can read everything here. Add a label for material that is not for everyone.</Empty>
       ) : (
         <Section
           title="Provider clearance"
@@ -182,7 +209,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
           aside={
             <span className="w-row" style={{ gap: 8 }}>
               <Tip>
-                Text at a label reaches a model provider or outside service only if it is cleared for that label. Every provider is cleared for public; for any other label, never by default. Each one ticked is sent the text of every agent run at the label. Each change is logged and in force within seconds, with no restart.
+                Text at a label reaches a model provider or outside service only if it is cleared for that label. The public graph&apos;s own material is cleared for every provider; a label you add is cleared for none until someone ticks one. Each one ticked is sent the text of every agent run at the label. Each change is logged and in force within seconds, with no restart.
               </Tip>
               {clearance &&
                 (clearance.fixed_by_settings ? (
@@ -201,7 +228,11 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
             <>
               <ClearanceMatrix
                 editable={clears}
-                publicChip={<Lbl name="public" />}
+                publicRow={{
+                  chip: chip(layers.public_graph),
+                  cleared: clearance.public_graph?.cleared ?? clearance.providers.map((p) => p.name),
+                  worksHere: clearance.public_graph?.works_here ?? true,
+                }}
                 providers={clearance.providers.map(
                   (p): MatrixProvider => ({
                     name: p.name,
@@ -215,7 +246,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                   const f = facts.get(l.name);
                   return {
                     label: l.name,
-                    chip: <Lbl name={l.name} />,
+                    chip: chip(l.name),
                     cleared: clearedFor.get(l.name) ?? [],
                     problem: f ? problemLine(f) : null,
                   };
@@ -270,16 +301,25 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
               <input id="label-purpose" className="w-input" name="description" required maxLength={500} autoComplete="off" />
               <span className="w-help">Shown to everyone who reads at it.</span>
             </div>
-            {ownLabels.length > 0 && (
+            {readable.length > 0 && (
               <div className="w-field">
-                <span className="w-label">Its holders may also read</span>
+                <span className="w-label">
+                  Its holders may also read{" "}
+                  {layers.split && (
+                    <Tip>
+                      {`Every label reads the public graph and what this organization has published. ${layers.base} is what every member reads: it is ticked because a label nearly always builds on it, and can be unticked for a label that should see none of the members' material.`}
+                    </Tip>
+                  )}
+                </span>
                 <div className="w-row" style={{ gap: 14 }}>
-                  {ownLabels.map((l) => (
-                    <label key={l.name} className="w-check">
-                      <input type="checkbox" name="reads" value={l.name} />
-                      <Lbl name={l.name} />
-                    </label>
-                  ))}
+                  {[...readable]
+                    .sort((a, b) => byLayerThenName(layers)(a.name, b.name))
+                    .map((l) => (
+                      <label key={l.name} className="w-check">
+                        <input type="checkbox" name="reads" value={l.name} defaultChecked={layers.split && l.name === layers.base} />
+                        {chip(l.name)}
+                      </label>
+                    ))}
                 </div>
               </div>
             )}
@@ -306,7 +346,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                 <label className="w-check">
                   <input type="checkbox" name="same_as_public" />
                   <span>
-                    The same as public <span className="w-faint">· every one above</span>
+                    Every one above <span className="w-faint">· as the public graph&rsquo;s own material is</span>
                   </span>
                 </label>
               </div>
@@ -371,7 +411,7 @@ type GeneralState =
 // Whether a General mandate is set up at each label, as the setup checklist
 // says: at the labels the reader reads, where the deployment holds more than
 // one. A label the reader does not read is not answered for here.
-function generalMandateAt(checklist: SetupChecklist | null): (label: string) => GeneralState {
+function generalMandateAt(checklist: SetupChecklist | null, layers: LabelLayers): (label: string) => GeneralState {
   const general = checklist?.standing_mandates.find((m) => m.name === "general");
   return (label) => {
     if (!general) return { kind: "unknown" };
@@ -380,7 +420,7 @@ function generalMandateAt(checklist: SetupChecklist | null): (label: string) => 
       if (!at) return { kind: "not_read" };
       return at.mandate ? { kind: "set_up", mandate: at.mandate } : { kind: "none" };
     }
-    if (label === "public") return general.mandate ? { kind: "set_up", mandate: general.mandate } : { kind: "none" };
+    if (label === layers.base) return general.mandate ? { kind: "set_up", mandate: general.mandate } : { kind: "none" };
     return { kind: "not_read" };
   };
 }

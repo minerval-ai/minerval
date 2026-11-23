@@ -48,7 +48,7 @@
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import {
   getGithubBearer,
@@ -70,7 +70,7 @@ import type { AgentReportRow } from "./report-service.js";
  * carry the label.
  */
 async function staysInside(reportId: string): Promise<boolean> {
-  if (currentLabel() !== PUBLIC_LABEL) return true;
+  if (currentLabel() !== publishedLabel()) return true;
   if ((getUsageContext().trace?.privateReasons?.size ?? 0) > 0) return true;
   const [row] = await rawQuery<{ sensitivity_label: string; run_private: boolean }>(
     `SELECT r.sensitivity_label,
@@ -80,7 +80,7 @@ async function staysInside(reportId: string): Promise<boolean> {
       WHERE r.id = $1`,
     [reportId]
   );
-  return !row || row.sensitivity_label !== PUBLIC_LABEL || row.run_private;
+  return !row || row.sensitivity_label !== publishedLabel() || row.run_private;
 }
 
 const GITHUB_API_VERSION = "2022-11-28";

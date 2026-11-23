@@ -27,7 +27,7 @@ import { RUN_TURN_GUARD, turnBudgetLine } from "../llm/prompts/turn-budget.js";
 import { getRedactorToolDefinitions } from "../llm/tools/redactor-tools.js";
 import { getUsageContext, runAtLabel, runWithUsageContext, withAgent, withPassBudget, withSkills } from "../llm/usage-context.js";
 import { withSystemClearance } from "../db/clearance.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { HOLD_REASONS, REFER_RECOMMENDATIONS, type HoldReason, type ReferRecommendation } from "./gate-kinds.js";
 import { gateOf } from "./gate-settings-service.js";
 import { chargeOwls, settleMeteredCharge } from "./owl-ledger-service.js";
@@ -333,7 +333,7 @@ export async function tryTheRedactor(input: {
     basedOnVersion: basedOn,
     draft,
     boundary,
-    destination: (text) => destinationHoldings({ destination: gate.to_label ?? PUBLIC_LABEL, pageLabel: gate.from_label, toOutside: gate.to_outside, text }),
+    destination: (text) => destinationHoldings({ destination: gate.to_label ?? publishedLabel(), pageLabel: gate.from_label, toOutside: gate.to_outside, text }),
   });
   let billed = 0;
   let runId: string | null = null;

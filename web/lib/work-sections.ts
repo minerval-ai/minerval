@@ -1,3 +1,4 @@
+import { isOpenLabel, layersOf } from "./label-layers";
 import type { MyPermissions } from "./account-api";
 
 // The sidebar of a members-only deployment: every page a member works in,
@@ -12,7 +13,7 @@ import type { MyPermissions } from "./account-api";
 // every read and every act; a page reached by its address says which
 // permission it needs.
 
-export type Mine = Pick<MyPermissions, "permissions" | "clearance">;
+export type Mine = Pick<MyPermissions, "permissions" | "clearance" | "label_layers">;
 
 /** The icon a sidebar entry carries (components/work/icons.tsx). */
 export type WorkIcon =
@@ -44,7 +45,7 @@ const has = (m: Mine, ...ps: string[]) => ps.some((p) => m.permissions.includes(
 // Where the deployment holds material at more than one label, pages are released
 // from one label to another, and every member may read the releases their labels reach.
 // The permission to consent for a party is `consent` (docs/releasing-a-page.md).
-const readsReleases = (m: Mine) => m.clearance.some((label) => label !== "public") || has(m, "consent", "direct");
+const readsReleases = (m: Mine) => m.clearance.some((label) => !isOpenLabel(label, layersOf(m))) || has(m, "consent", "direct");
 const administers = (m: Mine) => has(m, "administer");
 
 export const WORK_SECTIONS: WorkSection[] = [

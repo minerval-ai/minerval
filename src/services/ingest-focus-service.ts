@@ -21,7 +21,7 @@
 import { oneSourceForAddressSql } from "./layer-service.js";
 import { createHash } from "node:crypto";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { baseLabel } from "../labels.js";
 import { currentLabel } from "../llm/usage-context.js";
 
 export const FOCUS_MAX_CHARS = 1_000;
@@ -47,15 +47,15 @@ export function ingestGroup(url: string, focus?: string | null, label: string = 
 
 /**
  * The ledger key of work at a label on something several labels can work
- * on: a node, a document, a partition of the graph. Work at `public` keeps
- * the key it always had, and work at another label has a key of its own,
+ * on: a node, a document, a partition of the graph. Work at the base label
+ * (`public` wherever no split has happened) keeps the bare key, and work at another label has a key of its own,
  * so that one label's work neither waits on another's row nor reopens it,
  * and a row's label never changes. A space cannot occur in a node's id, an
  * address as it is stored, or a label's name, so the two never collide.
  * The database's minerval_group_at says the same for SQL.
  */
 export function groupAtLabel(base: string, label: string = currentLabel()): string {
-  return label === PUBLIC_LABEL ? base : `${base} @${label}`;
+  return label === baseLabel() ? base : `${base} @${label}`;
 }
 
 /** The address an ingest group is for, whatever its focus and its label. */

@@ -16,7 +16,7 @@
  * prompt: the integrity of the claim graph and the truth outrank the
  * funder, and ideology-warping mandates are declined outright.
  */
-import { PUBLIC_LABEL } from "../../labels.js";
+import { isOpenLabel } from "../../labels.js";
 import { membersOnly } from "../../permissions.js";
 import { grantmakingPromisedPrivate, PRIVATE_GRANTMAKING_REASON } from "../private-grantmaking.js";
 import {
@@ -754,11 +754,11 @@ async function runGrantmakerTurnImpl(input: {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
   } else if (!promisedPrivate && membersOnly()) {
     // Inside a private graph the conversation is open to the members who
-    // read the mandate's label, at whichever label it works: at `public`
-    // too, which there is the layer every member reads and nobody outside
-    // does (#1120). "Anyone may read this" would be false.
+    // read the mandate's label, at whichever label it works: at the base
+    // label too, which every member reads and nobody outside does (#1120).
+    // "Anyone may read this" would be false.
     blocks[0] = blocks[0] + MEMBERS_CONVERSATION_SECTION;
-  } else if (!promisedPrivate && currentLabel() === PUBLIC_LABEL) {
+  } else if (!promisedPrivate && isOpenLabel(currentLabel())) {
     blocks[0] = blocks[0] + PUBLIC_CONVERSATION_SECTION;
   }
   // The chat's own rules (#692): the planning and review passes share the

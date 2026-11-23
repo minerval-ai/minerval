@@ -35,6 +35,16 @@ const STATE_LABEL: Record<string, string> = {
   settled: "finished",
 };
 
+/** What a settled pass concluded (#1027); the full sentence is the cell's title. */
+const OUTCOME_LABEL: Record<string, string> = {
+  recorded: "new assessment",
+  stood: "assessment stands",
+  left_standing: "left standing",
+  logged: "logged decision",
+  waiting: "paused, waiting",
+  unconcluded: "no conclusion",
+};
+
 function Fact({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode }) {
   return (
     <div className="acct-line">
@@ -118,6 +128,7 @@ export function SpendingSection({
                       <th>budget</th>
                       <th>used</th>
                       <th>state</th>
+                      <th>outcome</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -132,6 +143,9 @@ export function SpendingSection({
                         <td className="acct-num">{owls(c.budget_owls)}</td>
                         <td className="acct-num">{owls(c.spent_owls)}</td>
                         <td>{STATE_LABEL[c.state] ?? c.state}</td>
+                        <td title={c.outcome ?? undefined}>
+                          {c.outcome_kind ? OUTCOME_LABEL[c.outcome_kind] ?? words(c.outcome_kind) : ""}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

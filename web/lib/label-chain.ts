@@ -6,6 +6,8 @@
 // reads" shows the whole chain, and adding a pair says first who it widens
 // reading for (app/admin/labels).
 
+import { PUBLIC_GRAPH_LABEL } from "./label-layers";
+
 export interface ChainLabel {
   name: string;
   /** The labels it reads directly (its `label_reads` pairs). */
@@ -18,7 +20,7 @@ export interface ChainGrant {
   group: string | null;
 }
 
-/** Every label each label reads, directly or through another, never itself or public. */
+/** Every label each label reads, directly or through another, never itself or the public graph's label, which every label reads. */
 export function readsThrough(labels: readonly ChainLabel[], extra?: { label: string; reads: string }): Map<string, Set<string>> {
   const direct = new Map<string, string[]>(labels.map((l) => [l.name, [...l.reads]]));
   if (extra) direct.set(extra.label, [...(direct.get(extra.label) ?? []), extra.reads]);
@@ -28,7 +30,7 @@ export function readsThrough(labels: readonly ChainLabel[], extra?: { label: str
     const stack = [...(direct.get(l) ?? [])];
     while (stack.length > 0) {
       const next = stack.pop()!;
-      if (next === l || next === "public" || seen.has(next)) continue;
+      if (next === l || next === PUBLIC_GRAPH_LABEL || seen.has(next)) continue;
       seen.add(next);
       stack.push(...(direct.get(next) ?? []));
     }

@@ -9,7 +9,7 @@
 import type { FastifyInstance } from "fastify";
 import { deploymentHoldsLabels } from "../db/client.js";
 import type { ApiKey } from "../db/schema.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { baseLabel } from "../labels.js";
 import { membersOnly } from "../permissions.js";
 import { LABEL_FIELD, chooseLabel } from "../server/plugins/request-label.js";
 import {
@@ -114,7 +114,7 @@ export async function apiKeyRoutes(app: FastifyInstance): Promise<void> {
       // The person minting says which label the key works at, among the
       // labels they may read. Whoever holds the key afterwards, an agent
       // included, never chooses one.
-      let workLabel = PUBLIC_LABEL;
+      let workLabel = baseLabel();
       const showLabel = await keysCarryLabels();
       if (membersOnly()) {
         const chosen = chooseLabel(request.auth, label, showLabel);
@@ -122,7 +122,7 @@ export async function apiKeyRoutes(app: FastifyInstance): Promise<void> {
           const { status, ...body } = chosen.refusal;
           return reply.code(status).send(body);
         }
-        workLabel = chosen.label ?? PUBLIC_LABEL;
+        workLabel = chosen.label ?? baseLabel();
       }
       // Dashboard-minted keys are always consumer keys; service keys are
       // provisioned by operators out-of-band.

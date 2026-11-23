@@ -51,6 +51,9 @@ describe("leave_judgment_standing", () => {
   });
 });
 
+/** A pass's successful calls, as the task reads them (pass-outcome.ts). */
+const done = (...tools: string[]) => new Map(tools.map((t) => [t, [{ input: {}, output: "{}" }]]));
+
 describe("the Steward's task on a node judged at a label it reads and not at its own", () => {
   it("names the two outcomes, and neither is the logged decision alone", async () => {
     const { defaultTask } = await import("../../../../src/llm/agents/claim-steward.js");
@@ -65,13 +68,13 @@ describe("the Steward's task on a node judged at a label it reads and not at its
         "your reasons). Either is the complete outcome of this pass."
     );
     expect(task.concluding).toBe("your assessment (update_claim_assessment), or leave_judgment_standing");
-    expect(task.nudge.when(new Set(["log_stewardship_decision"]))).toBe(true);
-    expect(task.nudge.when(new Set(["leave_judgment_standing"]))).toBe(false);
-    expect(task.nudge.when(new Set(["update_claim_assessment"]))).toBe(false);
+    expect(task.owed(done("log_stewardship_decision"))).toBe(true);
+    expect(task.owed(done("leave_judgment_standing"))).toBe(false);
+    expect(task.owed(done("update_claim_assessment"))).toBe(false);
     // Every other pass is told what it was told.
     expect(defaultTask("The pass note.", "claim", false).text).not.toContain("leave_judgment_standing");
     expect(defaultTask("The pass note.", "claim", true).text).not.toContain("leave_judgment_standing");
     // A revisit of its own judgment may also end by leaving the other standing.
-    expect(defaultTask("The pass note.", "claim", false).nudge.when(new Set(["leave_judgment_standing"]))).toBe(false);
+    expect(defaultTask("The pass note.", "claim", false).owed(done("leave_judgment_standing"))).toBe(false);
   });
 });

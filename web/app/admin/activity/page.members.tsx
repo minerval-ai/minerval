@@ -355,6 +355,13 @@ function What({ entry }: { entry: LogEntry }) {
           removed <Grant entry={entry} /> from <To entry={entry} />
         </>
       );
+    case "labels_split":
+      return (
+        <>
+          split public into the public graph&rsquo;s own, <span className="w-chip w-mono">{entry.published ?? "published"}</span> and{" "}
+          <LabelOf v={entry.label} />
+        </>
+      );
     case "label_defined":
       return (
         <>

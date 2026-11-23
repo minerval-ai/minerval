@@ -221,6 +221,11 @@ export interface ClaimCore {
   // has never reached "done" (and has no assessment) is an unprocessed stub, not
   // an irreducible atom.
   steward_state?: string;
+  // What the last finished Steward pass concluded (#1027): a new assessment,
+  // a logged decision that the one in force stands, a pause, or no
+  // conclusion. stewarded_at moves when a pass starts and says nothing of
+  // how it ended. Null when no pass has reported one.
+  last_pass?: { kind: string; summary: string; ended_at: string } | null;
   // The domain tags that select skills and tools (docs/mathematics.md §2.1):
   // a theorem is `mathematical` in type and carries "mathematics" here. Empty
   // when the API omits the column.

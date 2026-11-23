@@ -33,7 +33,7 @@
  */
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery, withTransaction } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import {
@@ -61,6 +61,7 @@ import type { GateKind } from "./gate-kinds.js";
 import { gateOf, modesFor, type ItemScope } from "./gate-settings-service.js";
 import {
   destinationLabel,
+  destinationProblem,
   ensureBoundaryPolicy,
   policyById,
   type Boundary,
@@ -208,6 +209,8 @@ export async function askRelease(input: {
     if (!labels.has(pageLabel)) throw new ReleaseError("UNKNOWN_LABEL", `This deployment defines no label "${pageLabel}".`);
     if (toLabel !== null) {
       if (!labels.has(toLabel)) throw new ReleaseError("UNKNOWN_LABEL", `This deployment defines no label "${toLabel}".`);
+      const notADestination = destinationProblem(toLabel);
+      if (notADestination) throw new ReleaseError("NOT_A_DESTINATION", notADestination);
       const [reach] = await rawQuery<{ reads: string[] }>(`SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads`, [toLabel]);
       if (toLabel === pageLabel || reach!.reads.includes(pageLabel)) {
         throw new ReleaseError(
@@ -1031,7 +1034,7 @@ async function partiesFor(sourceIds: readonly string[], release: ReleaseRow, own
             CASE WHEN $3::boolean THEN s.origin = 'mirror'
                  ELSE s.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text])) END AS already_read
        FROM sources s WHERE s.id = ANY($1::uuid[])`,
-    [[...sourceIds], release.to_label ?? PUBLIC_LABEL, release.to_outside]
+    [[...sourceIds], release.to_label ?? publishedLabel(), release.to_outside]
   );
   const parties = new Set<string>();
   const analysed = await partiesOfAnalyses(rows.filter((s) => !s.already_read && s.party_id === null).map((s) => s.id));

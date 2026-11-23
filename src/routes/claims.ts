@@ -184,6 +184,8 @@ export const claimSchema = {
     steward_state: { type: "string" },
     // When a Steward run last started on it; null = never worked (#415).
     stewarded_at: { type: "string", format: "date-time", nullable: true },
+    // What the last finished pass concluded (#1027): kind, summary, ended_at.
+    last_pass: looseObject,
     // Why the canonical form runs in the direction it does (#360).
     canonical_direction_note: { type: "string", nullable: true },
     created_by: { type: "string" },

@@ -21,6 +21,7 @@
  * same guarded transitions as the background drain — the two lanes can never
  * run one claim twice concurrently.
  */
+import { refundsPayer } from "../llm/agents/pass-outcome.js";
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runAtLabel, runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
@@ -243,7 +244,7 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
       "evidence with fresh eyes and record a current assessment.";
 
   try {
-    const { billedMicroUsd } = await withStewardLease(
+    const { value: outcome, billedMicroUsd } = await withStewardLease(
       { claimId: order.claim_id, slot },
       () =>
         runWithUsageContext({ userId: order.user_id, jobId: order.id }, () =>
@@ -263,20 +264,36 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
         )
     );
 
-    // The quoted figure was a cap, not a price: return whatever the metered
-    // cost-plus run didn't use. Ran over the cap? The overage is ours — the
-    // buyer's ceiling holds. Idempotent per order, so a crash between here
-    // and the status write can't double-credit on retry.
-    await settleMeteredCharge({
-      userId: order.user_id,
-      capMicroUsd: Number(order.price_micro_usd),
-      meteredMicroUsd: billedMicroUsd,
-      settleKey: `order:${order.id}`,
-      op: "assessment",
-      claimId: order.claim_id,
-    }).catch(() => {
-      // A missed settlement favours the platform and must not fail the run.
-    });
+    // A pass that ended without a conclusion for a reason on the platform's
+    // side (cut off at the output limit, or a concluding tool failing with
+    // the platform's own error) is not the buyer's to pay for: refunded
+    // whole, as a thrown failure is (#1027). Any other ending settles at the
+    // meter: the work was done, and the outcome says what came of it.
+    if (refundsPayer(outcome)) {
+      await recordOwlEntry({
+        userId: order.user_id,
+        amountMicroUsd: Number(order.price_micro_usd),
+        reason: OWL_REASONS.refund,
+        op: "assessment",
+        claimId: order.claim_id,
+        idempotencyKey: `refund:order:${order.id}`,
+      });
+    } else {
+      // The quoted figure was a cap, not a price: return whatever the metered
+      // cost-plus run didn't use. Ran over the cap? The overage is ours — the
+      // buyer's ceiling holds. Idempotent per order, so a crash between here
+      // and the status write can't double-credit on retry.
+      await settleMeteredCharge({
+        userId: order.user_id,
+        capMicroUsd: Number(order.price_micro_usd),
+        meteredMicroUsd: billedMicroUsd,
+        settleKey: `order:${order.id}`,
+        op: "assessment",
+        claimId: order.claim_id,
+      }).catch(() => {
+        // A missed settlement favours the platform and must not fail the run.
+      });
+    }
 
     await releaseClaim(order.claim_id, "done");
     await rawQuery(
@@ -295,9 +312,9 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
     }
     await rawQuery(
       `UPDATE assessment_orders
-          SET status = 'done', completed_at = now(), error = NULL
+          SET status = 'done', completed_at = now(), error = NULL, outcome = $2::jsonb
         WHERE id = $1`,
-      [order.id]
+      [order.id, JSON.stringify({ ...outcome, refunded: refundsPayer(outcome) })]
     );
     return { status: "processed", orderId: order.id, claimId: order.claim_id, ok: true };
   } catch (err) {

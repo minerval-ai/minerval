@@ -148,6 +148,29 @@ const configSchema = z.object({
   // age (web/auth.ts reads the same variable), so a person at work signs in
   // again before their groups lapse.
   signInValidHours: z.coerce.number().positive().default(12),
+  // The names of the two labels a members-only deployment's `public` is
+  // split into at start (services/label-split.ts; src/labels.ts, "The
+  // layers at the bottom"): the organization's own material that every
+  // member reads, and what it released outside. Left empty they are
+  // "members" and "published", which is what the docs and the agents'
+  // briefs call them. They are read once, by the split, and only matter to
+  // a deployment that had already defined a label of one of those names:
+  // a label is never renamed, so such a deployment says here what the new
+  // one is to be called instead.
+  membersLabel: z
+    .string()
+    .trim()
+    .refine((name) => name === "" || /^[a-z][a-z0-9_-]{0,62}$/.test(name), {
+      message: "MEMBERS_LABEL must be a label's name: a short lower-case word (letters, digits, hyphens and underscores, starting with a letter).",
+    })
+    .default(""),
+  publishedLabel: z
+    .string()
+    .trim()
+    .refine((name) => name === "" || /^[a-z][a-z0-9_-]{0,62}$/.test(name), {
+      message: "PUBLISHED_LABEL must be a label's name: a short lower-case word (letters, digits, hyphens and underscores, starting with a letter).",
+    })
+    .default(""),
 
   // Where this deployment's owls come from (docs/accounts.md, "Owls a
   // deployment creates for itself"). "sold", the starting value, is the
@@ -1704,6 +1727,8 @@ export function loadConfig(): Config {
     reads: process.env.READS || undefined,
     firstAdministrator: process.env.FIRST_ADMINISTRATOR,
     signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
+    membersLabel: process.env.MEMBERS_LABEL,
+    publishedLabel: process.env.PUBLISHED_LABEL,
     owls: process.env.OWLS || undefined,
     modelPriceRefreshHours: process.env.MODEL_PRICE_REFRESH_HOURS,
     modelPrices: process.env.MODEL_PRICES,

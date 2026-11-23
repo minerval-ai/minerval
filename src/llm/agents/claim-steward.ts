@@ -54,7 +54,7 @@ import { CODE_EXECUTION_TOOL, CODE_EXECUTION_USD_PER_HOUR } from "../instrument-
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { createFigureTools } from "../tools/figure-tools.js";
-import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentRunPrivate, currentLabel } from "../usage-context.js";
+import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentRunPrivate, currentLabel, getUsageContext, runBudget } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
@@ -95,6 +95,16 @@ import {
 } from "../tools/kind-tools.js";
 import type { ArtifactSubtype, NodeKind } from "../../schemas/kinds.js";
 import { loadChangesSinceJudgedNote } from "./steward-changes-note.js";
+import {
+  classifyPass,
+  isThrownError,
+  LOG_TOOL,
+  standsLog,
+  type DoneCall,
+  type PassDone,
+  type PassOutcome,
+  type PriorJudgment,
+} from "./pass-outcome.js";
 
 /**
  * The Steward's tools that belong to propositions and quantities, withheld
@@ -176,11 +186,35 @@ interface PassTask {
   text: string;
   /** The concluding call(s), as the turn-limit notice names them. */
   concluding: string;
-  /** Nudge once on an empty end_turn while `when` holds; `done` is the set of tools that succeeded this run. */
-  nudge: { message: string; when: (done: ReadonlySet<string>) => boolean };
+  /**
+   * The tools whose success is this pass's judgment, in the order the
+   * outcome reads them (pass-outcome.ts): an assessment, a formal statement,
+   * a prize decision.
+   */
+  judgmentTools: string[];
+  /**
+   * Whether the pass still owes its conclusion, given every tool that
+   * succeeded so far. The one definition of "concluded": the nudge fires
+   * while it holds, and the outcome the payer is told reads it (#1027).
+   */
+  owed: (done: PassDone) => boolean;
+  /** What an empty end_turn is told, once, while `owed` holds. */
+  nudge: string;
 }
 
-const LOG = "log_stewardship_decision";
+const LOG = LOG_TOOL;
+
+/** Whether any of the named tools succeeded this pass. */
+const has = (done: PassDone, ...tools: string[]): boolean => tools.some((t) => (done.get(t)?.length ?? 0) > 0);
+
+/**
+ * Told to every pass beside its concluding calls (#1027): a consequence of
+ * how the pass ends, not a limit on it.
+ */
+const PAYER_TOLD = `When this run ends, whoever paid for it is told what it
+recorded: a new judgment, a logged decision that the current one stands, a
+pause waiting on what you asked for, or, if none of these, that the pass ended
+without a conclusion.`;
 
 /** The view of each kind's judgment in force, to tell a first judgment from a revisit. */
 const JUDGMENT_IN_FORCE_VIEW: Record<NodeKind, string> = {
@@ -197,6 +231,24 @@ async function hasCurrentJudgment(claimId: string, kind: NodeKind): Promise<bool
     [claimId]
   ).catch(() => []);
   return rows.length > 0;
+}
+
+/**
+ * The judgment in force when a pass begins: its id, its status (or
+ * standing, or fidelity) and when it was made. The newest when the view
+ * holds more than one. null on a failed read.
+ */
+async function priorJudgment(claimId: string, kind: NodeKind): Promise<PriorJudgment | null> {
+  const rows = await rawQuery<{ id: string; status: string | null; at: string | null }>(
+    `SELECT j.id::text AS id,
+            COALESCE(to_jsonb(j) ->> 'status', to_jsonb(j) ->> 'standing', to_jsonb(j) ->> 'fidelity') AS status,
+            COALESCE(to_jsonb(j) ->> 'assessed_at', to_jsonb(j) ->> 'estimated_at', to_jsonb(j) ->> 'created_at') AS at
+       FROM ${JUDGMENT_IN_FORCE_VIEW[kind]} j WHERE j.claim_id = $1
+      ORDER BY 3 DESC NULLS LAST LIMIT 1`,
+    [claimId]
+  ).catch(() => []);
+  const row = rows[0];
+  return row?.id ? { id: row.id, status: row.status ?? null, at: row.at ?? null } : null;
 }
 
 /** The view of each kind's current judgments, one for each label. */
@@ -376,12 +428,11 @@ Before the run ends, record your own: ${record}. Or leave the one you read
 standing for readers at this run's label (${LEAVE_STANDING_TOOL_NAME}, with
 your reasons). Either is the complete outcome of this pass.`,
       concluding: `your assessment (${tool}), or ${LEAVE_STANDING_TOOL_NAME}`,
-      nudge: {
-        when: (done) => !done.has(tool) && !done.has(LEAVE_STANDING_TOOL_NAME),
-        message:
-          `You ended your turn without recording an outcome for this ${noun}. Record your own ` +
-          `assessment with ${tool}, or leave the one you read standing with ${LEAVE_STANDING_TOOL_NAME}.`,
-      },
+      judgmentTools: [tool],
+      owed: (done) => !has(done, tool, LEAVE_STANDING_TOOL_NAME),
+      nudge:
+        `You ended your turn without recording an outcome for this ${noun}. Record your own ` +
+        `assessment with ${tool}, or leave the one you read standing with ${LEAVE_STANDING_TOOL_NAME}.`,
     };
   }
   if (mustRecord) {
@@ -393,17 +444,16 @@ the run ends, record ${record}, the ${noun}'s importance and contestation, and
 your decision (${LOG}). If the assessment changed materially, notify the
 dependents it could matter to (notify_steward).`,
       concluding: `your assessment (${tool}) and your decision (${LOG})`,
-      nudge: {
-        when: (done) => !done.has(tool),
-        message:
-          kind === "claim"
-            ? "You ended your turn without recording an assessment for this claim. " +
-              "Record it now with update_claim_assessment (status, confidence, the " +
-              "reader-facing assessment, and your reasoning_trace), then log your " +
-              `decision with ${LOG}.`
-            : `You ended your turn without recording an assessment for this ${noun}. ` +
-              `Record it now with ${tool}, then log your decision with ${LOG}.`,
-      },
+      judgmentTools: [tool],
+      owed: (done) => !has(done, tool),
+      nudge:
+        kind === "claim"
+          ? "You ended your turn without recording an assessment for this claim. " +
+            "Record it now with update_claim_assessment (status, confidence, the " +
+            "reader-facing assessment, and your reasoning_trace), then log your " +
+            `decision with ${LOG}.`
+          : `You ended your turn without recording an assessment for this ${noun}. ` +
+            `Record it now with ${tool}, then log your decision with ${LOG}.`,
     };
   }
   return {
@@ -415,19 +465,22 @@ If your judgment of it changed, record
 ${record}, and the importance and contestation where they moved; if the change
 is material, notify the dependents it could matter to (notify_steward). If
 your judgment did not change, logging that with ${LOG}
-(action_taken no_action_needed, with your reasons) is the complete outcome of
-this pass, and the current assessment stands. Either way, log your decision.`,
+(judgment_stands true, action_taken no_action_needed, with your reasons) is the
+complete outcome of this pass, and the current assessment stands. A logged
+decision that names a change no tool recorded concludes nothing. Either way,
+log your decision.`,
     concluding: `your decision (${LOG}), with ${tool} first if your judgment changed`,
-    nudge: {
-      // Leaving the judgment it reads standing is a recorded outcome too
-      // (leave-standing-tool.ts; offered where a node carries a judgment at
-      // each label).
-      when: (done) => !done.has(tool) && !done.has(LOG) && !done.has(LEAVE_STANDING_TOOL_NAME),
-      message:
-        `You ended your turn without recording anything. If your judgment of this ` +
-        `${noun} changed, record it with ${tool}; if it did not, log that with ` +
-        `${LOG} (no_action_needed) and your reasons.`,
-    },
+    judgmentTools: [tool],
+    // Leaving the judgment it reads standing is a recorded outcome too
+    // (leave-standing-tool.ts; offered where a node carries a judgment at
+    // each label). A logged decision concludes the pass only when it says the
+    // judgment stands (#1027): "reassessed" logged while the assessment
+    // failed to record leaves the old one in force and concludes nothing.
+    owed: (done) => !has(done, tool, LEAVE_STANDING_TOOL_NAME) && !standsLog(done),
+    nudge:
+      `You ended your turn without recording a conclusion. If your judgment of this ` +
+      `${noun} changed, record it with ${tool}; if it did not, log that with ` +
+      `${LOG} (judgment_stands true, action_taken no_action_needed) and your reasons.`,
   };
 }
 
@@ -465,10 +518,9 @@ async function formalizationTask(
 (${formalToolsAbsentReason()}). Do not record or publish anything: log with
 ${LOG} that the formalization could not proceed, and stop.`,
       concluding: `your log (${LOG}) that the formalization could not proceed`,
-      nudge: {
-        when: (done) => !done.has(LOG),
-        message: `Log with ${LOG} that the formalization could not proceed, and stop.`,
-      },
+      judgmentTools: [],
+      owed: (done) => !has(done, LOG),
+      nudge: `Log with ${LOG} that the formalization could not proceed, and stop.`,
     };
   }
   if (trigger === "formalize") {
@@ -511,13 +563,12 @@ Proceed:
     return {
       text,
       concluding: `publish_formalization (or, if no statement type-checks, a log saying why) and ${LOG}`,
-      nudge: {
-        when: (done) => !done.has("publish_formalization") && !done.has(LOG),
-        message:
-          "You ended your turn without recording the statement or logging. Record " +
-          "the reviewed statement with publish_formalization (without confirm), or, " +
-          `if you could not draft one that type-checks, log why with ${LOG}.`,
-      },
+      judgmentTools: ["publish_formalization"],
+      owed: (done) => !has(done, "publish_formalization", LOG),
+      nudge:
+        "You ended your turn without recording the statement or logging. Record " +
+        "the reviewed statement with publish_formalization (without confirm), or, " +
+        `if you could not draft one that type-checks, log why with ${LOG}.`,
     };
   }
   const id = context.match(UUID_RE)?.[0] ?? null;
@@ -559,19 +610,21 @@ Proceed:
   return {
     text,
     concluding: `your decision with publish_formalization (confirm true or false) and ${LOG}`,
-    nudge: row
+    ...(row
       ? {
-          when: (done) => !done.has("publish_formalization"),
-          message:
+          judgmentTools: ["publish_formalization"],
+          owed: (done: PassDone) => !has(done, "publish_formalization"),
+          nudge:
             "You ended your turn without deciding. Decide with publish_formalization: " +
             "confirm: true to publish, or confirm: false with review_notes naming the " +
             `defect to return it to draft; then log your decision with ${LOG}.`,
         }
       : {
           // Nothing to decide on: the record could not be loaded.
-          when: (done) => !done.has(LOG),
-          message: `Log with ${LOG} that the formalization could not be loaded, and stop.`,
-        },
+          judgmentTools: [],
+          owed: (done: PassDone) => !has(done, LOG),
+          nudge: `Log with ${LOG} that the formalization could not be loaded, and stop.`,
+        }),
   };
 }
 
@@ -607,13 +660,12 @@ Proceed:
    saying the window is open.
 5. Log your decision with ${LOG}.`,
         concluding: `decide_prize_claim, then the assessment if you accept, and ${LOG}`,
-        nudge: {
-          when: (done) => !done.has("decide_prize_claim"),
-          message:
-            "You ended your turn without deciding the prize claim. Decide it now with " +
-            "decide_prize_claim (accept or reject, a result category, and your reason); " +
-            `if you accept, record the provisional assessment; then log with ${LOG}.`,
-        },
+        judgmentTools: ["decide_prize_claim"],
+        owed: (done) => !has(done, "decide_prize_claim"),
+        nudge:
+          "You ended your turn without deciding the prize claim. Decide it now with " +
+          "decide_prize_claim (accept or reject, a result category, and your reason); " +
+          `if you accept, record the provisional assessment; then log with ${LOG}.`,
       };
     case "prize_window_closed":
       return {
@@ -625,13 +677,12 @@ update_claim_assessment, without the provisional caveat, unless something
 since then changes it. The ledger pays without any further judgment. Log your
 decision with ${LOG}.`,
         concluding: `the confirmed assessment (update_claim_assessment) and ${LOG}`,
-        nudge: {
-          when: (done) => !done.has("update_claim_assessment"),
-          message:
-            "You ended your turn without confirming the assessment. Record it with " +
-            "update_claim_assessment, without the provisional caveat unless something " +
-            `has changed, then log with ${LOG}.`,
-        },
+        judgmentTools: ["update_claim_assessment"],
+        owed: (done) => !has(done, "update_claim_assessment"),
+        nudge:
+          "You ended your turn without confirming the assessment. Record it with " +
+          "update_claim_assessment, without the provisional caveat unless something " +
+          `has changed, then log with ${LOG}.`,
       };
     case "prize_claim_voided":
       return {
@@ -643,13 +694,12 @@ the claim without the voided result: record the assessment that now stands
 voided proof, tell the Stewards of dependents the change matters to
 (notify_steward), and log your decision with ${LOG}.`,
         concluding: `the reassessment (update_claim_assessment) and ${LOG}`,
-        nudge: {
-          when: (done) => !done.has("update_claim_assessment"),
-          message:
-            "You ended your turn without reassessing. Record the assessment that " +
-            "stands without the voided result with update_claim_assessment, then " +
-            `log with ${LOG}.`,
-        },
+        judgmentTools: ["update_claim_assessment"],
+        owed: (done) => !has(done, "update_claim_assessment"),
+        nudge:
+          "You ended your turn without reassessing. Record the assessment that " +
+          "stands without the voided result with update_claim_assessment, then " +
+          `log with ${LOG}.`,
       };
     case "attempt_completed":
       return {
@@ -674,21 +724,25 @@ Proceed:
    anything.
 5. Log your decision with ${LOG}.`,
         concluding: `${LOG}, with the assessment first if the result stands`,
-        nudge: {
-          when: (done) => !done.has("update_claim_assessment") && !done.has(LOG),
-          message:
-            "You ended your turn without recording anything. If the attempt's result " +
-            "stands, record the argument and the assessment; otherwise log with " +
-            `${LOG} that the platform attempted the problem and did not settle it.`,
-        },
+        judgmentTools: ["update_claim_assessment"],
+        owed: (done) => !has(done, "update_claim_assessment", LOG),
+        nudge:
+          "You ended your turn without recording anything. If the attempt's result " +
+          "stands, record the argument and the assessment; otherwise log with " +
+          `${LOG} that the platform attempted the problem and did not settle it.`,
       };
     default:
       return null;
   }
 }
 
-/** Whether a tool's output reports success: anything but an explicit `success: false` or `ok: false`. */
+/**
+ * Whether a tool's output reports success: anything but an explicit
+ * `success: false` or `ok: false`, or the "Error: ..." a thrown exception
+ * becomes in the executors (pass-outcome.ts isThrownError).
+ */
 function succeeded(output: string): boolean {
+  if (isThrownError(output)) return false;
   try {
     const parsed = JSON.parse(output) as { success?: boolean; ok?: boolean } | null;
     return parsed?.success !== false && parsed?.ok !== false;
@@ -727,7 +781,7 @@ async function runClaimStewardImpl(input: {
   claimId: string;
   context: string;
   model?: string;
-}): Promise<void> {
+}): Promise<PassOutcome> {
   const config = loadConfig();
   const model = input.model ?? config.stewardModel;
 
@@ -864,6 +918,9 @@ async function runClaimStewardImpl(input: {
     hasStructure(input.claimId),
   ]);
   const passNote = stewardPassNote(noun, input.trigger, { judged, structured });
+  // The judgment in force as the pass begins, so its outcome can say what it
+  // left in force or what it moved from (#1027).
+  const before = judged ? await priorJudgment(input.claimId, kind) : null;
 
   const iterationBudget = config.stewardMaxIterations;
 
@@ -945,7 +1002,7 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : isCase ? "Safety case" : kind === "artifact" ? "List" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
-${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${lookoutNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
+${task.text}\n\n${PAYER_TOLD}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${lookoutNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.
@@ -961,8 +1018,12 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${loo
   // A run that ends its turn with nothing recorded (GLM 5.3 Flash has
   // returned an empty end_turn after seventeen steps of structuring) loses
   // the whole pass. One nudge, toward what this task owes, only while that
-  // is missing. `done` holds every tool that succeeded this run.
-  const done = new Set<string>();
+  // is missing. `done` holds every tool call that succeeded this run, and
+  // `thrown` the concluding calls that failed with the platform's own error;
+  // both go into the outcome the payer is told (pass-outcome.ts).
+  const done = new Map<string, DoneCall[]>();
+  const thrown: Array<{ tool: string; error: string }> = [];
+  const concludingTools = new Set([...task.judgmentTools, LOG, LEAVE_STANDING_TOOL_NAME]);
 
   // The session this pass belongs to (session-service.ts). A paused session
   // on this node that got back what it asked for is resumed: the pass
@@ -982,7 +1043,7 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${loo
         // So are the file sets, and that the scratch directory starts empty.
         newMessages: [
           input.trigger !== "session_resume"
-            ? `This pass came for its own reason as well. Today's date: ${today}. Trigger: ${input.trigger}.\n\n${task.text}` +
+            ? `This pass came for its own reason as well. Today's date: ${today}. Trigger: ${input.trigger}.\n\n${task.text}\n\n${PAYER_TOLD}` +
               (changesNote ? `\n\n${changesNote}` : "")
             : "",
           input.context.trim() ? `Context: ${input.context}` : "",
@@ -1001,7 +1062,7 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${loo
   }
   let transcript: Parameters<NonNullable<Parameters<typeof toolUseLoop>[0]["onEnd"]>>[0] | null = null;
 
-  await runWithUsageContext({ session }, () => withSkills([], () => toolUseLoop({
+  const result = await runWithUsageContext({ session }, () => withSkills([], () => toolUseLoop({
     initialMessages,
     onEnd: (t) => {
       transcript = t;
@@ -1013,8 +1074,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${loo
     model,
     finalToolNudge: {
       max: 1,
-      when: () => task.nudge.when(done),
-      message: task.nudge.message,
+      when: () => task.owed(done),
+      message: task.nudge,
     },
     // Headroom, not a budget: thinking is always on for this agent tier and
     // counts against max_tokens, and toolUseLoop treats a max_tokens stop as
@@ -1037,7 +1098,13 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${loo
       const figure = await figureTools.execute(name, toolInput);
       if (figure !== null) return figure;
       const output = await dispatch(name, toolInput);
-      if (succeeded(output)) done.add(name);
+      if (succeeded(output)) {
+        const calls = done.get(name) ?? [];
+        calls.push({ input: toolInput, output });
+        done.set(name, calls);
+      } else if (concludingTools.has(name) && isThrownError(output)) {
+        thrown.push({ tool: name, error: output.slice("Error: ".length, 500) });
+      }
       return output;
     },
   })));
@@ -1045,21 +1112,40 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${loo
   // The run ended its turn. Waiting on what it asked for, the session pauses
   // with its transcript, to resume when an answer arrives (paid by whoever
   // paid for this pass, from what it has left); otherwise it closes.
+  let sessionStatus: string | null = null;
   if (transcript) {
-    await suspendSession({
+    sessionStatus = await suspendSession({
       id: session.id,
       transcript,
       model,
       budgetLeftMicroUsd: runBudgetLeft() ?? 0,
       payer: await originalPayer().catch(() => null),
-    }).catch((err) =>
-      console.warn(`[steward] pausing session ${session.id} failed:`, err instanceof Error ? err.message : err)
-    );
+    }).catch((err) => {
+      console.warn(`[steward] pausing session ${session.id} failed:`, err instanceof Error ? err.message : err);
+      return null;
+    });
   }
 
   // The pass finished: the messages it was shown are read. One that arrived
   // mid-pass was not shown and stays unread for the next pass.
   await markMessagesRead(inbox.ids);
+
+  // What the pass concluded, by the task's own definition, for whoever paid
+  // for it (#1027). A concluding call that failed with an error of the
+  // platform's own and was then made again successfully is no fault of the
+  // pass's ending, so only the failures still standing are reported.
+  const budget = runBudget();
+  return classifyPass({
+    judgmentTools: task.judgmentTools,
+    owed: task.owed,
+    done,
+    thrown: thrown.filter((t) => !has(done, t.tool)),
+    sessionStatus,
+    stopReason: result?.stopReason ?? null,
+    budget: budget ? { spentMicroUsd: budget.spentMicroUsd, ceilingMicroUsd: budget.ceilingMicroUsd } : null,
+    before,
+    runId: getUsageContext().runId ?? null,
+  });
 
   async function dispatch(name: string, toolInput: Record<string, unknown>): Promise<string> {
     if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);

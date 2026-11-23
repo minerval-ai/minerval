@@ -100,8 +100,26 @@ export const labels = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Which of the three bottom layers this label is (src/labels.ts, "The
+    // layers at the bottom"), or null for a label the deployment defines
+    // above them:
+    //   public_graph  the public graph's own rows, which is `public`;
+    //   published     what the organization released outside;
+    //   base          the organization's own material that every member
+    //                 reads, and where work that names no label is done.
+    // On the public graph, and on any deployment that has not been split,
+    // no row says: `public` is all three. The split (services/label-split.ts)
+    // writes them, once, on a members-only deployment. It is data and not a
+    // setting because the database's own functions read it
+    // (minerval_base_label, minerval_published_label).
+    layer: text("layer"),
   },
   (table) => [
+    check("ck_labels_layer", sql`${table.layer} IN ('public_graph', 'published', 'base')`),
+    // One label for each layer.
+    uniqueIndex("uq_labels_layer").on(table.layer).where(sql`${table.layer} IS NOT NULL`),
+    // The public graph's label is `public` and nothing else is.
+    check("ck_labels_public_graph_is_public", sql`(${table.layer} = 'public_graph') IS NOT TRUE OR ${table.name} = 'public'`),
     // A label's name is written into a connection's settings (the clearance
     // a connection reads with, db/clearance.ts), so the table holds it to
     // the plain word the administrator's route already requires
@@ -228,12 +246,14 @@ export const labelFaces = pgTable(
 // because it does not say who may read the row. A key and a token are the
 // account's own and carry no label of that kind, and the step that holds
 // every table with a sensitivity_label column to a clearance must not take
-// these tables for labelled ones. A credential minted before a deployment
-// had a second label works at 'public', which was the only label there was.
+// these tables for labelled ones. A credential that names no label works at
+// the deployment's base label (minerval_base_label(): `public` on the public
+// graph, the members' label on a members-only deployment that has been
+// split).
 const workLabelColumn = () =>
   text("work_label")
     .notNull()
-    .default("public")
+    .default(sql`minerval_base_label()`)
     .references(() => labels.name);
 
 // ---------------------------------------------------------------------------
@@ -3948,6 +3968,11 @@ export const assessmentOrders = pgTable(
     // pending | running | done | cancelled | failed
     status: text("status").notNull().default("pending"),
     error: text("error"),
+    // What the Steward pass concluded (llm/agents/pass-outcome.ts, #1027):
+    // a new assessment, a logged decision that the one in force stands, a
+    // pause, or no conclusion. Null until the pass ends, and for orders that
+    // ended before it was kept.
+    outcome: jsonb("outcome"),
     // The label of the request or run that placed the order (src/labels.ts);
     // the Steward pass the order buys runs at it.
     sensitivityLabel: sensitivityLabelColumn(),
@@ -4012,6 +4037,10 @@ export const actions = pgTable(
     // open | running | done | superseded | cancelled
     status: text("status").notNull().default("open"),
     meteredCostMicroUsd: bigint("metered_cost_micro_usd", { mode: "number" }),
+    // What came of the run, beside what it spent (§19, #1027): for a
+    // Steward pass, what it concluded (llm/agents/pass-outcome.ts). Null for
+    // kinds that do not report one yet.
+    outcome: jsonb("outcome"),
     // The budget job the run's llm_usage metering was attributed to (the
     // largest funder's job), stamped at completion. Lets escrow accounting
     // subtract ledger-consumed metering from a job's llm_usage total so a

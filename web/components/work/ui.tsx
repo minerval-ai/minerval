@@ -1,3 +1,4 @@
+import { PUBLIC_GRAPH_LABEL } from "@/lib/label-layers";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageHead } from "../PageHead";
@@ -75,10 +76,11 @@ export function Count({ n, hot = false }: { n: number; hot?: boolean }) {
 }
 
 // A label's colour: labels are named by each deployment, so each gets one of a
-// fixed set of hues from its name, the same wherever it appears. public is grey.
+// fixed set of hues from its name, the same wherever it appears. The public
+// graph's label is grey.
 const LABEL_HUES = ["#6aa2e6", "#d9a441", "#a993e8", "#e88aa6", "#5fb39a", "#e0875a", "#7fa7c9", "#b9a35a"];
 export function labelColour(name: string): string {
-  if (name === "public") return "#8b8d88";
+  if (name === PUBLIC_GRAPH_LABEL) return "#8b8d88";
   // FNV-1a: spreads short names across the hues better than a plain sum.
   let h = 2166136261;
   for (const c of name) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;

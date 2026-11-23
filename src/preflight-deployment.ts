@@ -42,7 +42,7 @@ import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { settingsThatDisagree, type Config } from "./config.js";
 import { rawQuery } from "./db/client.js";
 import { withSystemClearance } from "./db/clearance.js";
-import { PUBLIC_LABEL } from "./labels.js";
+import { baseLabel, byLayerThenName } from "./labels.js";
 import { unpricedConfiguredModels } from "./llm/pricing.js";
 import { CREDENTIAL_KEY_ENV, credentialKeys, keyIsHere } from "./services/connection-credential.js";
 import { checkSandbox, type SandboxCheck } from "./services/sandbox-client.js";
@@ -696,7 +696,7 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
              OR EXISTS (SELECT 1 FROM assessments v WHERE v.sensitivity_label = l.name)
              OR EXISTS (SELECT 1 FROM quantity_estimates v WHERE v.sensitivity_label = l.name)
              OR EXISTS (SELECT 1 FROM question_assessments v WHERE v.sensitivity_label = l.name)
-             OR (l.name = 'public' AND EXISTS (SELECT 1 FROM sources s WHERE s.sensitivity_label = l.name AND s.origin = 'local'))) AS material,
+             OR (l.name = $2 AND EXISTS (SELECT 1 FROM sources s WHERE s.sensitivity_label = l.name AND s.origin = 'local'))) AS material,
             -- Whether anything is in at the label yet: a source, a node or
             -- a mandate. A label that holds nothing is still being decided
             -- about, and its missing General mandate is a thing to do.
@@ -707,7 +707,7 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
                      WHERE g.is_platform AND g.status = 'active' AND g.mandate->>'seed_key' = $1
                        AND g.sensitivity_label = l.name) AS general
        FROM labels l`,
-    [GENERAL_SEED_KEY]
+    [GENERAL_SEED_KEY, baseLabel()]
   );
   // The key's id alone, never the sealed credential: whether it could be
   // opened is a question of which keys are set.
@@ -723,8 +723,7 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
     if (c.credential_key_id && !keyIsHere(c.credential_key_id, keys)) at.storedWithoutKey += 1;
     byLabel.set(c.label, at);
   }
-  const order = (a: { label: string }, b: { label: string }) =>
-    a.label === PUBLIC_LABEL ? -1 : b.label === PUBLIC_LABEL ? 1 : a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
+  const order = (a: { label: string }, b: { label: string }) => byLayerThenName(a.label, b.label);
   return {
     releasesOutside: one?.releases_outside ?? 0,
     ownOrganization: one?.own_organization === true,
