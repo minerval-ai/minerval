@@ -383,7 +383,9 @@ export default function Page() {
         </li>
         <li>
           <b>Requests</b> (<code>/admin/outside/requests</code>): questions on the public graph you may hold evidence for.
-          Adopt one to work on it here, and say in public that you are taking it up or that you will not.
+          It opens on the few that concern your graph in particular: addressed to a mandate you published, or bearing on a node you have
+          worked on. Adopt one to work on it here, or pass on it to set it aside; neither is told to the public graph. Once adopted, you can
+          say in public that you are taking it up or that you will not.
         </li>
         <li>
           <b>Reports</b>, a tab of the Outbox (<code>/outbound?tab=reports</code>): faults your agents found in Minerval&rsquo;s own tools,

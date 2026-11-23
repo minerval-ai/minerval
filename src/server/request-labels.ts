@@ -131,6 +131,10 @@ const OUTWARD =
   "`public` and written as the tables' owner once the route has checked the person; a row that belongs at another label (an adopted " +
   "request, a request declined) is written by work at that label, which the service names after checking that the " +
   "person reads it (services/outward-acts-service.ts, services/report-sending-service.ts).";
+const PASSED =
+  "This deployment's own note that it passed on a public request, one for the whole deployment. The request is the mirror's row at `public`, " +
+  "which every member reads, and the note is kept there beside it: the route checks that the person directs the graph and the service writes " +
+  "the row at `public` as the tables' owner (services/outward-acts-service.ts, passOnRequest). It reads nothing at the person's other labels.";
 const OPERATOR =
   "Guarded by the operator key, which names no person and carries no clearance: the request reads and writes `public` alone.";
 const ADMINISTRATION =
@@ -483,6 +487,8 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "PUT /outside/naming": { rule: "none", why: "One setting of this deployment's acts outside, in a table that carries no label." },
   "POST /outside/connection/by-hand": { rule: "none", why: "Makes the connection's key and a request to carry by hand, in a table that carries no label, and logs the act." },
   "POST /outside/requests/:public_request_id/adopt": { rule: "none", why: OUTWARD },
+  "POST /outside/requests/:public_request_id/pass": { rule: "none", why: PASSED },
+  "DELETE /outside/requests/:public_request_id/pass": { rule: "none", why: PASSED },
   "POST /requests/:request_id/adopt": {
     rule: "none",
     why:

@@ -60,7 +60,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
     <WorkPage>
       <WorkHead
         title="Inbox"
-        sub={inbox.items.length === 0 ? "Nothing waits on you" : `${plural(inbox.items.length, "thing")} wait on you`}
+        sub={inbox.items.length === 0 ? "Nothing waits on you" : `${plural(inbox.items.length, "thing")} ${inbox.items.length === 1 ? "waits" : "wait"} on you`}
         actions={
           can(who, "direct") && (
             <>

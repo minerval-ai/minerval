@@ -244,17 +244,51 @@ export async function publicRequests(opts: { nodeId?: string; limit?: number } =
     [ids]
   );
   // Read as the caller: a request adopted at a label the reader does not read is not listed as adopted.
-  const adopted = await rawQuery<{ public_request_id: string; id: string; request_id: string; adopted_at: Date; taken_up_at: Date | null; declined_at: Date | null; decline_reason: string | null; state: string }>(
-    `SELECT a.public_request_id, a.id, a.request_id, a.adopted_at, a.taken_up_at, a.declined_at, a.decline_reason, r.state
+  const adopted = await rawQuery<{ public_request_id: string; id: string; request_id: string; label: string; adopted_at: Date; taken_up_at: Date | null; declined_at: Date | null; decline_reason: string | null; state: string }>(
+    `SELECT a.public_request_id, a.id, a.request_id, a.sensitivity_label AS label, a.adopted_at, a.taken_up_at, a.declined_at, a.decline_reason, r.state
        FROM adopted_requests a JOIN requests r ON r.id = a.request_id WHERE a.public_request_id = ANY($1::uuid[])`,
     [ids]
   );
   const [node] = opts.nodeId ? await rawQuery<{ origin: string }>(`SELECT origin FROM claims WHERE id = $1`, [opts.nodeId]) : [];
+  // What makes a request this deployment's concern more than anyone's. The mirror brings every public node, so
+  // "it bears on a node held here" is true of every request; what tells one from another is whether this
+  // deployment has work of its own on a node it bears on, or was the one asked. Read as the caller, so work at a
+  // label the reader does not read counts for nothing.
+  const workedOn = new Set(
+    (
+      await rawQuery<{ id: string }>(
+        `SELECT c.id FROM claims c
+          WHERE c.id = ANY($1::uuid[])
+            AND (c.origin <> 'mirror'
+              OR EXISTS (SELECT 1 FROM assessments a WHERE a.claim_id = c.id AND a.origin <> 'mirror')
+              OR EXISTS (SELECT 1 FROM arguments g WHERE g.claim_id = c.id AND g.origin <> 'mirror')
+              OR EXISTS (SELECT 1 FROM claim_relationships e WHERE (e.parent_claim_id = c.id OR e.child_claim_id = c.id) AND e.origin <> 'mirror')
+              OR EXISTS (SELECT 1 FROM request_targets t WHERE t.claim_id = c.id))`,
+        [[...new Set(targets.map((t) => t.id))]]
+      )
+    ).map((r) => r.id)
+  );
+  const askedOfUs = new Set(
+    (
+      await rawQuery<{ id: string }>(
+        `SELECT f.id FROM feed_requests f JOIN releases s ON s.id = f.asked_of_face_id
+          WHERE f.id = ANY($1::uuid[]) AND f.origin = 'mirror' AND s.kind = 'mandate' AND s.to_outside AND s.ended_at IS NULL`,
+        [ids]
+      )
+    ).map((r) => r.id)
+  );
+  const passed = await rawQuery<{ public_request_id: string; passed_at: Date; by: string | null }>(
+    `SELECT p.public_request_id, p.passed_at, c.display_name AS by
+       FROM passed_public_requests p LEFT JOIN contributors c ON c.id = p.passed_by WHERE p.public_request_id = ANY($1::uuid[])`,
+    [ids]
+  );
   return {
     // With node_id: whether the node is the public graph's own, which is what can be funded there.
     ...(opts.nodeId ? { node_is_on_the_public_graph: node?.origin === "mirror", what_funding_it_there_shows: FUND_NODE_TOLD } : {}),
     requests: rows.map((r) => {
       const mine = adopted.filter((a) => a.public_request_id === r.id);
+      const bearsOn = targets.filter((t) => t.request_id === r.id).map((t) => ({ id: t.id, text: t.text, worked_on_here: workedOn.has(t.id) }));
+      const passedOn = passed.find((p) => p.public_request_id === r.id);
       return {
         public_request_id: r.id,
         ask: r.ask,
@@ -262,13 +296,17 @@ export async function publicRequests(opts: { nodeId?: string; limit?: number } =
         satisfied_by: r.satisfied_by,
         who_could: r.who_could,
         addressed_to: r.addressed_to,
-        bears_on: targets.filter((t) => t.request_id === r.id).map((t) => ({ id: t.id, text: t.text })),
+        bears_on: bearsOn,
         bears_on_text: r.bears_on_text,
         state_on_the_public_graph: r.state,
         filed_at: r.filed_at.toISOString(),
+        asked_of_this_graph: askedOfUs.has(r.id),
+        concerns_this_graph: askedOfUs.has(r.id) || bearsOn.some((b) => b.worked_on_here),
+        passed_on: passedOn ? { at: passedOn.passed_at.toISOString(), by: passedOn.by } : null,
         here: mine.map((a) => ({
           adoption_id: a.id,
           request_id: a.request_id,
+          label: a.label,
           adopted_at: a.adopted_at.toISOString(),
           state_here: a.state,
           taken_up_in_public_at: a.taken_up_at?.toISOString() ?? null,
@@ -277,6 +315,13 @@ export async function publicRequests(opts: { nodeId?: string; limit?: number } =
       };
     }),
     as_of: "These are the public graph's requests as the mirror last brought them. Reading them tells the public graph nothing.",
+    concerning_this_graph:
+      "Most of these are asked of anyone. concerns_this_graph marks the few that are this deployment's in particular: a request addressed to a " +
+      "mandate it published (asked_of_this_graph), or one that bears on a node it has work of its own on that you may read (worked_on_here: " +
+      "a node of its own, or a public node it has assessed, argued about, joined to another or filed a request on).",
+    passing:
+      "Passing on a request sets it aside here so that it stops waiting on anyone in this deployment. It is this deployment's own note, read by " +
+      "every member, and it says nothing outside: the request stays open on the public graph for whoever else can do it. It can be put back.",
     adopting:
       "Adopting a request makes it an ordinary request in this deployment, at a label you choose, linked to the public one. It says nothing outside, " +
       "and the work runs when it is funded here, like any work.",
@@ -309,7 +354,13 @@ export async function adoptRequest(input: { publicRequestId: string; label?: str
   if (!single) {
     if (!label) throw new OutwardError("LABEL_NEEDED", "Say which label the work on this request is to be done at: one you read. GET /labels/mine lists them.", 422);
     if (label === PUBLIC_LABEL) {
-      throw new OutwardError("LABEL_NEEDED", "A request adopted here is this deployment's own work, so it is at one of the deployment's own labels. Work at `public` on what the public graph holds is the public graph's.", 422);
+      throw new OutwardError(
+        "LABEL_NEEDED",
+        "A public request cannot be adopted at `public`. The request is about the public graph's own nodes, and their assessment at `public` is the " +
+          "public graph's to make, so work on it there is not run in this deployment. Choose one of the deployment's other labels: the work is then " +
+          "done with what that label reads, and its readers see the result.",
+        422
+      );
     }
     if (!input.actor.clearance.includes(label)) throw new OutwardError("LABEL_NOT_READ", "You do not read that label.", 403);
   }
@@ -319,6 +370,42 @@ export async function adoptRequest(input: { publicRequestId: string; label?: str
     takeUpFromBelow({ publicRequestId: pub.id }, { filer: { kind: "contributor", contributorId: input.actor.id }, contributorId: input.actor.id })
   );
   return taken!;
+}
+
+const REASON_PASS =
+  "That this deployment passed on a public request is its own note about a row of the mirror, one for the whole deployment. It is kept at `public`, where every member reads the list of public requests, and written once the route has checked that the person directs the graph.";
+const asPassNote = <T>(fn: () => Promise<T>) => withSystemClearance(REASON_PASS, fn);
+
+/**
+ * Pass on a public request: set it aside from what waits on anyone here.
+ * The mirror's row is not written to, nothing is said outside, and a
+ * request already adopted is not passed on: it is this deployment's work
+ * by then, and is closed as any request is.
+ */
+export async function passOnRequest(input: { publicRequestId: string; actor: GateActor }): Promise<{ public_request_id: string; passed_on: true; already: boolean }> {
+  const [pub] = await rawQuery<{ id: string }>(`SELECT id FROM feed_requests WHERE id = $1 AND origin = 'mirror'`, [input.publicRequestId]);
+  if (!pub) throw new OutwardError("REQUEST_NOT_FOUND", "The mirror holds no public request with that id.", 404);
+  return asPassNote(async () => {
+    const [adopted] = await rawQuery(`SELECT 1 FROM adopted_requests WHERE public_request_id = $1 LIMIT 1`, [pub.id]);
+    if (adopted) {
+      throw new OutwardError("ALREADY_ADOPTED", "This request is adopted here, so it is this deployment's own request now. Close that request instead of passing on this one.");
+    }
+    const made = await rawQuery<{ public_request_id: string }>(
+      `INSERT INTO passed_public_requests (public_request_id, passed_by, sensitivity_label) VALUES ($1, $2, $3)
+       ON CONFLICT (public_request_id) DO NOTHING RETURNING public_request_id`,
+      [pub.id, input.actor.id, PUBLIC_LABEL]
+    );
+    return { public_request_id: pub.id, passed_on: true as const, already: made.length === 0 };
+  });
+}
+
+/** Put a public request back among those that wait on somebody here. */
+export async function putBackRequest(input: { publicRequestId: string; actor: GateActor }): Promise<{ public_request_id: string; passed_on: false }> {
+  const gone = await asPassNote(() =>
+    rawQuery<{ public_request_id: string }>(`DELETE FROM passed_public_requests WHERE public_request_id = $1 RETURNING public_request_id`, [input.publicRequestId])
+  );
+  if (gone.length === 0) throw new OutwardError("NOT_PASSED_ON", "This deployment has not passed on a public request with that id.", 404);
+  return { public_request_id: input.publicRequestId, passed_on: false };
 }
 
 /**

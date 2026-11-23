@@ -11,6 +11,8 @@
  *     with what this deployment has done about each.
  *   POST /outside/requests/:public_request_id/adopt: make one an ordinary
  *     request here. Says nothing outside.
+ *   POST, DELETE /outside/requests/:public_request_id/pass: set one aside
+ *     here, or put it back; nothing is said outside.
  *   POST /outside/requests/adopted/:adoption_id/take-up, .../decline: offer
  *     to the gate to outside that the graph is taking it up, or decline it
  *     and offer that the work will not be done.
@@ -53,10 +55,12 @@ import {
   fundPublicNode,
   openPublicMandate,
   outwardLog,
+  passOnRequest,
   publicAccount,
   publicActsPermission,
   publicConversations,
   publicRequests,
+  putBackRequest,
   raisePublicNode,
   readPublicConversation,
   sayToPublicGrantmaker,
@@ -307,7 +311,9 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
       description:
         "A request records something someone could do that would improve what the graph knows, and may be addressed to whoever holds the evidence. " +
         "Reading these tells the public graph nothing. With node_id, the requests that bear on that node. Each lists the requests adopted from it " +
-        "here that you read, and whether this graph has said in public that it is taking it up.",
+        "here that you read, and whether this graph has said in public that it is taking it up. Most are asked of anyone: concerns_this_graph " +
+        "marks those addressed to a mandate this deployment published (asked_of_this_graph) or bearing on a node it has work of its own on that " +
+        "you read (worked_on_here on each node). passed_on is set where someone here set the request aside, with who and when.",
       querystring: { type: "object", properties: { node_id: UUID, limit: { type: "integer", minimum: 1, maximum: 200 } } },
     },
     preHandler: signedIn,
@@ -382,6 +388,33 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
     preHandler: inSession("direct"),
     handler: async (request, reply) =>
       tried(reply, async () => adoptRequest({ publicRequestId: request.params.public_request_id, label: request.body?.label ?? null, actor: await actorOf(request) }), true),
+  });
+
+  const directs = [app.authenticate, app.requireUser, requirePermission("direct")];
+  const PASS_PARAMS = { type: "object", required: ["public_request_id"], properties: { public_request_id: UUID } } as const;
+  app.post<{ Params: { public_request_id: string } }>("/outside/requests/:public_request_id/pass", {
+    schema: {
+      tags: TAG,
+      summary: "Pass on a public request: set it aside here, so that it stops waiting on anyone in this deployment (people who direct the graph)",
+      description:
+        "This deployment's own note, one for the whole deployment and read by every member. Nothing is said outside and the public request is " +
+        "not changed: it stays open on the public graph for whoever else can do it. A request already adopted here is not passed on; close the " +
+        "request it became. DELETE puts it back.",
+      params: PASS_PARAMS,
+    },
+    preHandler: directs,
+    handler: async (request, reply) => tried(reply, async () => passOnRequest({ publicRequestId: request.params.public_request_id, actor: await actorOf(request) })),
+  });
+
+  app.delete<{ Params: { public_request_id: string } }>("/outside/requests/:public_request_id/pass", {
+    schema: {
+      tags: TAG,
+      summary: "Put back a public request this deployment passed on (people who direct the graph)",
+      description: "The request is listed again among those open to this deployment. Nothing is said outside.",
+      params: PASS_PARAMS,
+    },
+    preHandler: directs,
+    handler: async (request, reply) => tried(reply, async () => putBackRequest({ publicRequestId: request.params.public_request_id, actor: await actorOf(request) })),
   });
 
   // The same act one layer up: a request filed at a label below one the
