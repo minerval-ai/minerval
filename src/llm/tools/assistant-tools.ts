@@ -125,6 +125,12 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   top_up_grant: "fund",
   top_up_budget_job: "fund",
   poke_correspondent: "fund",
+  // Names an address outside Minerval that will be sent deliveries under the
+  // user's account. No kind describes that, so it sits with what is filed
+  // under the user's name and always asks (ALWAYS_ASKS): an allowance to
+  // submit is not a choice of where deliveries go.
+  subscribe_events: "submit",
+  unsubscribe_events: "cancel",
   cancel_order: "cancel",
   cancel_budget_job: "cancel",
   cancel_grant: "cancel",
@@ -202,6 +208,11 @@ export const ALWAYS_ASKS: Readonly<Record<string, { when: (input: Record<string,
     when: () => true,
     reason: "It changes how the whole deployment works, for everyone in it.",
   },
+  subscribe_events: {
+    when: () => true,
+    reason:
+      "It names an address outside Minerval to be sent deliveries, and the secret they are signed with. Text the Assistant read must not be able to choose either.",
+  },
 };
 
 /** Whether this held call waits for the user's press whatever they allow (ALWAYS_ASKS). */
@@ -252,6 +263,8 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   top_up_grant: "Add to a grant's budget",
   top_up_budget_job: "Add to a funded job's budget",
   poke_correspondent: "Ask a Correspondent for an update now",
+  subscribe_events: "Send events to an address outside Minerval",
+  unsubscribe_events: "End a webhook subscription",
   cancel_order: "Cancel an order",
   cancel_budget_job: "Cancel a funded job",
   cancel_grant: "Cancel a grant",
@@ -276,6 +289,7 @@ export const RUNS_WITHOUT_ASKING: Readonly<Record<string, string>> = {
     "Free, and it says nothing outside: it sets a public request aside in this deployment's own list, where every member sees who did and can put it back.",
   put_back_public_request: "Undoes pass_on_public_request; free, and it says nothing outside.",
   query_sql: "A read; priced by database time past a free daily allowance, which its description states.",
+  poll_events: "A read: events after a cursor the caller keeps. Free, and nothing is held for the caller.",
   match_claim: "A private analysis, metered and charged as its description states; it writes nothing to the graph.",
   extract_claims: "As match_claim: private, metered, and it writes nothing to the graph.",
   assess_text: "As match_claim: private, metered, and it writes nothing to the graph.",

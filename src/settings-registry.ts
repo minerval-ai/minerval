@@ -242,6 +242,10 @@ export const SETTINGS: readonly Setting[] = [
   atStart("hosting.log_level", "LOG_LEVEL", "text", "logLevel", "How much the API writes to its own log."),
   atStart("hosting.anonymous_rate_limit_per_minute", "ANONYMOUS_RATE_LIMIT_PER_MINUTE", "number", "anonymousRateLimitPerMinute",
     "Requests a minute one address may make without credentials."),
+  // On the machine: it names hosts on the deployment's own network that the
+  // API may be made to call, which is a fact about that network and not a
+  // choice for whoever holds a permission in the app.
+  machine("hosting.webhook_allowed_hosts", "EVENT_WEBHOOK_ALLOWED_HOSTS", "list", "eventWebhookAllowedHosts", "Hosts a webhook may deliver to although their addresses are not public."),
   machineSecret("hosting.api_keys", "API_KEYS", "The service keys the API accepts, the web app's among them."),
   machineSecret("hosting.operator_key", "MINERVAL_OPERATOR_KEY", "The operator key: the way back in when every administrator is gone."),
 
@@ -424,6 +428,8 @@ export const SETTINGS: readonly Setting[] = [
   live("limits.llm_request_timeout_ms", "LLM_REQUEST_TIMEOUT_MS", "number", "llmRequestTimeoutMs", "How long one model call may take, in milliseconds.", T),
   live("limits.llm_long_run_timeout_ms", "LLM_LONG_RUN_TIMEOUT_MS", "number", "llmLongRunTimeoutMs", "How long one call of a long-run model may take, in milliseconds.", T),
   live("limits.llm_max_retries", "LLM_MAX_RETRIES", "number", "llmMaxRetries", "How many times a failed model call is tried again.", T),
+  // Webhook subscriptions to events (docs/events.md).
+  live("limits.event_webhooks_per_account", "EVENT_WEBHOOK_MAX_PER_ACCOUNT", "number", "eventWebhookMaxPerAccount", "How many webhook subscriptions an account may hold at once.", T),
 
   // ---- Read-only SQL ----
   live("sql.agent_timeout_seconds", "SQL_AGENT_TIMEOUT_SECONDS", "number", "sqlAgentTimeoutSeconds", "How long an agent's query may run.", T),

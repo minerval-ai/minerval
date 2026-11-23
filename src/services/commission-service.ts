@@ -266,7 +266,8 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
   const group = ASSESS_GROUP(input.claimId);
 
   // Already paid for: the brief joins the node's inbox at no cost, which
-  // also queues the node, so a commission stranded on a retired row runs.
+  // also queues the node. (A retired row's money comes back when it closes,
+  // #1045, so what is found here is a live commission, not a stranded one.)
   const already = async (live: LiveRow): Promise<CommissionResult> => {
     if (input.ifLive !== "leave") {
       await enqueueSteward({

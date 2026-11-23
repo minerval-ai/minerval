@@ -165,7 +165,11 @@ Reading the graph is always free.
 
 **One claim, now.** Work on the graph is paid for whole: whoever pays sets
 the budget and pays it in full, the run starts at once, and what it does
-not spend comes back. `order_assessment` buys a strong-model pass on a
+not spend comes back. That holds however the work ends: a run that stops
+short (a source that cannot be fetched, a claim its Steward parks) pays
+for what it used and returns the rest, and work closed before it ran
+returns everything, with the reason it closed. A commission buys one run;
+if the claim needs another later, that is a new decision for whoever pays. `order_assessment` buys a strong-model pass on a
 claim up to a quoted cap. `fund_claim_assessment` commissions the claim's
 next assessment at a budget your user chooses; if a pass is already
 commissioned or running, nothing is charged. If the claim is parked (its
@@ -290,7 +294,8 @@ conversation.
    conversation to adjust the part of the plan whose work has not
    started: it can replace that remainder, or change the model tier or
    budget of a single planned pass, or withdraw it, until that pass is
-   running, and a budget the pass held comes back to the escrow. Each
+   running, and a budget the pass held comes back to the escrow; so too
+   for work it or its officers commissioned directly. Each
    plan item in `get_grant` says its tier and, when it is waiting,
    blocked or cancelled, why. It holds the same refusal duties then as at
    design time. The Grantmaker's first sitting opens as soon as the

@@ -198,6 +198,7 @@ const SAMPLES: Record<string, { file: ConfigFileValue; loads?: unknown }> = {
   "hosting.environment": { file: "staging" },
   "hosting.log_level": { file: "debug" },
   "hosting.cors_origins": { file: ["https://a.test", "https://b.test"], loads: "https://a.test,https://b.test" },
+  "hosting.webhook_allowed_hosts": { file: ["receiver.internal", "hooks.internal"], loads: ["receiver.internal", "hooks.internal"] },
   "pricing.owl_packs": { file: ["3:900:Test"], loads: [{ owls: 3, priceCents: 900, name: "Test" }] },
   // Settings that only load together with others, or never beside another, keep the value
   // that loads with every other sample here; tests/unit/own-owls-config.test.ts and
@@ -569,7 +570,7 @@ describe("what a file is refused for", () => {
     expect(error.message).toBe(
       "The config file /etc/minerval.toml cannot be used, for 3 reasons:\n" +
         "  - hosting.prot is not a setting. Did you mean hosting.port? [hosting] holds: environment, web_base_url, " +
-        "api_base_url, citation_url_base, cors_origins, host, port, log_level, anonymous_rate_limit_per_minute.\n" +
+        "api_base_url, citation_url_base, cors_origins, host, port, log_level, anonymous_rate_limit_per_minute, webhook_allowed_hosts.\n" +
         '  - run_log.mode is "recrod", which is not accepted: expected one of "best_effort", "record".\n' +
         "  - hosting.api_keys is a secret, and secrets are not kept in the config file. " +
         "Set the environment variable API_KEYS instead."

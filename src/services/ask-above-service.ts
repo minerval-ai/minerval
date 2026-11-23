@@ -199,10 +199,11 @@ async function removeAbove(askedRequestId: string): Promise<void> {
     [askedRequestId, currentLabel()]
   );
   for (const t of taken) {
-    await rawQuery(
-      `UPDATE actions SET status = 'cancelled', updated_at = now() WHERE exclusion_group = $1 AND status = 'open'`,
-      [REQUEST_GROUP(t.request_id)]
-    );
+    const { cancelActions } = await import("./action-settlement.js");
+    await cancelActions({
+      group: REQUEST_GROUP(t.request_id),
+      reason: "the request taken up from below was never paid for, and is withdrawn",
+    });
     await rawQuery(`DELETE FROM requests WHERE id = $1`, [t.request_id]);
   }
 }

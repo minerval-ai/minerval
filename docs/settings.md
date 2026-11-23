@@ -384,6 +384,7 @@ still fix it. A machine setting always applies at a restart.
 | `hosting.port` | `PORT` | the machine | restart | `3000` | The port the API listens on. |
 | `hosting.log_level` | `LOG_LEVEL` | administrators | restart | `info` | How much the API writes to its own log. |
 | `hosting.anonymous_rate_limit_per_minute` | `ANONYMOUS_RATE_LIMIT_PER_MINUTE` | administrators | restart | `300` | Requests a minute one address may make without credentials. |
+| `hosting.webhook_allowed_hosts` | `EVENT_WEBHOOK_ALLOWED_HOSTS` | the machine | restart | empty | Hosts a webhook may deliver to although their addresses are not public. |
 | `hosting.api_keys` | `API_KEYS` | the machine | restart |  | The service keys the API accepts, the web app's among them. |
 | `hosting.operator_key` | `MINERVAL_OPERATOR_KEY` | the machine | restart |  | The operator key: the way back in when every administrator is gone. |
 
@@ -585,6 +586,7 @@ still fix it. A machine setting always applies at a restart.
 | `limits.llm_request_timeout_ms` | `LLM_REQUEST_TIMEOUT_MS` | administrators | live | `180000` | How long one model call may take, in milliseconds. |
 | `limits.llm_long_run_timeout_ms` | `LLM_LONG_RUN_TIMEOUT_MS` | administrators | live | `3600000` | How long one call of a long-run model may take, in milliseconds. |
 | `limits.llm_max_retries` | `LLM_MAX_RETRIES` | administrators | live | `4` | How many times a failed model call is tried again. |
+| `limits.event_webhooks_per_account` | `EVENT_WEBHOOK_MAX_PER_ACCOUNT` | administrators | live | `20` | How many webhook subscriptions an account may hold at once. |
 
 #### `sql`
 

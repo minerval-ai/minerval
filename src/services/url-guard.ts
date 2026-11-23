@@ -108,7 +108,8 @@ function isPrivateV4(ip: string): boolean {
   return PRIVATE_V4.some(([base, bits]) => inCidr4(n, base, bits));
 }
 
-function isPrivateIp(ip: string): boolean {
+/** Whether an address is one a server-side fetch must not reach: loopback, private, link-local and their kin. */
+export function isPrivateIp(ip: string): boolean {
   if (isIP(ip) === 4) return isPrivateV4(ip);
   const lower = ip.toLowerCase();
   // v4-mapped / v4-translated IPv6 — judge the embedded v4. The URL

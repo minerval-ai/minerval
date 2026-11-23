@@ -1137,10 +1137,8 @@ export async function recordVersion(release: ReleaseRow, destination: string, v:
   );
   for (const o of overtaken) {
     await rawQuery(`UPDATE received_pages SET stage = 'overtaken' WHERE id = $1`, [o.id]);
-    await rawQuery(
-      `UPDATE actions SET status = 'cancelled', updated_at = now() WHERE exclusion_group = $1 AND status = 'open'`,
-      [REDACT_GROUP(o.id)]
-    );
+    const { cancelActions } = await import("./action-settlement.js");
+    await cancelActions({ group: REDACT_GROUP(o.id), reason: "a newer version of the page overtook it" });
   }
   const pageId = await withTransaction(async (tx) => {
     const [row] = await tx.query<{ id: string; opened_at: Date }>(

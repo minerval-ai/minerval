@@ -165,10 +165,8 @@ async function pauseForFund(
       WHERE id = $1 AND status = 'active' RETURNING id`,
     [row.lookout_id]
   );
-  await rawQuery(
-    `UPDATE actions SET status = 'cancelled', updated_at = now() WHERE id = $1 AND status = 'open'`,
-    [row.action_id]
-  );
+  const { cancelAction } = await import("./action-settlement.js");
+  await cancelAction(row.action_id, "the lookout's fund cannot pay for a run, so the lookout paused");
   if (!paused) return;
   await postMessage({
     nodeId: row.node_id,

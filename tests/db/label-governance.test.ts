@@ -596,6 +596,9 @@ describe("the columns", () => {
       "eval_runs",
       // Where the subscription router has read the event log to: a number.
       "event_router_state",
+      // An account's webhook subscriptions: an address, a sealed secret, an event type and the ids
+      // and tags that narrow it. What one delivers is read at the published label each time (docs/events.md).
+      "event_webhooks",
       // The hash of the one-time code that makes the first administrator (docs/accounts.md). The owner's alone.
       "first_administrator_codes",
       // Hosting tokens for deployments Minerval provisions, kept as hashes (docs/organizations.md, "Hosted by Minerval").

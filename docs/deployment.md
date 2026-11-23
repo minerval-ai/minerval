@@ -84,7 +84,7 @@ on the machine. The secrets are:
 | `LEAN_CHECKER_TOKEN` | The secret the API and the Lean checker share, where mathematics is on ([mathematics.md](mathematics.md)). |
 | `MIRROR_SIGNING_KEY` | Only on a deployment that publishes a mirror feed: the Ed25519 private key its batches are signed with ([mirror.md](mirror.md)). |
 | `CONNECTION_...` | Each connection's credential, in a variable the connection names ([connections.md](connections.md)). There may be any number, so a file is refused for any name that begins this way. |
-| `CREDENTIAL_ENCRYPTION_KEY` | The key a credential given on a connection's page is kept sealed with: 32 random bytes in base64 (`openssl rand -base64 32`). Without it a credential can only be given in a `CONNECTION_...` variable. Losing it loses only those credentials, which are given again ([connections.md](connections.md), "A credential given here"). |
+| `CREDENTIAL_ENCRYPTION_KEY` | The key a credential given on a connection's page is kept sealed with: 32 random bytes in base64 (`openssl rand -base64 32`). Without it a credential can only be given in a `CONNECTION_...` variable. Losing it loses only those credentials, which are given again ([connections.md](connections.md), "A credential given here"). It also seals the signing secrets of webhook subscriptions; without it events are followed by poll only ([events.md](events.md)). |
 | `CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` | Keys that sealed credentials before the current one, separated by commas: they open, never seal. Kept while a key is replaced, until `scripts/reseal-connection-credentials.ts` has moved every credential to the new key. |
 
 **A file that cannot be used stops the server**, and says everything that is
@@ -288,6 +288,7 @@ on when its key is set, which is how it worked before the file existed.
 | `api_base_url` | Where this API is reached from outside. | `PUBLIC_API_BASE_URL` |
 | `citation_url_base` | Where a claim's permanent citation address starts. `""` uses `web_base_url`. | `CITATION_URL_BASE` |
 | `cors_origins` | A list of other sites whose pages may call the API from a browser. | `CORS_ORIGINS` |
+| `webhook_allowed_hosts` | A list of hosts a webhook may deliver to although their addresses are not public: a receiver on the deployment's own network ([events.md](events.md)). Empty, deliveries reach public addresses only. | `EVENT_WEBHOOK_ALLOWED_HOSTS` |
 | `host`, `port` | The address and port the API listens on. | `HOST`, `PORT` |
 | `log_level` | `"fatal"`, `"error"`, `"warn"`, `"info"`, `"debug"` or `"trace"`. | `LOG_LEVEL` |
 | `anonymous_rate_limit_per_minute` | Requests a minute one address may make without a key. | `ANONYMOUS_RATE_LIMIT_PER_MINUTE` |

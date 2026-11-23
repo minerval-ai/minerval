@@ -904,6 +904,20 @@ const configSchema = z.object({
     .string()
     .transform((s) => s !== "false")
     .prefault("true"),
+  // Webhook subscriptions to events (services/event-webhook-service.ts;
+  // docs/events.md). An account may hold this many at once. A count and
+  // not a price, because nothing meters what it bounds: every live
+  // subscription is matched against every event on the log and swept every
+  // quarter hour, whoever holds it. The tool that makes one states the
+  // number, and a refusal names it.
+  eventWebhookMaxPerAccount: z.coerce.number().int().min(0).default(20),
+  // Hosts a webhook may deliver to although their addresses are not public,
+  // separated by commas or spaces: a receiver on the deployment's own
+  // network. Empty, a delivery reaches public addresses only.
+  eventWebhookAllowedHosts: z
+    .string()
+    .transform((s) => s.split(/[\s,]+/).map((h) => h.trim().toLowerCase()).filter(Boolean))
+    .prefault(""),
   // The retraction poller (workers/lookout-triggers.ts): how often to ask
   // Crossref for retractions and corrections added since the last poll and
   // match them against the graph's sources (0 disables). Each match queues
@@ -1913,6 +1927,8 @@ function buildConfig(env: NodeJS.ProcessEnv): Config {
       env.MANDATE_REVIEW_MOVE_FRACTION_PER_DAY,
     lookoutRunsEnabled: env.LOOKOUT_RUNS_ENABLED,
     correspondentRunsEnabled: env.CORRESPONDENT_RUNS_ENABLED,
+    eventWebhookMaxPerAccount: env.EVENT_WEBHOOK_MAX_PER_ACCOUNT,
+    eventWebhookAllowedHosts: env.EVENT_WEBHOOK_ALLOWED_HOSTS,
     lookoutRetractionPollHours: env.LOOKOUT_RETRACTION_POLL_HOURS,
     lookoutFeedPollMaxFeeds: env.LOOKOUT_FEED_POLL_MAX_FEEDS,
     allocationSweepIntervalHours: env.ALLOCATION_SWEEP_INTERVAL_HOURS,

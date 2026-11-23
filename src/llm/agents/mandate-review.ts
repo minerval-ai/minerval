@@ -666,7 +666,8 @@ async function runMandateReviewImpl(input: {
     `tools and yours alike; running work frees what it leaves as it finishes` +
     `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
     `(grant_overview itemises, with each item's index, tier, budget and reason; "done" counts the ` +
-    `items whose work ran; amend_plan_items changes or withdraws a standing order until its pass is running).\n\n` +
+    `items whose work ran; amend_plan_items changes or withdraws a standing order until its pass is running, ` +
+    `and amend_commissions a commission placed directly until its row is running).\n\n` +
     (reflection ? `${reflection}\n\n` : ``) +
     `Start from what happened, not from scratch. The sections above are what your money did and ` +
     `where the agents doing the work told you it fell short. Where a shortfall recurs, fix its cause ` +

@@ -14,6 +14,10 @@ settings:
       note: "The name of the label for the organization's own material that every member reads (MEMBERS_LABEL). Leave it unset unless the deployment had already defined a label named members."
     - key: accounts.published_label
       note: "The name of the label for what the organization released outside (PUBLISHED_LABEL). Leave it unset unless the deployment had already defined a label named published."
+    - key: limits.event_webhooks_per_account
+      note: "How many webhook subscriptions to events an account may hold at once (EVENT_WEBHOOK_MAX_PER_ACCOUNT). Starts at 20."
+    - key: hosting.webhook_allowed_hosts
+      note: "Hosts a webhook may deliver to although their addresses are not public (EVENT_WEBHOOK_ALLOWED_HOSTS): a receiver on the deployment's own network. Set on the machine. Empty, the starting value, reaches public addresses only."
     - key: model_providers.allowed
       note: "The model providers the deployment may call at all (MODEL_PROVIDERS_ALLOWED). Empty, the starting value, allows every one."
     - key: model_providers.bedrock_region

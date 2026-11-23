@@ -135,6 +135,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/deployment-fault-service.ts:lastNoted": "When each platform fault was last noted, keyed by its reason and provider, so that one outage is recorded once and not at every failed call. Times and counts; no rows.",
   "src/services/deployment-fault-service.ts:lastTickAt": "A time: when this process last looked for faults that have cleared.",
   "src/services/subscription-router.ts:routing": "The one routing of events in flight in this process. A promise of a count.",
+  "src/services/event-webhook-service.ts:ticking": "The one delivery tick in flight in this process. A promise of two counts.",
   "src/services/assistant-service.ts:pendingTurns": "The turns in flight, kept so that shutdown and tests can wait for them. Promises of nothing.",
   "src/services/claim-events-service.ts:listeners": "The functions to tell when a claim event fires. Nothing in src registers one. A listener added later is handed events at every label and must hold what it passes on to what its own reader may read.",
   "src/services/github-issue-service.ts:closureCursor": "How far the tracker's closed issues have been read: a cursor of the tracker's.",

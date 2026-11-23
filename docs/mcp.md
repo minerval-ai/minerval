@@ -18,6 +18,12 @@ Single stateless JSON-RPC endpoint (the current streamable-HTTP remote-MCP
 transport). There is no SSE resumption stream and no session state: `GET` and
 `DELETE` return 405. Locally the endpoint is `http://localhost:3000/mcp`.
 
+A stateless endpoint sends nothing unasked, so a client is not told of
+changes over the connection. It follows them by poll or by webhook
+instead: [events.md](events.md), which also covers the Events extension's
+own methods (`events/list`, `events/poll`, `events/subscribe`,
+`events/unsubscribe`) that this endpoint answers.
+
 ## Authentication
 
 Two ways in; every call is attributed to an account either way.
@@ -577,6 +583,12 @@ read of a claim, use a card.
   `get_correspondent_update`, `poke_correspondent` (the mandate's manager).
   The Atom feed (`GET /correspondents/:id/feed`) is the same updates as
   `list_correspondent_updates`, and is not a tool.
+- **Events ([events.md](events.md)):** `list_event_types` (what can be
+  followed, and how each is delivered), `poll_events` (events of one type
+  after a cursor the caller keeps; a read, sent as POST), `subscribe_events`
+  (a webhook: an https address is POSTed each event, signed; at most 20 an
+  account, each ending unless refreshed), `list_event_subscriptions`,
+  `unsubscribe_events`. A webhook carries what anyone may read; all are free.
 - **Sources:** `submit_source` (reviewed before extraction), `list_sources`
   (the sources the caller may read, newest first, each with its label,
   party, who added it and where it stands: waiting for review, not

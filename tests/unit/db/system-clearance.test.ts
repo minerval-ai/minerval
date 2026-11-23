@@ -100,6 +100,24 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A connect request, the deployment an admin approved with its grants and the organization's log entry for it, the nonces of signed writes, and the record of those writes: all for a key whose signature was checked or an admin of the organization. Nothing that carries a label.",
     ],
   ],
+  "src/services/event-webhook-service.ts": [
+    [
+      "A webhook subscription is the account's own record, kept on the owner's connection as an API key is; making one reads the account's standing and its other subscriptions, none of which carries a label.",
+      "event_webhooks, api_keys and permission_grants for one account: none carries a label. What the subscription will deliver is not read here; the one read of the graph (that the Correspondent exists) and the router's row are made at the published label, inside runAtLabel.",
+    ],
+    [
+      "Ending a webhook subscription removes the account's own record and its row for the router, found by id.",
+      "One row of event_webhooks, matched on the account's id, and the subscriptions row it names.",
+    ],
+    [
+      "An account's webhook subscriptions are its own records and carry no label.",
+      "Rows of event_webhooks for one account. No secret is returned.",
+    ],
+    [
+      "The delivery tick finds every due webhook subscription, whoever holds it, and checks each account's standing; what it sends is read at the published label.",
+      "event_webhooks at large, and standing for each account. Every read of the graph for a delivery is inside runAtLabel at the published label, which leaves this clearance, so nothing but what anyone may read can reach a callback address.",
+    ],
+  ],
   "src/services/public-graph-client.ts": [
     [
       "The deployment's connection key is the owner's alone; it is read to sign a request to the public graph and goes nowhere else.",

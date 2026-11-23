@@ -33,6 +33,7 @@ const STATE_LABEL: Record<string, string> = {
   waiting: "commissioned",
   running: "running",
   settled: "finished",
+  stranded: "closed, being returned",
 };
 
 /** What a settled pass concluded (#1027); the full sentence is the cell's title. */
@@ -138,11 +139,14 @@ export function SpendingSection({
                           <span className="tag">{words(c.kind)}</span>{" "}
                           {c.claim_id ? <Link href={`/claims/${c.claim_id}`}>{c.label}</Link> : c.label}
                           {c.reason && <span className="alloc-marginal"> {c.reason}</span>}
+                          {c.ended_because && (
+                            <span className="alloc-marginal"> Cancelled: {c.ended_because}; the unspent budget went back.</span>
+                          )}
                         </td>
                         <td>{words(c.commissioned_by)}</td>
                         <td className="acct-num">{owls(c.budget_owls)}</td>
                         <td className="acct-num">{owls(c.spent_owls)}</td>
-                        <td>{STATE_LABEL[c.state] ?? c.state}</td>
+                        <td>{c.ended_because && c.state === "settled" ? "cancelled" : (STATE_LABEL[c.state] ?? c.state)}</td>
                         <td title={c.outcome ?? undefined}>
                           {c.outcome_kind ? OUTCOME_LABEL[c.outcome_kind] ?? words(c.outcome_kind) : ""}
                         </td>

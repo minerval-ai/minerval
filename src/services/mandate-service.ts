@@ -993,8 +993,13 @@ export interface OperationsCommissionRow {
   commissioned_by: string;
   budget_owls: number;
   spent_owls: number;
-  /** waiting: commissioned, not yet started; running; settled: finished and refunded. */
-  state: "waiting" | "running" | "settled";
+  /**
+   * waiting: commissioned, not yet started; running; settled: the row
+   * closed and what it did not spend went back; stranded: the row closed
+   * and the money is still held, which the ledger's sweep returns within
+   * minutes (settleDeadGroups, #1045).
+   */
+  state: "waiting" | "running" | "settled" | "stranded";
   /**
    * What the run concluded, once settled, in a reader's words (#1027): a new
    * assessment, a logged decision that the one in force stands, a pause, or
@@ -1004,6 +1009,8 @@ export interface OperationsCommissionRow {
   /** The outcome's kind (llm/agents/pass-outcome.ts), for sorting and display. */
   outcome_kind: string | null;
   reason: string | null;
+  /** Why the row closed without finishing, when it was cancelled. */
+  ended_because: string | null;
   created_at: string;
 }
 
@@ -1258,12 +1265,14 @@ export async function getMandateAllocationView(
       status: string;
       outcome: PassOutcome | null;
       reason: string | null;
+      closed_reason: string | null;
       created_at: string;
       total: number;
     }>(
       `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by, a.outcome,
               al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
               (al.released_at IS NOT NULL OR al.spent_micro_usd >= al.amount_micro_usd) AS released, a.status, al.reason,
+              a.closed_reason,
               al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
          FROM action_allocations al JOIN actions a ON a.id = al.action_id
         WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate'
@@ -1348,10 +1357,17 @@ export async function getMandateAllocationView(
       commissioned_by: c.commissioned_by,
       budget_owls: microUsdToOwls(Number(c.amount)),
       spent_owls: microUsdToOwls(Number(c.spent)),
-      state: c.released ? "settled" : c.status === "running" ? "running" : "waiting",
+      state: c.released
+        ? "settled"
+        : c.status === "running"
+          ? "running"
+          : c.status === "open"
+            ? "waiting"
+            : "stranded",
       outcome: c.outcome ? outcomeClause(c.outcome) : null,
       outcome_kind: c.outcome?.kind ?? null,
       reason: c.reason,
+      ended_because: c.status === "cancelled" ? c.closed_reason : null,
       created_at: c.created_at,
     })),
     more: Math.max(0, total - offset - commissions.length),

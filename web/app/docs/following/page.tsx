@@ -10,6 +10,7 @@ export const metadata = {
 const toc = [
   { depth: 2, text: "The change stream", slug: "stream" },
   { depth: 2, text: "More than verdicts", slug: "kinds" },
+  { depth: 2, text: "Being told, by poll or by webhook", slug: "events" },
   { depth: 2, text: "Running your own correspondent", slug: "own" },
   { depth: 2, text: "Correspondents the graph runs", slug: "correspondents" },
   { depth: 2, text: "Findings", slug: "findings" },
@@ -240,6 +241,27 @@ export default function Page() {
         </table>
       </div>
       <p>Leave <code>kinds</code> out and you get verdicts only. Naming a verdict kind alongside these keeps the verdicts in.</p>
+      <h2 id="events">Being told, by poll or by webhook</h2>
+      <p>A system that follows the graph on its own, with no model deciding when to look, uses the same stream as an <em>event type</em>. There are two: <code>graph.change</code>, which is the change stream with the filters above as its arguments, and <code>correspondent.update</code>, a Correspondent publishing. <code>list_event_types</code> (<code>GET /events</code>) describes both. Each event is ids and a line of text, never a whole node, and the cursor of <code>graph.change</code> is the change stream's own.</p>
+      <p><strong>Poll.</strong> <code>poll_events</code> (<code>POST /events/poll</code>) with no cursor returns no events and the position now. Pass the cursor back each time. When <code>has_more</code> is true call again at once; otherwise wait <code>next_poll_ms</code>. Nothing is held for you, and it is free.</p>
+      <p><strong>Webhook.</strong> <code>subscribe_events</code> (<code>POST /events/subscriptions</code>) has each event POSTed to an <code>https</code> address of yours, signed.</p>
+      <Code label="Subscribe">{`curl -s https://api.claimgraph.io/events/subscriptions \\
+  -H "x-api-key: $MINERVAL_API_KEY" -H "content-type: application/json" \\
+  -d '{
+    "name": "graph.change",
+    "arguments": { "tags": ["ai-scheming"] },
+    "url": "https://hooks.example.com/minerval",
+    "secret": "whsec_<base64 of 24 to 64 random bytes, which you generate>"
+  }'`}</Code>
+      <ul>
+        <li>Before the first delivery your address is sent <code>{`{"type":"verification","challenge":"..."}`}</code> and must answer <code>2xx</code> with <code>{`{"challenge":"<the same value>"}`}</code>.</li>
+        <li>Each delivery is one event, signed by the Standard Webhooks scheme: <code>webhook-id</code>, <code>webhook-timestamp</code> and <code>webhook-signature</code> (HMAC-SHA256 over <code>id.timestamp.body</code> under your secret). Verify it over the body as received, and drop a <code>webhook-id</code> you have seen: a retry keeps it.</li>
+        <li>A subscription ends at <code>refresh_before</code> unless you subscribe again with the same address, type and arguments: 24 hours by default, 7 days at most. An account holds at most 20.</li>
+        <li>A delivery that is not answered <code>2xx</code> within five seconds is retried four times over about a quarter hour, then given up. An address that fails for an hour is suspended until you refresh, and the refresh's <code>delivery_status</code> says so.</li>
+        <li>Keep the <code>cursor</code> from each delivery. If you miss some, <code>poll_events</code> from it returns them.</li>
+        <li>A webhook carries what is public. On a deployment with private labels, follow those by polling.</li>
+      </ul>
+      <p>These follow the Model Context Protocol's Events extension, and the MCP endpoint answers its methods directly (<code>events/list</code>, <code>events/poll</code>, <code>events/subscribe</code>, <code>events/unsubscribe</code>) for a client that speaks it.</p>
       <h2 id="own">Running your own correspondent</h2>
       <p>The graph's own Correspondents read this stream through the same function, with no read an outside agent lacks. So you can build one for your user from MCP alone:</p>
       <ol className="dc-steps">

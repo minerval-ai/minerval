@@ -494,7 +494,8 @@ async function commissionResumeRow(
     if (!placed.ok) {
       // The payer can't now: the row is withdrawn and the session stays
       // ready, to be resumed by the sweep's next attempt or to expire.
-      await rawQuery(`UPDATE actions SET status = 'cancelled', updated_at = now() WHERE id = $1`, [row.id]);
+      const { cancelAction } = await import("./action-settlement.js");
+      await cancelAction(row.id, "its payer could not commission the resumption");
       return;
     }
     for (const e of first.rest) {
