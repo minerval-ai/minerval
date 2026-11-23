@@ -217,9 +217,13 @@ vi.mock("../../../src/db/client.js", () => ({
   rawQuery: async () => [],
 }));
 
-// The three adapters. The one the test's model id routes to records that it
+// The adapters. The one the test's model id routes to records that it
 // was reached.
-vi.mock("../../../src/llm/providers/anthropic.js", () => ({ anthropicAdapter: { name: "anthropic" } }));
+vi.mock("../../../src/llm/providers/anthropic.js", () => ({
+  anthropicAdapter: { name: "anthropic" },
+  // Bedrock and Vertex are the Anthropic adapter with another client.
+  messagesApiAdapter: (platform: { name: string }) => ({ name: platform.name }),
+}));
 vi.mock("../../../src/llm/providers/openai.js", () => ({ openaiAdapter: { name: "openai" } }));
 vi.mock("../../../src/llm/providers/openrouter.js", async () => {
   const { requireLoggedRun } = await import("../../../src/llm/logged-run.js");

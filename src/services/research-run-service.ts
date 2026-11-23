@@ -52,7 +52,13 @@ export function requestWorkTier(
   label: string,
   config: Pick<
     ReturnType<typeof loadConfig>,
-    "researcherStrongModel" | "anthropicApiKey" | "openaiApiKey" | "openrouterApiKey" | "providerLabels"
+    | "researcherStrongModel"
+    | "anthropicApiKey"
+    | "openaiApiKey"
+    | "openrouterApiKey"
+    | "bedrockRegion"
+    | "vertexRegion"
+    | "providerLabels"
   > = loadConfig()
 ): "strong" | "standard" {
   const provider = resolveProvider(config.researcherStrongModel);
@@ -61,6 +67,8 @@ export function requestWorkTier(
     provider === "anthropic" ? !!config.anthropicApiKey
     : provider === "openai" ? !!config.openaiApiKey
     : provider === "openrouter" ? !!config.openrouterApiKey
+    : provider === "bedrock" ? !!config.bedrockRegion
+    : provider === "vertex" ? !!config.vertexRegion
     : true; // A declared endpoint is the deployment's own, checked when the configuration loads.
   return keyed && providerClearedFor(provider, label, config) ? "strong" : "standard";
 }

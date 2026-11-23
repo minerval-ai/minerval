@@ -4,7 +4,9 @@ import {
   ACCEPTED_MODEL_ID_SHAPES,
   isSupportedModelId,
   parseEndpointModelId,
+  platformModelId,
   providerForModel,
+  speaksMessagesApi,
   resolveProvider,
   unresolvableModelIdMessage,
 } from "../../../../src/llm/providers/routing.js";
@@ -41,6 +43,37 @@ describe("resolveProvider — the routing table", () => {
     expect(isSupportedModelId("us.anthropic.claude-sonnet-5")).toBe(false);
   });
 
+  it("routes bedrock: and vertex: to Claude on those clouds", () => {
+    expect(resolveProvider("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toBe("bedrock");
+    expect(resolveProvider("bedrock:global.anthropic.claude-sonnet-5-5")).toBe("bedrock");
+    expect(resolveProvider("bedrock:anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("bedrock");
+    expect(resolveProvider("bedrock:us-gov.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe("bedrock");
+    expect(resolveProvider("vertex:claude-opus-5-5")).toBe("vertex");
+    expect(resolveProvider("vertex:claude-sonnet-4-5@20250929")).toBe("vertex");
+    // What follows the prefix is the model as the cloud knows it.
+    expect(platformModelId("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toBe("us.anthropic.claude-opus-5-5-v1:0");
+    expect(platformModelId("vertex:claude-sonnet-4-5@20250929")).toBe("claude-sonnet-4-5@20250929");
+    expect(platformModelId("claude-opus-5-5")).toBe("claude-opus-5-5");
+  });
+
+  it("resolves nothing for a cloud id that names no Claude model, and never falls through", () => {
+    expect(resolveProvider("bedrock:meta.llama3-70b-instruct-v1:0")).toBeNull();
+    expect(resolveProvider("bedrock:")).toBeNull();
+    expect(resolveProvider("vertex:gemini-3-pro")).toBeNull();
+    // A slash after the prefix does not make it an OpenRouter id.
+    expect(resolveProvider("vertex:anthropic/claude-opus-5-5")).toBeNull();
+    // A bare Vertex-style id 404s on Anthropic's API, so it is not Anthropic's.
+    expect(resolveProvider("claude-sonnet-4-5@20250929")).toBeNull();
+  });
+
+  it("says which providers speak the Messages API", () => {
+    expect(speaksMessagesApi("anthropic")).toBe(true);
+    expect(speaksMessagesApi("bedrock")).toBe(true);
+    expect(speaksMessagesApi("vertex")).toBe(true);
+    expect(speaksMessagesApi("openrouter")).toBe(false);
+    expect(speaksMessagesApi(null)).toBe(false);
+  });
+
   it("resolves nothing for other unrecognized shapes", () => {
     expect(resolveProvider("")).toBeNull();
     expect(resolveProvider("llama-3-70b")).toBeNull();
@@ -50,10 +83,25 @@ describe("resolveProvider — the routing table", () => {
 });
 
 describe("error messages", () => {
-  it("keeps the Bedrock-specific hint", () => {
+  it("keeps the Bedrock-specific hint, and names the prefix that reaches Bedrock", () => {
     const message = unresolvableModelIdMessage("us.anthropic.claude-sonnet-5");
     expect(message).toContain("Bedrock");
+    expect(message).toContain('"bedrock:us.anthropic.claude-sonnet-5"');
     expect(message).toContain(ACCEPTED_MODEL_ID_SHAPES);
+  });
+
+  it("names the prefix that reaches Vertex for a bare Vertex-style id", () => {
+    const message = unresolvableModelIdMessage("claude-sonnet-4-5@20250929");
+    expect(message).toContain('"vertex:claude-sonnet-4-5@20250929"');
+  });
+
+  it("says what a Bedrock or Vertex id must name when it names no Claude model", () => {
+    expect(unresolvableModelIdMessage("bedrock:meta.llama3-70b-instruct-v1:0")).toMatch(
+      /does not name a Claude model on Amazon Bedrock/
+    );
+    expect(unresolvableModelIdMessage("vertex:gemini-3-pro")).toMatch(
+      /does not name a Claude model on Google Vertex AI/
+    );
   });
 
   it("names the three accepted shapes for anything else", () => {
@@ -120,7 +168,8 @@ describe("the endpoint shape: endpoint:<name>/<model>", () => {
   it("leaves the message for every other id as it was", () => {
     expect(unresolvableModelIdMessage("llama-3-70b")).toBe(
       '"llama-3-70b" does not resolve to a known provider. Use an Anthropic ID ("claude-…"), an ' +
-        'OpenAI ID ("gpt-…" or "o3"), or an OpenRouter "vendor/model" ID (e.g. "qwen/qwen3-235b-a22b").'
+        'OpenAI ID ("gpt-…" or "o3"), an OpenRouter "vendor/model" ID (e.g. "qwen/qwen3-235b-a22b"), ' +
+        'or Claude on Amazon Bedrock or Google Vertex ("bedrock:us.anthropic.claude-…", "vertex:claude-…").'
     );
   });
 });

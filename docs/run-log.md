@@ -95,8 +95,12 @@ the document, the same whoever asks, and carry the document's label even
 when a run's fetch produced them.
 
 `provider` is what served the run's model: `anthropic`, `openai`,
-`openrouter`, or `endpoint:<name>` for an endpoint the deployment runs
-itself, as the model id resolved (docs/architecture.md, "Providers"). A run
+`openrouter`, `bedrock` or `vertex` for Claude on the deployment's own
+Amazon Bedrock or Google Vertex account, or `endpoint:<name>` for an
+endpoint the deployment runs itself, as the model id resolved
+(docs/architecture.md, "Providers"). The model id beside it is the one as
+configured, so a Bedrock or Vertex run records the cloud's own id for the
+model as well (`bedrock:us.anthropic.claude-opus-5-5-v1:0`). A run
 is served only by a provider cleared for the label it works at
 (docs/architecture.md, "Providers cleared by label"), and the label and the
 provider together are what a later reader needs to check that this held for

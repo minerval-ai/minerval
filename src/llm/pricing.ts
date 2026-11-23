@@ -22,6 +22,14 @@
  * them; where neither states one, a read is 0.1× input, an Anthropic write
  * 1.25×, and an OpenAI write nothing (OpenAI billed none before GPT-5.6).
  *
+ * Claude on Amazon Bedrock and Google Vertex ("bedrock:…", "vertex:…") meters
+ * at the catalog's price for the Claude model the id names (models.ts,
+ * claudeModelName): both list Claude at Anthropic's prices on their global
+ * endpoints. Their regional endpoints, and a rate the deployment has
+ * negotiated with its cloud, cost more or less; a deployment that pays one
+ * states it in MODEL_PRICES against the id as it configures it
+ * ("bedrock:us.anthropic.claude-opus-5-5"), which wins over the catalog.
+ *
  * OpenRouter models are not (and need not be) in the catalog — hundreds of
  * third-party models with their own prices. That adapter reports the provider's
  * OWN computed cost, which overrides everything here; see
@@ -38,7 +46,15 @@ import { loadConfig } from "../config.js";
 import { modelPriceExample, type StatedModelPrice } from "./model-prices.js";
 import { PRICE_SNAPSHOT } from "./price-snapshot.js";
 import type { Catalog, ModelPrice } from "./price-sources.js";
+import { claudeModelName } from "./models.js";
 import { resolveProvider } from "./providers/routing.js";
+
+/** The providers whose calls are priced from the catalog (the rest report or declare their cost). */
+function catalogPriced(provider: string | null): boolean {
+  return (
+    provider === "anthropic" || provider === "openai" || provider === "bedrock" || provider === "vertex"
+  );
+}
 
 interface ModelRates {
   /** USD per 1M uncached input tokens. */
@@ -106,8 +122,13 @@ const DEFAULT_CACHE_WRITE_MULTIPLIER = 1.25;
  * its price is not known, not that it is "gpt-4.1"'s. Such a model meters at
  * the fallback rate, and is refused where a deployment creates its owls.
  */
-function catalogEntryRates(model: string): ModelRates | null {
+function catalogEntryRates(configured: string): ModelRates | null {
   const { catalog } = priceCatalog();
+  // A Bedrock or Vertex id is priced as the Claude model it names.
+  const model = configured.startsWith("bedrock:") || configured.startsWith("vertex:")
+    ? claudeModelName(configured)
+    : configured;
+  if (!model) return null;
   const exact = catalog[model];
   if (exact) return catalogRates(exact);
   const dated = /^(.+?)(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/.exec(model);
@@ -164,16 +185,16 @@ export function hasExplicitRates(model: string): boolean {
 
 /**
  * Whether a call to the model has a price: the catalog or the deployment
- * states one, or its provider prices each call itself. Only the two
- * providers priced from the catalog (Anthropic and OpenAI) can lack one. A
+ * states one, or its provider prices each call itself. Only the providers
+ * priced from the catalog (Anthropic, OpenAI, and Claude on Bedrock and
+ * Vertex) can lack one. A
  * provider that reports its own cost (OpenRouter), and an endpoint a
  * deployment declares with its prices, are priced by what they report or
  * declare. A model ID that resolves to no provider is not this function's
  * to refuse: routing does, with its own message.
  */
 export function modelIsPriced(model: string): boolean {
-  const provider = resolveProvider(model);
-  if (provider !== "anthropic" && provider !== "openai") return true;
+  if (!catalogPriced(resolveProvider(model))) return true;
   return hasExplicitRates(model);
 }
 
@@ -217,7 +238,7 @@ export function unpricedConfiguredModels(
 export function priceOrigin(model: string): "stated" | "catalog" | "provider" | "none" {
   if (statedPriceFor(model)) return "stated";
   const provider = resolveProvider(model);
-  if (provider !== "anthropic" && provider !== "openai") return provider ? "provider" : "none";
+  if (!catalogPriced(provider)) return provider ? "provider" : "none";
   return catalogEntryRates(model) ? "catalog" : "none";
 }
 

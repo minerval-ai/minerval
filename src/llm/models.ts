@@ -4,8 +4,13 @@
  *
  * The Anthropic adapter (src/llm/providers/anthropic.ts) talks to the Messages
  * API directly, which only accepts plain IDs like "claude-sonnet-4-6".
- * Bedrock/Vertex-style IDs ("us.anthropic.claude-...") 404 there and resolve to
- * no provider at all, so config rejects them (see issue #11).
+ * Bedrock- and Vertex-style IDs ("us.anthropic.claude-...", "claude-...@date")
+ * 404 there. They reach Claude on Amazon Bedrock and Google Vertex with a
+ * prefix saying which ("bedrock:…", "vertex:…"; providers/routing.ts), and a
+ * bare Bedrock-style ID resolves to no provider, so config rejects it with a
+ * message naming the prefix (issue #11). The behaviours below key off the
+ * Claude model a Bedrock or Vertex ID names (claudeModelName), so Claude is
+ * treated the same on all three.
  *
  * These are the Anthropic DEFAULTS. Any agent can be pointed at another
  * provider with its *_MODEL env var — which backend an ID routes to is decided
@@ -129,6 +134,36 @@ export function isAnthropicModelId(id: string): boolean {
   return /^claude-/.test(id);
 }
 
+/** What a Bedrock model id for Claude begins with once its "bedrock:" prefix is gone. */
+const BEDROCK_CLAUDE_ID = /^(?:[a-z]{2,6}(?:-[a-z]{2,4})?\.)?anthropic\.(claude-[a-z0-9-]+?)(?:-v\d+(?::\d+)?)?$/;
+/** A Vertex model id for Claude once its "vertex:" prefix is gone: "claude-…", optionally "@<version>". */
+const VERTEX_CLAUDE_ID = /^(claude-[a-z0-9-]+)(?:@([a-z0-9-]+))?$/;
+
+/**
+ * The Claude model an ID names, as the Anthropic API spells it, or null when
+ * it names no Claude model: "claude-…" itself; a Bedrock ID
+ * ("bedrock:us.anthropic.claude-opus-5-5-v1:0" is "claude-opus-5-5", the
+ * geography and the "-v1:0" version dropped); a Vertex ID
+ * ("vertex:claude-sonnet-4-5@20250929" is "claude-sonnet-4-5-20250929", a
+ * dated version written the Anthropic API's way, "@default" dropped). What
+ * a model can be sent, and its price in the catalog, are the Claude
+ * model's wherever it is served.
+ */
+export function claudeModelName(id: string): string | null {
+  const trimmed = id.trim();
+  if (isAnthropicModelId(trimmed)) return trimmed;
+  if (trimmed.startsWith("bedrock:")) {
+    const m = BEDROCK_CLAUDE_ID.exec(trimmed.slice("bedrock:".length));
+    return m ? m[1]! : null;
+  }
+  if (trimmed.startsWith("vertex:")) {
+    const m = VERTEX_CLAUDE_ID.exec(trimmed.slice("vertex:".length));
+    if (!m) return null;
+    return m[2] && /^\d{8}$/.test(m[2]) ? `${m[1]}-${m[2]}` : m[1]!;
+  }
+  return null;
+}
+
 /**
  * Whether a model accepts the `temperature` request parameter. The Claude 5
  * family (Opus 5.5, Fable 5.2, Sonnet 5.5, Haiku 5.5) and Opus 4.7+ reject
@@ -142,7 +177,7 @@ export function isAnthropicModelId(id: string): boolean {
  * audit). Omitting the parameter is always safe.
  */
 export function modelAcceptsTemperature(id: string): boolean {
-  return /^claude-(haiku-4|sonnet-4)-/.test(id);
+  return /^claude-(haiku-4|sonnet-4)-/.test(claudeModelName(id) ?? "");
 }
 
 /**
@@ -152,7 +187,7 @@ export function modelAcceptsTemperature(id: string): boolean {
  * solver's *_MODEL elsewhere should fail at config load, not hours into a run.
  */
 export function modelSupportsLongRun(id: string): boolean {
-  return /^claude-(fable|mythos|opus-5)/.test(id);
+  return /^claude-(fable|mythos|opus-5)/.test(claudeModelName(id) ?? "");
 }
 
 /**
@@ -167,18 +202,19 @@ export function modelSupportsLongRun(id: string): boolean {
  * that does see needs its family added here.
  */
 export function modelSeesImages(id: string): boolean {
-  if (isAnthropicModelId(id)) return true;
+  if (claudeModelName(id)) return true;
   if (/^gpt-(4o|4\.1|[5-9])/.test(id)) return true;
   return /^(openai\/gpt-(4o|4\.1|[5-9])|anthropic\/claude-|google\/gemini-)/.test(id);
 }
 
 /**
  * Whether a tool may hand the model a PDF as a document block, each page
- * read as text and as an image. Only the Anthropic adapter sends one; the
- * OpenAI-shaped paths have no translation for it (providers/openai-dialect.ts).
+ * read as text and as an image. Only the Messages API adapters (Anthropic,
+ * Bedrock, Vertex) send one; the OpenAI-shaped paths have no translation for
+ * it (providers/openai-dialect.ts).
  */
 export function modelReadsPdfDocuments(id: string): boolean {
-  return isAnthropicModelId(id);
+  return claudeModelName(id) !== null;
 }
 
 /**
@@ -191,6 +227,6 @@ export function modelReadsPdfDocuments(id: string): boolean {
  * higher figure is used for them, as the estimate an agent should budget to.
  */
 export function modelImageTokenCap(id: string): number {
-  if (/^claude-(haiku-4|sonnet-4|opus-4-[0-6])/.test(id)) return 1568;
+  if (/^claude-(haiku-4|sonnet-4|opus-4-[0-6])/.test(claudeModelName(id) ?? "")) return 1568;
   return 4784;
 }

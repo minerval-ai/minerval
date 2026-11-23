@@ -1821,14 +1821,49 @@ Which backend serves a call is decided by the **shape of the model id**
 
 | ID shape | Provider | Example |
 |----------|----------|---------|
+| `bedrock:…` | Claude on Amazon Bedrock (`@anthropic-ai/bedrock-sdk`) | `bedrock:us.anthropic.claude-opus-5-5-v1:0` |
+| `vertex:…` | Claude on Google Vertex AI (`@anthropic-ai/vertex-sdk`) | `vertex:claude-opus-5-5`, `vertex:claude-sonnet-4-5@20250929` |
 | `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-opus-5-5` |
 | `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
 | `endpoint:<name>/…` | an endpoint the deployment runs itself (below) | `endpoint:local/meta-llama/Llama-3.3-70B-Instruct` |
 | contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
 | anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
 
-Bedrock/Vertex-prefixed ids resolve to nothing and are rejected with a specific
-message — they 404 against the Anthropic API (issue #11).
+A bare Bedrock- or Vertex-style id (`us.anthropic.claude-…`,
+`claude-…@20250929`) resolves to nothing and is rejected with a message
+naming the prefix it needs: without one it 404s against the Anthropic API
+(issue #11).
+
+**Claude on a cloud the deployment holds.** A deployment that runs its
+agents on its own AWS or Google Cloud account reaches Claude there:
+`bedrock:` and then Bedrock's id for the model or its inference profile,
+or `vertex:` and then Vertex's id. The prefix is needed because a Vertex
+id begins `claude-`, which is Anthropic's own shape. Both clouds serve
+Claude through the Anthropic Messages API, so `providers/bedrock.ts` and
+`providers/vertex.ts` are the Anthropic adapter (`messagesApiAdapter` in
+`providers/anthropic.ts`) with Anthropic's client for that cloud, sending
+what follows the prefix as the model: prompt caching, `effort`, native
+structured output, images and PDFs, and the long-run loop are the same as
+on Anthropic. What is Anthropic's own (below) is not: its server tools
+(web search, the code-execution sandbox) are offered by provider name, so
+a Bedrock or Vertex model gets the client-side `web_search` and no
+sandbox. What a model can be sent is judged by the Claude model the id
+names (`claudeModelName` in `src/llm/models.ts`). Only Claude is served
+this way; other vendors' models on these clouds speak other APIs.
+Credentials are the cloud's: AWS's credential chain or a Bedrock API key
+(`AWS_BEARER_TOKEN_BEDROCK`), and Google's application default credentials.
+The region (`BEDROCK_REGION`, `VERTEX_REGION`) and Vertex's project are
+settings (docs/deployment.md, `[model_providers]`).
+
+**Which providers may be called at all.** `MODEL_PROVIDERS_ALLOWED` names
+the model providers a deployment calls; empty, every one may be. Where it
+is set, `getAdapter` refuses a call to any other before anything is sent
+(`assertProviderAllowed` in `src/provider-labels.ts`), at every label, and
+config loading stops on a model field whose model is on another. It sits
+before the clearance below: the clearance says which labels an allowed
+provider may be sent, and an evaluator that runs every agent on its own
+Bedrock account says `bedrock` once rather than writing a clearance line
+that clears every other provider for nothing.
 
 **An endpoint of the deployment's own.** A deployment can serve open-weight
 models from a server it runs, beside or instead of the hosted APIs: anything
@@ -1923,19 +1958,26 @@ prefix caching with a stable `prompt_cache_key` per agent instead of explicit
 breakpoints.
 
 **Metering** stays at one chokepoint regardless of provider. Anthropic and
-OpenAI calls are priced from the price catalog (`src/llm/pricing.ts`), which a
+OpenAI calls, and Claude on Bedrock and Vertex, are priced from the price catalog (`src/llm/pricing.ts`), which a
 worker refreshes from two public price lists every few hours
 (`src/services/model-price-service.ts`, docs/accounts.md, "Where model prices
 come from") over a snapshot the release carries; OpenRouter reports its own
 computed cost per call, which overrides the catalog (no catalog can cover its
 zoo), and a declared endpoint's calls are priced from its declared rates and
-take the same path. Unknown model ids fall back to the top-tier rate
+take the same path. A Bedrock or Vertex call is priced as the Claude model
+its id names, at Anthropic's list price, which both clouds charge on their
+global endpoints; a regional endpoint's higher rate, or a negotiated one, is
+stated in `MODEL_PRICES` against the full id (`bedrock:us.anthropic.claude-…`),
+which the usage row records as configured. Unknown model ids fall back to the top-tier rate
 so nothing ever meters as free. Every usage row records which provider served
-it.
+it, and so does every step of the run log (docs/run-log.md).
 
 Missing credentials fail as a clear configuration error at call time, not as an
 opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings),
-`OPENROUTER_API_KEY`, and the variable a declared endpoint's `keyEnv` names.
+`OPENROUTER_API_KEY`, the variable a declared endpoint's `keyEnv` names, and
+the region of Bedrock or Vertex. The clouds' own credentials are found by
+their clients on the first call, and a missing one fails there with the
+cloud's message.
 
 ### Providers cleared by label
 
@@ -2244,6 +2286,16 @@ DB-claimed lanes, which is safe for the same reason several tasks are. Money
 bounds how much work runs; this ceiling bounds how much runs at once, which
 money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
+
+The ledger's housekeeping does not wait for a slot (#1028). Routing
+subscriptions and due check-ins, releasing petition holds, closing deployment
+faults that are over and funding mandates' and lookouts' own rows is database
+work with no model in it (`ledgerHousekeeping`, `src/workers/engine-executor.ts`).
+The engine lane runs it before it picks each row, so a row opened a moment ago
+is funded at once, and the runner also runs it every five seconds on a timer
+of its own, one pass at a time, so it goes on while every slot is inside a long
+unit. Until that timer, a process whose slots were all held did no
+housekeeping at all, and a check-in arrived seventeen hours late.
 
 Failures are classified before they are counted. Transient API errors (rate
 limits, server errors, network, exhausted budget, rejected credentials, a

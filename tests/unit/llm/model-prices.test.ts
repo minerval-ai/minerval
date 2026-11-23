@@ -120,6 +120,32 @@ describe("a stated price in the meter", () => {
     expect(stated.ratesForModel("claude-opus-5").inputPerMtok).toBe(opus5);
   });
 
+  it("prices Claude on Bedrock and Vertex as the Claude model, until a price is stated for the cloud's id", async () => {
+    const pricing = await import("../../../src/llm/pricing.js");
+    const anthropic = pricing.ratesForModel("claude-opus-5-5");
+    expect(pricing.ratesForModel("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toEqual(anthropic);
+    expect(pricing.ratesForModel("vertex:claude-opus-5-5")).toEqual(anthropic);
+    expect(pricing.priceOrigin("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toBe("catalog");
+    expect(pricing.modelIsPriced("vertex:claude-opus-5-5")).toBe(true);
+    // A Claude model the catalog does not list has no price on a cloud either.
+    expect(pricing.modelIsPriced("bedrock:anthropic.claude-mystery-9-v1:0")).toBe(false);
+
+    // A regional endpoint's rate, stated against the id as configured.
+    process.env.MODEL_PRICES = JSON.stringify([
+      { model: "bedrock:us.anthropic.claude-opus-5-5", inputUsdPerMtok: 4.4, outputUsdPerMtok: 22 },
+    ]);
+    vi.resetModules();
+    const stated = await import("../../../src/llm/pricing.js");
+    expect(stated.ratesForModel("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toMatchObject({
+      inputPerMtok: 4.4,
+      outputPerMtok: 22,
+      cacheReadMultiplier: anthropic.cacheReadMultiplier,
+    });
+    expect(stated.priceOrigin("bedrock:us.anthropic.claude-opus-5-5-v1:0")).toBe("stated");
+    // The global profile is not the regional one.
+    expect(stated.ratesForModel("bedrock:global.anthropic.claude-opus-5-5-v1:0").inputPerMtok).toBe(anthropic.inputPerMtok);
+  });
+
   it("takes the longest match among stated prices", async () => {
     process.env.MODEL_PRICES = JSON.stringify([
       { model: "gpt-oss", inputUsdPerMtok: 1, outputUsdPerMtok: 1 },

@@ -40,7 +40,7 @@ import { markRunPrivate, recordAgentStep, type AgentTrace } from "../services/tr
 import { toolPrivateReason } from "./run-visibility.js";
 import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
-import { resolveProvider } from "./providers/routing.js";
+import { resolveProvider, speaksMessagesApi } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
 import { featuresOffNote, withLeadingNote } from "./features-off-note.js";
 import { unclearedServicesNote, withoutUnclearedTools } from "./uncleared-services-note.js";
@@ -870,7 +870,7 @@ export async function toolUseLoop(options: {
       const canResume =
         maxTokensRecoveries < 2 &&
         i < maxIter - 1 &&
-        (result.rawContent.length > 0 || provider !== "anthropic");
+        (result.rawContent.length > 0 || !speaksMessagesApi(provider));
       if (canResume) {
         maxTokensRecoveries++;
         if (result.rawContent.length > 0) {

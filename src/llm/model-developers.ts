@@ -58,7 +58,7 @@ const DEVELOPERS: readonly DeveloperEntry[] = [
     name: "Anthropic",
     vendors: ["anthropic"],
     // Direct ids and Bedrock/Vertex-style ones ("us.anthropic.claude-…").
-    idPattern: /^(claude-|([a-z]{2,4}\.)?anthropic\.)/,
+    idPattern: /^(claude-|([a-z]{2,6}(-[a-z]{2,4})?\.)?anthropic\.)/,
     names: [/\banthropic\b/i, CLAUDE],
   },
   {
@@ -127,7 +127,13 @@ const DEVELOPERS: readonly DeveloperEntry[] = [
  * endpoint knows it by: who serves a model does not change who built it.
  */
 export function modelDeveloper(modelId: string | null | undefined): ModelDeveloper | null {
-  const id = modelId?.trim().toLowerCase().replace(/^endpoint:[a-z0-9][a-z0-9_-]*\//, "");
+  // An endpoint's model, and Claude on Bedrock or Vertex, are read as the
+  // model the endpoint or the cloud knows.
+  const id = modelId
+    ?.trim()
+    .toLowerCase()
+    .replace(/^endpoint:[a-z0-9][a-z0-9_-]*\//, "")
+    .replace(/^(bedrock|vertex):/, "");
   if (!id) return null;
   const slash = id.indexOf("/");
   const vendor = slash > 0 ? id.slice(0, slash).replace(/^~/, "") : null;

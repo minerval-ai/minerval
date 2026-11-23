@@ -158,7 +158,7 @@ describe("MODEL_ENDPOINTS and PROVIDER_LABELS in loadConfig", () => {
     process.env.PROVIDER_LABELS = JSON.stringify({ anthropc: ["internal"], "endpoint:gpu": ["internal"] });
     await expect(load()).rejects.toThrow(
       'PROVIDER_LABELS names "anthropc", which is not a provider or an outside service. They are: ' +
-        "anthropic, openai, openrouter, endpoint:local, embeddings, web_search, web_pages, elicit, pangram."
+        "anthropic, openai, openrouter, bedrock, vertex, endpoint:local, embeddings, web_search, web_pages, elicit, pangram."
     );
     await expect(load()).rejects.toThrow(
       'PROVIDER_LABELS names "endpoint:gpu", which is not an endpoint this deployment declares. ' +
