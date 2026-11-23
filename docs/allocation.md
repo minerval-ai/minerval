@@ -1345,9 +1345,59 @@ its row (`action_id`); the two are the same act. A pass needs its node
 queued to run, so a commission by row id queues the node and reopens the
 row at that row's tier. It used to place the money on the row alone, and
 where the node was not queued the executor retired the row with the
-budget still held on it. A commission stranded that way still pays for
-the node's next pass: asking again finds it, queues the node, and charges
-nothing.
+budget still held on it; such money now comes back with the rest (below).
+
+### A commission ends with its row
+
+A commission buys one run. However the row ends, its money is settled
+with it, in the same transaction (src/services/action-settlement.ts,
+#1045): a run that finished pays what it metered and returns the rest
+(`completeAction`), and so does a run that stopped short (an extraction
+that failed, a pass whose node the Steward parked); a row closed before
+it ran returns its commission whole. A mandate's escrow stops counting
+the money, a reader's owls go back to their balance, a lookout's fund
+gets back what it put on the run. A commission placed whole on a group
+(not pinned to one variant) stays while a row of the group is still open
+or running, and returns when the last one closes. When the node comes
+back into the queue, or a request reopens, its next run is commissioned
+afresh, by whoever then judges it worth paying for. (Until #1045 a
+commission on a retired row stayed held for that next run, against a
+payer who could neither see it nor take it back, and three of the paths
+that close a row released nothing at all: one mandate held 4.37 owls,
+6 percent of its escrow, on four cancelled ingests.)
+
+Every path that closes a row goes through `cancelActions` (or
+`cancelAction`, `cancelActionsWhere`) or `completeAction`;
+tests/unit/services/action-settlement.test.ts refuses a statement
+elsewhere that closes a row, unless the file is listed with the reason
+its own statement settles the money. The reconcile sweep backs this up
+(`settleDeadGroups`): money held for a row that is closed, or placed on a
+group whose rows are all closed, for more than
+`DEAD_GROUP_GRACE_MINUTES` (15) on both sides, is returned, and the sweep
+logs it as a fault, since some path closed a row without settling it.
+Money on a group with no rows at all is a lookout's fund, not a
+commission, and is left alone.
+
+A row closed without finishing says why, in the platform's words
+(`actions.end_reason`): "the source could not be fetched: the site
+answered 403", "the Steward parked the node after 3 failed attempt(s),
+because of a database fault". Never a site's or a provider's own text,
+which can name accounts and request ids; an extraction's failure is
+named by its class (`ingestEndReason`, the classes of
+steward-park-reason.ts). The reason is on the plan item the row served
+("cancelled: ...; what it did not spend went back to whoever paid"), on
+the commission in `allocation_report` (`ended_because`) and on the
+mandate's page, and it is cleared when the group's next work reopens the
+row. What a failed extraction metered is paid from its commission like a
+finished one's; where a path cannot know what the run spent (an
+extraction given up on after it stopped making progress, an engine run
+that failed), the commission returns whole and the spend stays in the
+escrow's outside-ledger term, where it was metered.
+
+`allocation_report` reads a commission's state from its row: `waiting`
+while the row is open, `running`, `settled` once it has been returned,
+and `stranded` for the minutes between a row closing without settlement
+and the sweep finding it.
 
 A commission pins the variant its payer chose (standard or strong). A pass
 runs on the strong model where its payer judged the node contested and
@@ -1480,6 +1530,18 @@ order was to raise the daily rate (since replaced by the pace) and buy a throwaw
 (#956). `adjust_plan` uses the same meaning of started: it keeps the plan
 up to the last item whose work has run or is running, replaces the rest,
 and withdraws the orders the replaced items had placed.
+
+The same rule holds for the mandate's other commissions
+(`amend_commissions`, src/services/commission-amend-service.ts): one placed
+directly, by the Grantmaker's or an officer's `commission`, a lookout, a
+granted petition, is its Grantmaker's to lower, raise or withdraw until
+its row is running. What is withdrawn or cut comes back to the escrow and
+the pace's room at once; a raise is placed like any commission, under the
+pace, the reserve and the escrow. A running row is left as it is, and a
+closed row's money has already come back. Each change is recorded in the
+mandate's decisions with the Grantmaker's note. The plan's own orders are
+changed with `amend_plan_items`, and the mandate's self-funded upkeep is
+not a commission to amend.
 
 A Grantmaker can see what a list of items would commission before it
 writes them: `extend_plan` and `adjust_plan` take `preview: true`, which
@@ -2512,7 +2574,8 @@ and legitimate — but the unit economics must stay visible
    standards. Funding is disclosed away from the verdict, with its
    explanation.
 3. Quoted figures are caps; charges settle to metered cost; failures
-   refund; budgets pause rather than die; unspent escrow returns. Work
+   refund; budgets pause rather than die; unspent escrow returns. A
+   commission settles when its row closes, however it closes. Work
    whose payer is present and watching (the Assistant) is quoted nothing
    and charged at metered cost as it runs.
 4. Every money number (caps, budgets, commissions, spend, decisions and

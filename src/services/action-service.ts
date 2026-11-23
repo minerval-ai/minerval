@@ -22,7 +22,7 @@
 import { oneSourceForAddressSql } from "./layer-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { currentLabel, labelInContext, runAtLabel } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
@@ -48,7 +48,7 @@ import {
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { reviewPassBudget, type OperatingPolicy } from "./operating-policy-service.js";
 import { capMicroUsd, microUsdToOwls, owlsToMicroUsd } from "./owl.js";
-import { returnUnspentToFund } from "./lookout-fund.js";
+import { cancelActions, cancelActionsWhere, settleDeadGroups, settleGroupMoney } from "./action-settlement.js";
 import { groupAtLabel, ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import { slotColumnSql } from "./steward-lease.js";
@@ -504,11 +504,14 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
     [group, variant, requestId, label, Math.max(1, Math.round(cost)), req.sensitivity_label]
   );
   // Once a budget exists the scoping pass has nothing left to answer.
+  // A commission on the scoping pass goes back to whoever paid (#1045).
   if (variant === "full") {
-    await rawQuery(
-      `UPDATE actions SET status = 'superseded', updated_at = now()
+    await cancelActionsWhere(
+      `SELECT id, exclusion_group FROM actions
         WHERE exclusion_group = $1 AND variant = 'scope' AND status = 'open'`,
-      [group]
+      [group],
+      "the request now has a budget, so its scoping pass is not needed",
+      "superseded"
     );
   }
   return row?.id ?? null;
@@ -522,37 +525,7 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
  * to finish (its run settles its own funders).
  */
 export async function closeRequestActions(requestId: string): Promise<void> {
-  const group = REQUEST_GROUP(requestId);
-  await withTransaction(async (tx) => {
-    const running = await tx.query<{ id: string }>(
-      `SELECT id FROM actions WHERE exclusion_group = $1 AND status = 'running'`,
-      [group]
-    );
-    await tx.query(
-      `UPDATE actions SET status = 'cancelled', updated_at = now()
-        WHERE exclusion_group = $1 AND status = 'open'`,
-      [group]
-    );
-    if (running.length > 0) return;
-    const live = await tx.query<{ id: string; user_id: string | null; unspent: string }>(
-      `SELECT id, user_id, (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-         FROM minerval_whole.allocation_money
-        WHERE exclusion_group = $1 AND released_at IS NULL
-        FOR UPDATE`,
-      [group]
-    );
-    for (const al of live) {
-      await tx.query(`UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`, [al.id]);
-      if (al.user_id && Number(al.unspent) > 0) {
-        await tx.query(
-          `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
-           VALUES ($1, $2, 'refund', $3)
-           ON CONFLICT (idempotency_key) DO NOTHING`,
-          [al.user_id, Number(al.unspent), `release:${al.id}`]
-        );
-      }
-    }
-  });
+  await cancelActions({ group: REQUEST_GROUP(requestId), reason: "the request was closed" });
 }
 
 /**
@@ -633,18 +606,22 @@ export async function reconcileActions(): Promise<{
   // A formalize row is pointless once the claim carries a published
   // statement (an ordinary pass may have published one); an attempt row is
   // pointless once its statement is no longer published (§7.2).
-  await rawQuery(
-    `UPDATE actions a SET status = 'cancelled', updated_at = now()
+  await cancelActionsWhere(
+    `SELECT a.id, a.exclusion_group FROM actions a
       WHERE a.status = 'open' AND a.kind = 'formalize'
         AND EXISTS (SELECT 1 FROM claim_formalizations f
-                     WHERE f.claim_id = a.claim_id AND f.status = 'published')`
+                     WHERE f.claim_id = a.claim_id AND f.status = 'published')`,
+    [],
+    "the node already carries a published formal statement"
   );
-  await rawQuery(
-    `UPDATE actions a SET status = 'cancelled', updated_at = now()
+  await cancelActionsWhere(
+    `SELECT a.id, a.exclusion_group FROM actions a
       WHERE a.status = 'open' AND a.kind = 'attempt_proof'
         AND NOT EXISTS (SELECT 1 FROM claim_formalizations f
                          WHERE f.id::text = split_part(a.exclusion_group, ':', 2)
-                           AND f.status = 'published')`
+                           AND f.status = 'published')`,
+    [],
+    "the formal statement it would prove is no longer published"
   );
 
   await openDueAgentRuns();
@@ -659,34 +636,27 @@ export async function reconcileActions(): Promise<{
   // least one live request to read; a request's row, its request open and
   // kept by the Curator. A merge can retire the anchor out from
   // under an open row; a run that read everything leaves nothing to do.
-  // Only mandates place on curate rows, so releasing a cancelled group's
-  // placements is just the mandates' exposure dropping; left live, they
-  // would hold that money against a row nothing will reopen.
-  await rawQuery(
-    `WITH gone AS (
-       UPDATE actions a SET status = 'cancelled', updated_at = now()
-        WHERE a.status = 'open' AND a.kind = 'curate'
-          AND CASE
-                -- A request's row (#722) wants the request still open and
-                -- still the Curator's to keep.
-                WHEN a.claim_id IS NULL AND a.target_ref IS NOT NULL THEN
-                  NOT EXISTS (SELECT 1 FROM requests rq
-                               WHERE rq.id::text = a.target_ref
-                                 AND rq.keeper_kind = 'curator'
-                                 AND rq.state NOT IN ('met', 'declined', 'withdrawn', 'moot'))
-                ELSE
-                  NOT EXISTS (SELECT 1 FROM claims c
-                               WHERE c.id = a.claim_id AND c.state = 'active')
-                  OR NOT EXISTS (SELECT 1 FROM curation_requests r
-                                  WHERE r.anchor_claim_id = a.claim_id
-                                    AND r.consumed_at IS NULL)
-              END
-        RETURNING a.exclusion_group
-     )
-     UPDATE minerval_whole.allocation_money al SET released_at = now()
-      WHERE al.exclusion_group IN (SELECT exclusion_group FROM gone)
-        AND al.released_at IS NULL AND al.grant_id IS NOT NULL
-        AND al.spent_micro_usd = 0`
+  // Their money goes back with them (#1045).
+  await cancelActionsWhere(
+    `SELECT a.id, a.exclusion_group FROM actions a
+      WHERE a.status = 'open' AND a.kind = 'curate'
+        AND CASE
+              -- A request's row (#722) wants the request still open and
+              -- still the Curator's to keep.
+              WHEN a.claim_id IS NULL AND a.target_ref IS NOT NULL THEN
+                NOT EXISTS (SELECT 1 FROM requests rq
+                             WHERE rq.id::text = a.target_ref
+                               AND rq.keeper_kind = 'curator'
+                               AND rq.state NOT IN ('met', 'declined', 'withdrawn', 'moot'))
+              ELSE
+                NOT EXISTS (SELECT 1 FROM claims c
+                             WHERE c.id = a.claim_id AND c.state = 'active')
+                OR NOT EXISTS (SELECT 1 FROM curation_requests r
+                                WHERE r.anchor_claim_id = a.claim_id
+                                  AND r.consumed_at IS NULL)
+            END`,
+    [],
+    "nothing is left for the Curator to read there"
   );
   // The officers' waiting curation items follow their rows (#955): retired
   // with the reason when the row closed, rewritten from its live requests.
@@ -696,13 +666,16 @@ export async function reconcileActions(): Promise<{
 
   // Close groups whose claim left the candidate set (assessed elsewhere,
   // archived, or mid-run on the express lane long enough to have finished).
-  const cancelled = await rawQuery<{ id: string }>(
-    `UPDATE actions a SET status = 'cancelled', updated_at = now()
+  // Their commissions go back to whoever paid (#1045): a node that comes
+  // back into the queue is commissioned afresh.
+  const cancelled = await cancelActionsWhere(
+    `SELECT a.id, a.exclusion_group FROM actions a
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
         AND NOT EXISTS (SELECT 1 FROM claims c
                          WHERE c.id = a.claim_id AND c.state = 'active'
-                           AND ${slotColumnSql("steward_state", "c", "a.sensitivity_label")} IN ('pending', 'running'))
-      RETURNING a.id`
+                           AND ${slotColumnSql("steward_state", "c", "a.sensitivity_label")} IN ('pending', 'running'))`,
+    [],
+    "the node left the Steward's queue (parked, archived, or assessed on another lane) before its pass ran"
   );
 
   // Requests closed by their keeper (or withdrawn) while a row stood open:
@@ -718,6 +691,14 @@ export async function reconcileActions(): Promise<{
                      AND al.released_at IS NULL AND al.spent_micro_usd < al.amount_micro_usd)))`
   );
   for (const r of closedRequests) await closeRequestActions(r.target_ref);
+
+  // The backstop (#1045): money still held for rows that closed without
+  // settling it goes back to whoever paid, and the sweep reports the path
+  // that left it. Every closing path settles its own; this finds what one
+  // missed, and returned what was stranded before they did.
+  await settleDeadGroups().catch((err) =>
+    console.error(`[reconcile] settling closed groups failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
 
   // A worker that died mid-run leaves its action 'running' forever;
   // return it to open so coverage can send it again. Generous window —
@@ -754,7 +735,7 @@ export async function reconcileActions(): Promise<{
              OR (a.kind = 'attempt_proof' AND a.updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
   );
 
-  return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
+  return { assessEnsured: pending.length, cancelled, plansFailed };
 }
 
 /**
@@ -890,11 +871,10 @@ async function openMandateSittingRow(g: Pick<PlanGrantRow, "id" | "name" | "stat
   // decisions to make as any other. Exempting it left the platform's own
   // lane as the one mandate no agent was ever asked to think about.
   if (g.status === "active" && share && share.leftMicroUsd <= 0) {
-    await rawQuery(
-      `UPDATE actions SET status = 'cancelled', updated_at = now()
-        WHERE exclusion_group = $1 AND status = 'open'`,
-      [REVIEW_GROUP(g.id)]
-    );
+    await cancelActions({
+      group: REVIEW_GROUP(g.id),
+      reason: "the Grantmaker's share of the escrow is spent",
+    });
   } else if (g.status === "active") {
     await rawQuery(
       `INSERT INTO actions
@@ -1103,9 +1083,10 @@ export async function priceConsistencySweep(
 async function reconcileConsistencySweeps(): Promise<void> {
   const config = loadConfig();
   if (!config.consistencySweepsEnabled) {
-    await rawQuery(
-      `UPDATE actions SET status = 'cancelled', updated_at = now()
-        WHERE kind = 'consistency_sweep' AND status = 'open'`
+    await cancelActionsWhere(
+      `SELECT id, exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`,
+      [],
+      "consistency sweeps are turned off in this deployment"
     );
     return;
   }
@@ -1137,8 +1118,8 @@ async function openDueConsistencySweeps(minTagClaims: number): Promise<void> {
   // pile up across days, unless a live mandate's plan names it (a sweep
   // item still waiting for its sweep, #831): those rows are the mandate's
   // to fund, and the plan materializer reopens them anyway.
-  await rawQuery(
-    `UPDATE actions a SET status = 'cancelled', updated_at = now()
+  await cancelActionsWhere(
+    `SELECT a.id, a.exclusion_group FROM actions a
       WHERE a.kind = 'consistency_sweep' AND a.status = 'open'${oneLabelOnly() ? "" : " AND a.sensitivity_label = minerval_write_label()"}
         AND NOT (a.exclusion_group = ANY($1::text[]))
         AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
@@ -1151,7 +1132,8 @@ async function openDueConsistencySweeps(minTagClaims: number): Promise<void> {
                  AND item->>'action' = 'sweep'
                  AND item->'ledger'->>'exclusion_group' = a.exclusion_group
                  AND item->'ledger'->>'status' IN ('open', 'running'))`,
-    [refs]
+    [refs],
+    "the partition is no longer due a sweep"
   );
   const perNode = {
     standard: await estimateConsistencyNodeCostMicroUsd("standard", CONSISTENCY_SWEEP_MIN_NODES),
@@ -1594,12 +1576,14 @@ async function groupLedger(
   exclusion_group: string;
   /** The row's wait on a platform fault, when it is open and has one. */
   fault?: FaultWait;
+  /** Why a cancelled row was closed (actions.end_reason, #1045). */
+  end_reason?: string;
 } | null> {
-  type Row = { id: string; status: string; exclusion_group: string } & FaultWaitRow;
+  type Row = { id: string; status: string; exclusion_group: string; end_reason: string | null } & FaultWaitRow;
   const rows =
     "group" in where
       ? await rawQuery<Row>(
-          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after FROM actions
+          `SELECT id, status, exclusion_group, end_reason, fault_reason, fault_since, fault_attempts, retry_after FROM actions
             WHERE exclusion_group = $1
             ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'open' THEN 1
                                  WHEN 'done' THEN 2 WHEN 'superseded' THEN 3
@@ -1608,7 +1592,7 @@ async function groupLedger(
           [where.group]
         )
       : await rawQuery<Row>(
-          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after
+          `SELECT id, status, exclusion_group, end_reason, fault_reason, fault_since, fault_attempts, retry_after
              FROM actions WHERE id = $1`,
           [where.actionId]
         );
@@ -1619,7 +1603,13 @@ async function groupLedger(
       ? row.status
       : "done";
   const fault = status === "open" ? faultWait(row) : null;
-  return { status, action_id: row.id, exclusion_group: row.exclusion_group, ...(fault ? { fault } : {}) };
+  return {
+    status,
+    action_id: row.id,
+    exclusion_group: row.exclusion_group,
+    ...(fault ? { fault } : {}),
+    ...(status === "cancelled" && row.end_reason ? { end_reason: row.end_reason } : {}),
+  };
 }
 
 interface ClaimStanding {
@@ -1669,12 +1659,18 @@ const nowIso = () => new Date().toISOString();
 const waiting = (reason: string): PlanItemLedger => ({ status: "waiting", reason, checked_at: nowIso() });
 const blocked = (reason: string): PlanItemLedger => ({ status: "blocked", reason, checked_at: nowIso() });
 const fromRow = (
-  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string; fault?: FaultWait },
+  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string; fault?: FaultWait; end_reason?: string },
   reason?: string
 ): PlanItemLedger => {
   // An open row a platform fault is holding says so (#971): the item reads
-  // open, with the reason a payer would otherwise have to guess.
-  const why = reason ?? (row.status === "open" && row.fault ? faultWaitSentence(row.fault) : undefined);
+  // open, with the reason a payer would otherwise have to guess. A row that
+  // was cancelled says why, and that its money went back (#1045).
+  const why =
+    reason ??
+    (row.status === "open" && row.fault ? faultWaitSentence(row.fault) : undefined) ??
+    (row.status === "cancelled" && row.end_reason
+      ? `cancelled: ${row.end_reason}; what it did not spend went back to whoever paid`
+      : undefined);
   return {
     status: row.status,
     action_id: row.action_id,
@@ -3126,166 +3122,17 @@ export async function completeAction(
       [action.exclusion_group, actionId]
     );
 
-    // Lock every live allocation on the group for the duration of the
-    // close (plain FOR UPDATE: wait, don't skip — a skipped row would be
-    // silently exempted from consumption).
-    const allocations = await tx.query<{
-      id: string;
-      grant_id: string | null;
-      user_id: string | null;
-      claim_id: string | null;
-      action_id: string | null;
-      commissioned_by: string | null;
-      created_at: Date;
-      amount: number;
-      unspent: number;
-    }>(
-      `SELECT id, grant_id, user_id, claim_id, action_id, commissioned_by, created_at,
-              amount_micro_usd::bigint AS amount,
-              (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-         FROM minerval_whole.allocation_money
-        WHERE exclusion_group = $1 AND released_at IS NULL
-          AND spent_micro_usd < amount_micro_usd
-        ORDER BY created_at ASC
-        FOR UPDATE`,
-      [action.exclusion_group]
-    );
-
-    const refundUser = async (r: {
-      id: string;
-      user_id: string | null;
-      claim_id: string | null;
-      unspent: number;
-      key: string;
-    }) => {
-      if (r.user_id && Number(r.unspent) > 0) {
-        await tx.query(
-          `INSERT INTO owl_ledger
-             (user_id, amount_micro_usd, reason, claim_id, idempotency_key)
-           VALUES ($1, $2, 'refund', $3, $4)
-           ON CONFLICT (idempotency_key) DO NOTHING`,
-          [r.user_id, Number(r.unspent), r.claim_id, r.key]
-        );
-      }
-    };
-
-    // Release losing pinned allocations: returned, not spent. User-funded
-    // ones get their unspent remainder back on the owl ledger.
-    const losers = allocations.filter(
-      (a) => a.action_id !== null && a.action_id !== actionId
-    );
-    for (const r of losers) {
-      await tx.query(
-        `UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`,
-        [r.id]
-      );
-      await refundUser({ ...r, key: `release:${r.id}` });
-    }
-
-    // Consume the metered cost pro rata from the winner's covering
-    // allocations (pinned to it, or unpinned on the group).
-    const covering = allocations.filter(
-      (a) => a.action_id === null || a.action_id === actionId
-    );
-    let consumed = 0;
-    if (meteredMicroUsd > 0) {
-      const totalUnspent = covering.reduce((s, r) => s + Number(r.unspent), 0);
-      const toConsume = Math.min(Math.round(meteredMicroUsd), totalUnspent);
-      for (const [i, row] of covering.entries()) {
-        const share =
-          i === covering.length - 1
-            ? toConsume - consumed
-            : Math.floor((toConsume * Number(row.unspent)) / totalUnspent);
-        const take = Math.min(Number(row.unspent), Math.max(0, share));
-        if (take <= 0) continue;
-        await tx.query(
-          `UPDATE minerval_whole.allocation_money
-              SET spent_micro_usd = spent_micro_usd + $2
-            WHERE id = $1`,
-          [row.id, take]
-        );
-        consumed += take;
-        row.unspent = Number(row.unspent) - take;
-      }
-    }
-
-    // OVERAGE: the run cost more than its funders had promised. The money is
-    // already gone — the LLM calls happened and are metered against the
-    // funder's job — so the only question is whether the ledger admits it.
-    //
-    // It used to not. Consumption is clamped at `totalUnspent` above, so a run
-    // metering 5.76 owls against a 1.93 allocation recorded 1.93 and the rest
-    // vanished: absent from allocation shares, and cancelled out of the
-    // non-ledger term (which subtracts actions.metered_cost, so the very row
-    // recording the overspend erased it). Measured on the General mandate's
-    // first epoch: 23.57 owls of real spend counted in NO term of
-    // grantCommittedMicroUsd, which is why the escrow read 112 owls left when
-    // 79 was the truth. An escrow that cannot see a third of its own spend is
-    // not the hard ceiling the design leans on.
-    //
-    // So a MANDATE's overage is recorded as what it actually is: an
-    // allocation, already spent. A settled row (spent = amount) sits outside
-    // the live-placement unique index, so this never collides with a future
-    // placement on the same group. Two things follow for free — the escrow's
-    // committed total includes it, and because day room sums the amounts
-    // placed today, an expensive run draws down TODAY's room by its own
-    // overspend rather than leaving the pace target to describe fiction.
-    //
-    // A USER's overage stays absorbed by the platform: their cap is a promise
-    // ("the ceiling was theirs to rely on"), and a buyer must never be billed
-    // past the number on the button. Only grant-funded allocations are
-    // extended, and when a group has none, the shortfall stays off-ledger —
-    // where the corrected non-ledger term now counts it instead of hiding it.
-    const shortfall = Math.round(meteredMicroUsd) - consumed;
-    if (shortfall > 0) {
-      const byGrant = new Map<string, number>();
-      for (const r of covering) {
-        if (!r.grant_id) continue;
-        byGrant.set(r.grant_id, (byGrant.get(r.grant_id) ?? 0) + Number(r.amount));
-      }
-      const totalWeight = [...byGrant.values()].reduce((s, n) => s + n, 0);
-      if (totalWeight > 0) {
-        // Pro rata by what each mandate had promised: the funder that backed
-        // most of the work carries most of the overspend.
-        const entries = [...byGrant.entries()];
-        let assigned = 0;
-        for (const [i, [grantId, weight]] of entries.entries()) {
-          const share =
-            i === entries.length - 1
-              ? shortfall - assigned
-              : Math.floor((shortfall * weight) / totalWeight);
-          if (share <= 0) continue;
-          const claimId =
-            covering.find((r) => r.grant_id === grantId)?.claim_id ?? null;
-          await tx.query(
-            // The record of a shortfall met, at the label of the row that ran.
-            `INSERT INTO action_allocations
-               (exclusion_group, action_id, claim_id, grant_id,
-                amount_micro_usd, spent_micro_usd, released_at, sensitivity_label)
-             VALUES ($1, $2, $3, $4, $5, $5, now(), COALESCE($6, (SELECT sensitivity_label FROM actions WHERE id = $2)))`,
-            [action.exclusion_group, actionId, claimId, grantId, share, labelInContext()]
-          );
-          assigned += share;
-          consumed += share;
-        }
-      }
-    }
-
-    // SETTLEMENT: whatever the covering allocations still hold beyond the
-    // metered cost releases back to its funders — a mandate's headroom
-    // returns, a person's owls return to their balance. The ceiling was
-    // theirs to rely on; the meter is what they pay.
-    // Except money a Steward's lookout's fund put on its run: what the run
-    // did not spend goes back to the fund it came from (lookout-fund.ts).
-    for (const r of covering) {
-      if (Number(r.unspent) <= 0) continue;
-      await tx.query(
-        `UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`,
-        [r.id]
-      );
-      if (await returnUnspentToFund(tx, { ...r, exclusion_group: action.exclusion_group })) continue;
-      await refundUser({ ...r, key: `settle:${r.id}` });
-    }
+    // The money: what the run metered is consumed from what paid for it,
+    // a mandate's overage is recorded, the superseded siblings' placements
+    // and the covering allocations' remainders go back (action-settlement.ts,
+    // which closing a row that did not finish shares).
+    const { consumed } = await settleGroupMoney(tx, {
+      group: action.exclusion_group,
+      ranId: actionId,
+      meteredMicroUsd,
+      closedIds: [],
+      groupClosed: true,
+    });
     // Recorded with the settlement, so a subscriber waiting on this run is
     // told exactly when its money has come back (event-service.ts).
     const [done] = await tx.query<{ kind: string; claim_id: string | null; target_ref: string | null; label: string; grants: string[] }>(

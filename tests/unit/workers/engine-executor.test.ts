@@ -46,6 +46,15 @@ async function noteLabel(at: string): Promise<void> {
   state.labelsInside.push({ at, label: real.currentLabel() });
 }
 
+// Closing a row goes through the settlement (#1045); the test records the
+// group it was asked to close, as it recorded the statement before.
+vi.mock("../../../src/services/action-settlement.js", () => ({
+  cancelActions: vi.fn(async (input: { group: string }) => {
+    state.cancelled.push([input.group]);
+    return { cancelled: [], releasedMicroUsd: 0 };
+  }),
+}));
+
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     if (q.includes("FROM grants g JOIN budget_jobs")) {

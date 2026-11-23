@@ -759,8 +759,9 @@ export interface OperationsCommissionRow {
   commissioned_by: string;
   budget_owls: number;
   spent_owls: number;
-  state: "waiting" | "running" | "settled";
+  state: "waiting" | "running" | "settled" | "stranded";
   reason: string | null;
+  ended_because: string | null;
   created_at: string;
 }
 

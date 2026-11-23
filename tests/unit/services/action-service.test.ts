@@ -255,8 +255,9 @@ describe("completeAction", () => {
     ];
     const consumed = await completeAction("winner", 500_000);
     expect(consumed).toBe(100_000);
-    // Fully spent: nothing to settle, the row stays as consumed history.
-    expect(state.releasedIds).toEqual([]);
+    // Fully spent: released all the same, holding nothing, so no report of
+    // the payer's money reads it as live work (#1045). Nothing is refunded.
+    expect(state.releasedIds).toEqual(["al-1"]);
   });
 
   it("settles the covering remainders: a reader's overage refunds to their balance", async () => {

@@ -31,7 +31,6 @@ import {
   currentLabel,
   runAtLabel,
   runWithUsageContext,
-  withCostMeter,
   withProgressListener,
 } from "../llm/usage-context.js";
 import type { HandlerContext } from "./poller.js";
@@ -43,9 +42,12 @@ import { settleMeteredCharge } from "../services/owl-ledger-service.js";
 import {
   DOCUMENT_MAX_DOWNLOAD_BYTES,
   DOCUMENT_MAX_DOWNLOAD_MB,
+  HttpStatusError,
   ResponseTooLargeError,
+  UnsafeUrlError,
   fetchPublicUrl,
 } from "../services/url-guard.js";
+import { STEWARD_ERROR_REASON_LABELS, classifyStewardFailure } from "../services/steward-park-reason.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { normalizeFocus, recordExtraction, type UndecidedProposal } from "../services/ingest-focus-service.js";
@@ -146,9 +148,13 @@ export async function handleUrlExtraction(
     return;
   }
   const hold = holdJob(message.jobId, taken.attempt, ctx?.signal);
+  // The meter is held here, not inside withCostMeter, so what a failed
+  // extraction spent is still known when it fails: the ledger row's
+  // commission pays for it and returns the rest (#1045).
+  const meter = { billedMicroUsd: 0 };
   let billedMicroUsd: number;
   try {
-    ({ billedMicroUsd } = await runAtLabel(job?.sensitivityLabel, `job ${message.jobId}`, () =>
+    await runAtLabel(job?.sensitivityLabel, `job ${message.jobId}`, () =>
       runWithUsageContext(
         {
           userId: job?.userId ?? null,
@@ -158,9 +164,12 @@ export async function handleUrlExtraction(
           jobId: message.meterJobId ?? message.jobId,
         },
         () =>
-          withProgressListener(hold.heartbeat, () => withCostMeter(() => processUrlExtraction(message, hold)))
+          withProgressListener(hold.heartbeat, () =>
+            runWithUsageContext({ meter }, () => processUrlExtraction(message, hold))
+          )
       )
-    ));
+    );
+    billedMicroUsd = meter.billedMicroUsd;
   } catch (err) {
     if (err instanceof ExtractionAbandonedError) {
       // Not a failure of the source, nor this run's to record: whoever
@@ -210,8 +219,10 @@ export async function handleUrlExtraction(
     // A failed extraction must still terminate the ledger ingest action —
     // left 'running' it would strand its funders' allocations, and a
     // reconcile reopen would re-submit (and re-charge) the same URL.
-    // Cancelling retires the group; the plan cursor skips cancelled items.
-    await cancelIngestAction(group);
+    // Cancelling retires the group (the plan cursor skips cancelled items)
+    // and settles it: what the attempt spent is paid from the commission,
+    // the rest goes back, and the row says why it ended (#1045).
+    await cancelIngestAction(group, ingestEndReason(err), meter.billedMicroUsd, message.meterJobId);
     throw err;
   }
   // Escrow-funded ingestions were never cap-charged; nothing to settle.
@@ -291,19 +302,56 @@ async function holdIngestAction(group: string, err: unknown): Promise<boolean> {
   }
 }
 
-async function cancelIngestAction(group: string): Promise<void> {
+async function cancelIngestAction(
+  group: string,
+  reason: string,
+  meteredMicroUsd: number,
+  meterJobId?: string
+): Promise<void> {
   try {
-    await rawQuery(
-      `UPDATE actions SET status = 'cancelled', updated_at = now()
-        WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
+    const { cancelActions } = await import("../services/action-settlement.js");
+    // The running row is the attempt that spent; an 'open' one was reopened
+    // by a sweep while it ran and closes with it.
+    const [ran] = await rawQuery<{ id: string }>(
+      `SELECT id FROM actions WHERE exclusion_group = $1 AND status IN ('running', 'open')
+        ORDER BY CASE status WHEN 'running' THEN 0 ELSE 1 END LIMIT 1`,
       [group]
     );
+    await cancelActions({
+      group,
+      reason,
+      includeRunning: true,
+      ranId: ran?.id ?? null,
+      meteredMicroUsd,
+      meteredJobId: meterJobId ?? null,
+    });
   } catch (err) {
     console.error(
       "[url-extraction] ingest action cancellation failed:",
       err instanceof Error ? err.message : err
     );
   }
+}
+
+/**
+ * Why an extraction that failed ended, in the platform's words: what the
+ * mandate that paid for it reads on the row and its plan item. A site's
+ * status code is safe to say; a provider's or a database's text is not
+ * (steward-park-reason.ts), so those are named by class.
+ */
+export function ingestEndReason(err: unknown): string {
+  if (err instanceof HttpStatusError) return `the source could not be fetched: the site answered ${err.status}`;
+  if (err instanceof UnsafeUrlError) {
+    return "the source's address is not one the platform fetches (not a public address, or it does not resolve)";
+  }
+  if ((err as { sourceTooLarge?: unknown } | null)?.sourceTooLarge) {
+    return `the source is larger than the ${DOCUMENT_MAX_DOWNLOAD_MB} MB a document may be`;
+  }
+  const text = (err instanceof Error ? err.message : String(err ?? "")).toLowerCase();
+  if (["prompt is too long", "context window", "request_too_large"].some((p) => text.includes(p))) {
+    return "the source is too long for the extraction model to read at once";
+  }
+  return `the extraction failed because of ${STEWARD_ERROR_REASON_LABELS[classifyStewardFailure(err)]}`;
 }
 
 /**
@@ -857,7 +905,9 @@ async function fetchUrlContent(url: string): Promise<string> {
   try {
     return await fetchPublicUrl(url, { maxBytes: DOCUMENT_MAX_DOWNLOAD_BYTES });
   } catch (err) {
-    if (err instanceof ResponseTooLargeError) throw new Error(tooLargeToIngest(err.url));
+    if (err instanceof ResponseTooLargeError) {
+      throw Object.assign(new Error(tooLargeToIngest(err.url)), { sourceTooLarge: true });
+    }
     throw err;
   }
 }

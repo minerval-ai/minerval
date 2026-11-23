@@ -65,7 +65,7 @@ import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
 type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding } | null;
-import { classifyStewardFailure } from "../services/steward-park-reason.js";
+import { STEWARD_ERROR_REASON_LABELS, classifyStewardFailure } from "../services/steward-park-reason.js";
 import { isDeploymentFaultReason, type PlatformFaultReason } from "../services/deployment-fault.js";
 import { noteDeploymentFault } from "../services/deployment-fault-service.js";
 import {
@@ -303,13 +303,17 @@ async function runCoveredAction(
       await releaseAction(action.id);
     } else {
       // The claim left the candidate set (parked, archived, assessed
-      // elsewhere): retire the whole group. Allocations stay on the
-      // group — they still fund this claim's next pass if it revives.
-      await rawQuery(
-        `UPDATE actions SET status = 'cancelled', updated_at = now()
-          WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
-        [action.exclusion_group]
-      );
+      // elsewhere): retire the whole group, and its commissions go back to
+      // whoever paid (#1045). A commission buys a run; if the node revives,
+      // its next pass is commissioned afresh, by whoever then judges it
+      // worth paying for. (They used to stay on the group for that next
+      // pass, held against their payer with no way to see or end it.)
+      const { cancelActions } = await import("../services/action-settlement.js");
+      await cancelActions({
+        group: action.exclusion_group,
+        reason: "the node left the Steward's queue (parked, archived, or assessed on another lane) before its pass ran",
+        includeRunning: true,
+      });
     }
     return { status: "empty" };
   }
@@ -467,12 +471,17 @@ async function runStewardOnClaim(
       );
       // A parked claim is out of the candidate set; retire its group so
       // the executor stops re-picking a covered-but-poisoned action.
+      // Its commissions go back to whoever paid (#1045).
       if (action) {
-        await rawQuery(
-          `UPDATE actions SET status = 'cancelled', updated_at = now()
-            WHERE exclusion_group = $1 AND status IN ('open', 'running')`,
-          [action.exclusion_group]
-        ).catch(() => {});
+        const { cancelActions } = await import("../services/action-settlement.js");
+        await cancelActions({
+          group: action.exclusion_group,
+          reason: `the Steward parked the node after ${nextAttempts} failed attempt(s), because of ${STEWARD_ERROR_REASON_LABELS[reason]}`,
+          includeRunning: true,
+          ranId: action.id,
+        }).catch((err) =>
+          console.error(`[steward] settling ${action.exclusion_group} failed: ${err instanceof Error ? err.message : err}`)
+        );
       }
       console.error(
         `[steward] claim ${task.id} parked as error (${reason}) after ${nextAttempts} attempt(s): ${msg}`

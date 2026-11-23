@@ -3981,6 +3981,12 @@ export const actions = pgTable(
     faultSince: timestamp("fault_since", { withTimezone: true }),
     faultAttempts: integer("fault_attempts").notNull().default(0),
     retryAfter: timestamp("retry_after", { withTimezone: true }),
+    // Why a row that did not finish was closed, in the platform's own words
+    // (never a provider's or a site's text): set by cancelActions
+    // (services/action-service.ts) with the settlement of its money, and
+    // cleared when the row is opened again (trigger actions_clear_fault).
+    // The payer reads it beside the commission it returned (#1045).
+    endReason: text("end_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

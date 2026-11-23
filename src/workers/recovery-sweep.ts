@@ -225,10 +225,15 @@ export async function sweepStalledIngests(): Promise<IngestSweepStats> {
         [row.action_id]
       );
       if (Number(prior?.n ?? 0) >= MAX_INGEST_REAPS) {
-        await rawQuery(
-          `UPDATE actions SET status = 'cancelled', updated_at = now()
-            WHERE id = $1 AND status = 'running'`,
-          [row.action_id]
+        // Closed and settled: its commission comes back (#1045). What the
+        // abandoned attempts spent was metered to the payer's job as they
+        // ran and is not known here, so it stays in the job's outside-ledger
+        // term rather than on the commission.
+        const { cancelAction } = await import("../services/action-settlement.js");
+        await cancelAction(
+          row.action_id,
+          `the extraction stopped making progress ${MAX_INGEST_REAPS} times and was given up on`,
+          { includeRunning: true }
         );
         await rawQuery(
           `UPDATE jobs SET error = $2, result = result - 'retried_by_platform' WHERE id = $1`,

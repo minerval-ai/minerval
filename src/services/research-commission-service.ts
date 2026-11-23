@@ -141,7 +141,8 @@ export async function commissionResearch(input: {
     reason: prior ? `A follow-up to research run ${prior.id}.` : null,
   });
   if (!placed.ok) {
-    await rawQuery(`UPDATE actions SET status = 'cancelled', updated_at = now() WHERE id = $1`, [action!.id]);
+    const { cancelAction } = await import("./action-settlement.js");
+    await cancelAction(action!.id, "the commission was refused, so the research did not start");
     // Nothing was examined: the examination opened for it goes with it.
     if (examination) await rawQuery(`DELETE FROM examinations WHERE id = $1`, [examination.id]).catch(() => null);
     await closeResearchRun(run.id, { status: "refused", report: null, spentMicroUsd: 0, error: placed.message }).catch(() => null);
