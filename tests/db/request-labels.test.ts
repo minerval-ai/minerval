@@ -1495,6 +1495,16 @@ describe("every route that writes, driven against a private target", () => {
       const id = await connectionAt(A);
       return () => as(admin, { method: "PUT", url: `/connections/${id}/tools`, payload: { offered: [] } });
     },
+    "POST /connections/:connection_id/writes/:call_id/decision": async () => {
+      // A call that waits for an administrator, as a run at the connection's label made it.
+      const id = await connectionAt(A);
+      const [call] = await rawQuery<{ id: string }>(
+        `INSERT INTO connection_calls (connection_id, tool, arguments, writes, outcome, held_at, sensitivity_label)
+         VALUES ($1, 'file_ticket', '{"title":"sweep"}'::jsonb, true, 'held', now(), $2) RETURNING id`,
+        [id, A]
+      );
+      return () => post(admin, `/connections/${id}/writes/${call!.id}/decision`, { decision: "decline", note: "Not this one." });
+    },
     "PUT /connections/:connection_id/credential": async () => {
       process.env.CREDENTIAL_ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
       const id = await connectionAt(A);
@@ -1872,6 +1882,7 @@ describe("every route that writes, driven against a private target", () => {
     "PATCH /connections/:connection_id",
     "POST /connections/:connection_id/look",
     "PUT /connections/:connection_id/tools",
+    "POST /connections/:connection_id/writes/:call_id/decision",
     "PUT /connections/:connection_id/credential",
     "DELETE /connections/:connection_id/credential",
     "POST /file-sets/:file_set_id/close",

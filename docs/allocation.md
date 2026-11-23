@@ -831,7 +831,8 @@ request (docs/architecture.md describes the Steward lanes). The agent
 is told the figure in its task message, sees what it has spent after every
 turn (the spend line, the same one the instruments use), and gets a notice
 when most of it is gone and another when all of it is. A paid tool (web
-search, Elicit, Pangram, a proof check) states
+search, Elicit, Pangram, a proof check, a connection's tool its
+administrator priced) states
 its price and declines a call the remainder cannot cover, saying what the
 call would cost and what is left.
 

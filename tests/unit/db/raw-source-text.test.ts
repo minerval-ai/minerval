@@ -25,7 +25,7 @@ import {
   returnsSourceText,
 } from "../../../src/llm/run-visibility.js";
 import { withholdSourceText } from "../../../src/services/run-view-service.js";
-import { mayOpenRawSources, withheldRunSourceText, withheldSourceText } from "../../../src/raw-sources.js";
+import { mayOpenRawSources, withheldCallResult, withheldRunSourceText, withheldSourceText } from "../../../src/raw-sources.js";
 
 const SRC = join(__dirname, "../../../src");
 const STORED_TEXT = /raw_content|rawContent\b|readSourceContent|getExaminationOutline|getSourceDocument/;
@@ -95,6 +95,21 @@ describe("a source's stored text", () => {
     expect(readFileSync(join(SRC, "routes/sources.ts"), "utf8")).toMatch(
       /getSourceDocument\(request\.params\.source_id, \{\s*rawSourceLabels: rawSourceLabelsOf\(request\.auth\)/
     );
+  });
+
+  it("is held to the permission where an administrator is shown what a system answered to a write", () => {
+    // A connection's stored result is not a source's raw_content, so the
+    // patterns above do not see it. The one place a call's result is
+    // returned to a person is the list of writes, which is handed the
+    // reader's permission and withholds by it.
+    const routes = readFileSync(join(SRC, "routes/connections.ts"), "utf8");
+    expect(routes).toMatch(/listConnectionWrites\(request\.params\.connection_id, \{[^}]*rawSourceLabels: rawSourceLabelsOf\(request\.auth\)/s);
+    const service = readFileSync(join(SRC, "services/connection-service.ts"), "utf8");
+    expect(service).toMatch(/mayOpenRawSources\(opts\.rawSourceLabels, r\.sensitivity_label\)/);
+    // The list of every call still returns no result at all.
+    const calls = service.slice(service.indexOf("export async function listConnectionCalls"), service.indexOf("// ---- the writes an administrator watches"));
+    expect(calls).not.toMatch(/\bresult\b(?!_)/);
+    expect(withheldCallResult("internal")).toMatchObject({ withheld: "source_text", permission: "read_sources", labels: ["internal"] });
   });
 
   it("is returned to agents by tools that are all named, so a run's log can withhold it", () => {

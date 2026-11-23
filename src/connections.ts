@@ -1,5 +1,6 @@
 /**
- * Connections: agents read an organization's data where it lives
+ * Connections: agents read an organization's data where it lives, and
+ * write there only where an administrator grants a tool for it
  * (docs/connections.md).
  *
  * Most of what an organization knows is not in documents someone will
@@ -21,10 +22,26 @@
  *    only for the definition it was made on: a tool whose name, description,
  *    schema or markings later differ is withdrawn until an administrator
  *    looks again (toolDefinitionHash below).
- *  - The deployment cannot prove a tool only reads. What keeps a connection
- *    from writing is the credential the organization grants at its own
- *    system, which is why the administrator is asked for a read-only one
+ *  - A tool is picked as one that reads unless an administrator grants it
+ *    to write: an acknowledgement of what that means and a reason, kept on
+ *    the tool and shown to administrators and to every agent offered it
+ *    (WRITE_ACKNOWLEDGEMENT below). A tool the server itself marks as
+ *    writing can be picked no other way. A write grant is part of the pick,
+ *    so it falls with it when the tool's definition changes.
+ *  - The deployment cannot prove what a tool does. What limits a connection
+ *    is the credential the organization grants at its own system, which is
+ *    why the administrator is asked for the narrowest one that allows what
+ *    they granted: read-only where no tool is granted to write
  *    (CONNECTION_NOTICE below).
+ *  - A write through a connection is a write at the connection's label: its
+ *    arguments are the content, and they land in a system whose readers are
+ *    that label's. So a tool granted to write is offered only to a run that
+ *    works at the connection's own label, never to one that merely reads it
+ *    (services/connection-service.ts, connectionsOfferedAt).
+ *  - A call to a tool granted to write is listed for administrators with
+ *    what was sent and what came back, may be made to wait for an
+ *    administrator before it is sent, and, like any tool an administrator
+ *    priced, is charged to the run's budget (services/reading-service.ts).
  *  - A run is offered a connection when the label it works at reads the
  *    connection's label (labelsReadableFrom, the one definition of what a
  *    label reads), and is told in its brief which connections it has and
@@ -260,7 +277,8 @@ export const CONNECTION_TIMEOUT_SECONDS = { default: 120, min: 5, max: 900 } as 
 
 /**
  * The most text one call's result may be. A connection's calls cost the
- * organization's system and no owls, so the run's budget does not bound
+ * organization's system and, unless an administrator priced a tool, no
+ * owls, and a price is by the call, so the run's budget does not bound
  * what a call pulls back, and a result is held whole in memory and stored
  * whole in one row. Past this size a call is recorded as failed and the
  * agent is told why, in the brief before it calls and in the refusal. It is
@@ -309,9 +327,10 @@ export function readOnlyHint(annotations: Record<string, unknown> | null | undef
 
 /**
  * Whether the server itself marks the tool as one that changes things:
- * `readOnlyHint: false` or `destructiveHint: true`. Such a tool cannot be
- * picked. A tool with no marking can be: whether it only reads is then the
- * administrator's judgment of the system, which the markings never settled.
+ * `readOnlyHint: false` or `destructiveHint: true`. Such a tool can be
+ * picked only under a write grant. A tool with no marking can be picked
+ * either way: whether it only reads is then the administrator's judgment of
+ * the system, which the markings never settled.
  */
 export function markedAsWriting(annotations: Record<string, unknown> | null | undefined): boolean {
   return annotations?.readOnlyHint === false || annotations?.destructiveHint === true;
@@ -321,15 +340,46 @@ export function markedAsWriting(annotations: Record<string, unknown> | null | un
  * What an administrator is told where connections are added and where a
  * connection's tools are picked. The routes return it with what they serve,
  * so a page shows the same words.
+ *
+ * It says, in this order: what the default is and what changes it; that the
+ * deployment's own checks are not proof; what does limit a tool, and so
+ * which credential to grant; and what is recorded and watched.
  */
 export const CONNECTION_NOTICE =
-  "A connection is for reading. Grant it a read-only credential at the system itself: that " +
-  "credential is what keeps an agent from changing anything there. This deployment cannot prove " +
-  "that a tool only reads. A server's marking of a tool as read-only is a hint, shown beside each " +
-  "tool, and a tool can write or send whatever its marking says. So agents are offered only the " +
-  "tools you pick, one by one, and a tool that writes or sends is not meant to be picked. A tool " +
-  "the server itself marks as writing cannot be. A tool whose name, description, schema or " +
-  "markings later change at the server is withdrawn until an administrator looks at it again.";
+  "A connection reads, unless you grant one of its tools to write. Agents are offered only the tools " +
+  "you pick, one by one. A tool picked plainly is picked as one that reads. A tool that writes or " +
+  "sends is offered only under a write grant: you acknowledge that agents will change things at that " +
+  "system through it and give your reason, and both are kept, shown here, and told to every agent " +
+  "offered the tool. A tool the server itself marks as writing can be picked no other way. This " +
+  "deployment cannot prove what a tool does. A server's marking is a hint, shown beside each tool, " +
+  "and a tool picked as reading can write or send whatever its marking says. What limits a " +
+  "connection is the credential you grant it at the system itself: grant the narrowest one that " +
+  "allows what you have granted here, and a read-only one where no tool is granted to write. Every " +
+  "call is recorded and is never sent twice. Calls to a tool granted to write are listed with what " +
+  "was sent and what came back, and you can have them wait for an administrator before they are " +
+  "sent. A tool whose name, description, schema or markings later change at the server is " +
+  "withdrawn, its write grant with it, until an administrator looks at it again.";
+
+/**
+ * What an administrator acknowledges when granting a tool to write. The
+ * grant keeps these words as they were when it was made, beside the
+ * administrator's own reason, so that a later reader sees what was agreed
+ * to and not what a later build says.
+ */
+export const WRITE_ACKNOWLEDGEMENT =
+  "I have read this tool's description and schema. Agents offered it will change or send things at " +
+  "this system through it, with the credential this connection holds, on their own judgment and " +
+  "without asking first unless its calls are held. This deployment cannot undo a call once it is sent.";
+
+/** An administrator's reason for a write grant is told to every agent offered the tool, so it is kept to a few sentences. */
+export const WRITE_REASON_MAX_CHARS = 1000;
+
+/**
+ * The most an administrator may price one call at, in micro-USD ($100).
+ * The price is what the organization says a call costs it; a figure past
+ * this is far more likely a slip of the hand than a price.
+ */
+export const CALL_PRICE_MAX_MICRO_USD = 100_000_000;
 
 /**
  * A reading's address: what `sources.url` holds for a source kept from a

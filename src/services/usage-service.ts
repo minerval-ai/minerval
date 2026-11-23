@@ -112,10 +112,12 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
 export interface ExternalUsage {
   /**
    * `lean`, `elicit`, `pangram`, `anthropic_code_execution`, `anthropic_web_search`
-   * (docs/mathematics.md §6.3), or `sandbox`: a command's time in the
-   * deployment's own sandbox (docs/file-sets.md).
+   * (docs/mathematics.md §6.3), `sandbox`: a command's time in the
+   * deployment's own sandbox (docs/file-sets.md), or `connection`: a call
+   * through a connection to a tool its administrator priced
+   * (docs/connections.md, "Costs and limits").
    */
-  provider: "lean" | "elicit" | "pangram" | "anthropic_code_execution" | "anthropic_web_search" | "sandbox";
+  provider: "lean" | "elicit" | "pangram" | "anthropic_code_execution" | "anthropic_web_search" | "sandbox" | "connection";
   /** The pinned identity, e.g. `lean-checker/mathlib-v4.33.0` or `elicit/search_papers`. */
   model: string;
   units: number;
@@ -130,9 +132,27 @@ export interface ExternalUsage {
  * cost-estimate query that sums llm_usage.cost_micro_usd by job or claim
  * sees it without change. Feeds the live cost meter first and synchronously,
  * exactly as meterLlmUsage does, and never throws.
+ *
+ * `onBehalfOf` is for the one spend that is not made inside the run that
+ * pays for it: a call through a connection that waited for an
+ * administrator, sent when they approved it. It is recorded against the
+ * account, key, job, node and run that made the call, as they were kept on
+ * the call, and touches no live meter: the request it is recorded in is
+ * the administrator's.
  */
-export async function meterExternalUsage(usage: ExternalUsage): Promise<void> {
-  const ctx = getUsageContext();
+export interface UsageOnBehalfOf {
+  userId: string | null;
+  apiKeyId: string | null;
+  jobId: string | null;
+  claimId: string | null;
+  runId: string | null;
+  agent: string | null;
+}
+
+export async function meterExternalUsage(usage: ExternalUsage, onBehalfOf?: UsageOnBehalfOf): Promise<void> {
+  const ctx = onBehalfOf
+    ? { ...onBehalfOf, agent: onBehalfOf.agent ?? undefined, requestId: null, meter: undefined, onProgress: undefined }
+    : getUsageContext();
   const billedMicroUsd = Math.max(0, Math.round(usage.costMicroUsd));
   if (ctx.meter) ctx.meter.billedMicroUsd += billedMicroUsd;
   // A finished call is progress (the queue poller's stall timeout, the

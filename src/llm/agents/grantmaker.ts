@@ -33,7 +33,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { currentLabel, markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
-import { createConnectionTools } from "../tools/connection-tools.js";
+import { connectionsHeading, createConnectionTools } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
@@ -719,7 +719,7 @@ async function runGrantmakerTurnImpl(input: {
   });
   const blocks = getGrantmakerSystemPromptBlocks();
   if (skillLoader.pointerNote) blocks[0] = blocks[0] + skillLoader.pointerNote;
-  if (connectionTools.note) blocks[0] = blocks[0] + `\n\n## Systems you can read\n\n${connectionTools.note}`;
+  if (connectionTools.note) blocks[0] = blocks[0] + `\n\n## ${connectionsHeading(connectionTools)}\n\n${connectionTools.note}`;
   if (managed) {
     blocks[0] =
       blocks[0] +

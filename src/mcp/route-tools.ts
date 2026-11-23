@@ -420,6 +420,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /connections": { name: "list_connections" },
   "GET /connections/:connection_id": { name: "get_connection" },
   "GET /connections/:connection_id/calls": { name: "list_connection_calls" },
+  "GET /connections/:connection_id/writes": { name: "list_connection_writes" },
   // Sets of files the deployment holds for its agents (src/file-sets.ts),
   // in the same deployments. The reads; the writes are excluded below.
   "GET /file-sets": { name: "list_file_sets" },
@@ -619,11 +620,18 @@ const OUTBOUND_SESSION =
   "(list_pages_going_outside) and sending what has been released (send_pages_outside) are tools.";
 
 const CONNECTION_SESSION =
-  "Changes which of an organization's systems agents may read, and which tools they are offered " +
-  "there, so it takes a signed-in dashboard session as well as the permission to administer: a " +
-  "leaked key, an access token, or an agent following text it read can then never point the " +
-  "deployment at a server or widen what agents are offered. The matching reads " +
-  "(list_connections, get_connection, list_connection_calls) are tools.";
+  "Changes which of an organization's systems agents may read or write to, and which tools they are " +
+  "offered there and on what terms, so it takes a signed-in dashboard session as well as the " +
+  "permission to administer: a leaked key, an access token, or an agent following text it read can " +
+  "then never point the deployment at a server, widen what agents are offered, or grant a tool to " +
+  "write. The matching reads (list_connections, get_connection, list_connection_calls, " +
+  "list_connection_writes) are tools.";
+
+const CONNECTION_WRITE_DECISION =
+  "Releases a write to an organization's system that was held for an administrator. The hold exists so " +
+  "that a person looks at what an agent is about to send before it is sent; a tool would let an agent, or " +
+  "a client following text it read, approve the write itself. It takes a signed-in dashboard session as " +
+  "well as the permission to administer. list_connection_writes shows what is waiting.";
 
 const CONNECTION_CREDENTIAL =
   `${CONNECTION_SESSION} And it carries a credential to another system: a tool would put that ` +
@@ -680,6 +688,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PATCH /connections/:connection_id": CONNECTION_SESSION,
   "POST /connections/:connection_id/look": CONNECTION_SESSION,
   "PUT /connections/:connection_id/tools": CONNECTION_SESSION,
+  "POST /connections/:connection_id/writes/:call_id/decision": CONNECTION_WRITE_DECISION,
   "PUT /connections/:connection_id/credential": CONNECTION_CREDENTIAL,
   "DELETE /connections/:connection_id/credential": CONNECTION_CREDENTIAL,
   "POST /permissions/grants": ADMINISTRATION_SESSION,

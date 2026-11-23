@@ -2243,6 +2243,16 @@ export const connections = pgTable(
 // administrator looks again and picks it again. `listed` says whether the
 // server still listed the tool at the last look.
 //
+// A pick is of a tool that reads unless it carries a write grant (`writes`):
+// the administrator's acknowledgement, in the words it had then
+// (write_acknowledgement), and their reason (write_reason), with who and
+// when. The grant is told to every agent offered the tool. write_held says
+// the tool's calls wait for an administrator before they are sent.
+// call_price_micro_usd is what one answered call is charged to the run's
+// budget, zero for a tool whose calls cost the organization's system and no
+// money. A tool left out of a later pick loses all of these; a tool
+// withdrawn keeps them as what was granted, and offers nothing.
+//
 // sensitivity_label is the connection's: a tool's name, description and
 // input schema are the organization's system describing itself, the same
 // whoever looks, so the row is derived from the connection and carries its
@@ -2271,9 +2281,26 @@ export const connectionTools = pgTable(
     withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
     // 'changed' | 'missing' | 'address_changed': a name the code gives.
     withdrawnReason: text("withdrawn_reason"),
+    writes: boolean("writes").notNull().default(false),
+    writeReason: text("write_reason"),
+    writeAcknowledgement: text("write_acknowledgement"),
+    writeGrantedBy: uuid("write_granted_by").references((): AnyPgColumn => contributors.id),
+    writeGrantedAt: timestamp("write_granted_at", { withTimezone: true }),
+    writeHeld: boolean("write_held").notNull().default(false),
+    callPriceMicroUsd: integer("call_price_micro_usd").notNull().default(0),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("uq_connection_tools_name").on(table.connectionId, table.name)]
+  (table) => [
+    uniqueIndex("uq_connection_tools_name").on(table.connectionId, table.name),
+    // A write grant is whole: the reason and the acknowledgement with it.
+    check(
+      "ck_connection_tools_write_grant",
+      sql`NOT ${table.writes} OR (${table.writeReason} IS NOT NULL AND ${table.writeAcknowledgement} IS NOT NULL AND ${table.writeGrantedAt} IS NOT NULL)`
+    ),
+    // Only a call that writes waits for an administrator.
+    check("ck_connection_tools_held_writes", sql`NOT ${table.writeHeld} OR ${table.writes}`),
+    check("ck_connection_tools_price", sql`${table.callPriceMicroUsd} >= 0`),
+  ]
 );
 
 // ---------------------------------------------------------------------------
@@ -2286,6 +2313,21 @@ export const connectionTools = pgTable(
 // 'answered', 'tool_error' (the system answered with an error) or 'failed'
 // (no answer: unreachable, credential refused, timed out), with `error`
 // saying which.
+//
+// `writes` says the call was to a tool granted to write when it was made;
+// those are the calls an administrator watches, with what was sent and what
+// came back. Where the tool's calls are held, the row is made with outcome
+// 'held' and nothing is sent: held_at says since when, and
+// tool_definition_hash which definition the agent wrote its arguments
+// against. An administrator's decision is on the row (decided_by,
+// decided_at, decision_note): approved, the call is sent then, once, and
+// the outcome becomes what a call's is; declined, or found no longer
+// sendable when approved (the connection off, the grant gone or changed),
+// the outcome is 'declined' or 'not_sent' and nothing was sent.
+// charged_micro_usd is what the call cost the run's budget, at the tool's
+// price when it was made (price_micro_usd). A held call is charged when it
+// is sent, to whoever was paying for the run that made it (charge_to: the
+// account, key and job from that run's usage context).
 //
 // A call is not a source. When an agent's work rests on one it keeps it
 // (keep_reading): source_id then names the source row made from the call,
@@ -2326,12 +2368,25 @@ export const connectionCalls = pgTable(
     partyId: uuid("party_id").references(() => parties.id),
     sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
     keptAt: timestamp("kept_at", { withTimezone: true }),
+    writes: boolean("writes").notNull().default(false),
+    priceMicroUsd: integer("price_micro_usd").notNull().default(0),
+    chargedMicroUsd: integer("charged_micro_usd").notNull().default(0),
+    chargeTo: jsonb("charge_to"),
+    toolDefinitionHash: text("tool_definition_hash"),
+    heldAt: timestamp("held_at", { withTimezone: true }),
+    decidedBy: uuid("decided_by").references((): AnyPgColumn => contributors.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     // The rate check counts a connection's calls in the last minute, and an
     // administrator's list reads them newest first.
     index("idx_connection_calls_connection_time").on(table.connectionId, table.calledAt),
+    // The calls an administrator watches: those that wrote, newest first.
+    index("idx_connection_calls_writes")
+      .on(table.connectionId, table.calledAt)
+      .where(sql`writes`),
     index("idx_connection_calls_source")
       .on(table.sourceId)
       .where(sql`source_id IS NOT NULL`),

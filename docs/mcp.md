@@ -152,10 +152,13 @@ route needs a permission is offered only to a caller whose account holds
 it, and the server's instructions name the tools left out and say why.
 The routes for connections to an organization's systems
 (docs/connections.md) are in the same case: `list_connections`,
-`get_connection` and `list_connection_calls` are tools for a caller who
-holds `administer`, and adding a connection, changing one, picking
-which of its tools the graph's agents are offered, and giving or removing
-its credential take a session. A credential for another system is never a
+`get_connection`, `list_connection_calls` and `list_connection_writes` are
+tools for a caller who holds `administer`, and adding a connection,
+changing one, picking which of its tools the graph's agents are offered
+(and granting one to write), approving or declining a write that was held
+for an administrator, and giving or removing its credential take a
+session. The hold on a write exists so that a person looks before it is
+sent, so no tool can release one. A credential for another system is never a
 tool's input, so that it is in no agent's or outside client's transcript;
 `get_connection` says whether one was given, never what it is. So are
 the routes for file sets (docs/file-sets.md): `list_file_sets`,
