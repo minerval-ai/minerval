@@ -17,6 +17,7 @@
  * funder, and ideology-warping mandates are declined outright.
  */
 import { isOpenLabel } from "../../labels.js";
+import { membersOnly } from "../../permissions.js";
 import { grantmakingPromisedPrivate, PRIVATE_GRANTMAKING_REASON } from "../private-grantmaking.js";
 import {
   draftWarnings,
@@ -44,6 +45,7 @@ const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t
 import {
   CHAT_SECTION,
   PUBLIC_CONVERSATION_SECTION,
+  MEMBERS_CONVERSATION_SECTION,
   GRANTING_CONVERSATION_SECTION,
   getGrantmakerSystemPromptBlocks,
 } from "../prompts/grantmaker.js";
@@ -750,10 +752,13 @@ async function runGrantmakerTurnImpl(input: {
   }
   if (input.funder === "platform") {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
+  } else if (!promisedPrivate && membersOnly()) {
+    // Inside a private graph the conversation is open to the members who
+    // read the mandate's label, at whichever label it works: at the base
+    // label too, which every member reads and nobody outside does (#1120).
+    // "Anyone may read this" would be false.
+    blocks[0] = blocks[0] + MEMBERS_CONVERSATION_SECTION;
   } else if (!promisedPrivate && isOpenLabel(currentLabel())) {
-    // At another label, inside a private graph, the conversation is open to
-    // the members who read that label, which the Grantmaker is told there
-    // (constitution §30); "anyone may read this" would be false.
     blocks[0] = blocks[0] + PUBLIC_CONVERSATION_SECTION;
   }
   // The chat's own rules (#692): the planning and review passes share the

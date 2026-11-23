@@ -676,6 +676,13 @@ They reach callers three ways, from one set of files:
   `src/mcp/caller-skills.ts`), the shortest form of the principles, which
   every client is shown, with pointers to the resources.
 
+The files describe public Minerval. A members-only deployment adds a
+passage saying what differs there (its own addresses, who reads it, where
+its administrators connect the organization's systems) to the initialize
+instructions and to the head of each skill it serves as a resource
+(`src/llm/deployment-note.ts`; docs/accounts.md, "Permissions"). The plugin's copies are the files as they are, which is why
+`using-minerval` opens by saying which Minerval it describes.
+
 The Assistant (#646, docs/accounts.md) is a caller too. Its tools are this
 server's, built in process for its user at the trust of an API key
 (`src/llm/tools/assistant-tools.ts`), so it can do nothing a user's own
