@@ -516,6 +516,12 @@ export interface BudgetJobView {
     subtree?: { pending: number; deferred: number; done: number };
     note?: string;
     last_claim_id?: string;
+    /** Passes by what they concluded (#1027): recorded, stood, waiting, unconcluded, ... */
+    outcomes?: Record<string, number>;
+    /** What the most recent pass concluded, in a reader's words. */
+    last_outcome?: string;
+    /** The nodes whose pass ended without a conclusion, newest first. */
+    unconcluded?: Array<{ claim_id: string; outcome: string }>;
   } | null;
   error: string | null;
   created_at: string;

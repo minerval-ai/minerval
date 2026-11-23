@@ -63,6 +63,8 @@ vi.mock("../../../src/llm/agents/claim-steward.js", () => ({
       runCalls.push({ claimId: input.claimId, trigger: input.trigger });
       const err = state.throwFor?.(input.claimId);
       if (err) throw err;
+    // What the pass concluded (pass-outcome.ts): a recorded assessment.
+    return { kind: "recorded", tool: "update_claim_assessment", status_after: "supported", before: null };
     }
   ),
 }));

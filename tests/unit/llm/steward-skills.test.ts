@@ -12,6 +12,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   loopOptions: [] as Array<Record<string, unknown>>,
   loopSkills: [] as Array<string[] | undefined>,
+  // Tool calls a test makes while the loop runs, and the stop reason it ends on.
+  duringLoop: null as null | ((options: Record<string, unknown>) => Promise<void>),
+  stopReason: "end_turn",
   claim: null as null | Record<string, unknown>,
   executeMatcherTool: vi.fn(async () => JSON.stringify({ is_match: false })),
   config: {
@@ -96,7 +99,8 @@ vi.mock("../../../src/llm/client.js", async () => {
     toolUseLoop: vi.fn(async (options: Record<string, unknown>) => {
       mocks.loopOptions.push(options);
       mocks.loopSkills.push(getUsageContext().skills);
-      return { content: "", toolUses: [], stopReason: "end_turn" };
+      if (mocks.duringLoop) await mocks.duringLoop(options);
+      return { content: "", toolUses: [], stopReason: mocks.stopReason };
     }),
   };
 });
@@ -447,5 +451,70 @@ describe("Steward pass task by trigger", () => {
     expect(attempt.initialMessages[0]!.content).toContain("get_proof_attempt");
     await attempt.executeTool("log_stewardship_decision", {});
     expect(attempt.finalToolNudge.when()).toBe(false);
+  });
+});
+
+/** What the pass concluded comes back from the run (#1027; pass-outcome.ts). */
+describe("Steward pass outcome", () => {
+  const runWith = async (
+    calls: (exec: LoopOptions["executeTool"]) => Promise<void>,
+    opts: { current?: boolean; stopReason?: string } = {}
+  ) => {
+    const { rawQuery } = await import("../../../src/db/client.js");
+    const mocked = vi.mocked(rawQuery);
+    mocked.mockImplementation((async (sql: string) =>
+      opts.current && /_in_force\b/.test(sql)
+        ? [{ one: 1, id: "prior-1", status: "supported", at: "2026-11-12T00:00:00Z" }]
+        : []) as never);
+    mocks.duringLoop = async (o) => calls((o as unknown as LoopOptions).executeTool);
+    mocks.stopReason = opts.stopReason ?? "end_turn";
+    try {
+      mocks.claim = { id: CLAIM_ID, importance: 0.5, domains: [] };
+      const { value } = await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, () =>
+        runClaimSteward({ trigger: "subclaim_change", claimId: CLAIM_ID, context: "" })
+      );
+      return { outcome: value, opts: mocks.loopOptions.at(-1) as unknown as LoopOptions };
+    } finally {
+      mocks.duringLoop = null;
+      mocks.stopReason = "end_turn";
+      mocked.mockImplementation((async () => []) as never);
+    }
+  };
+
+  it("tells the pass that its payer is told what it concluded", async () => {
+    const { opts } = await runWith(async () => {}, { current: true });
+    expect(opts.initialMessages[0]!.content).toContain("whoever paid for it is told what it");
+  });
+
+  it("returns a logged decision that the assessment stands as the outcome, with what stood", async () => {
+    const { outcome } = await runWith(
+      (exec) => exec("log_stewardship_decision", { action_taken: "no_action_needed", judgment_stands: true }).then(() => {}),
+      { current: true }
+    );
+    expect(outcome).toMatchObject({ kind: "stood", before: { id: "prior-1", status: "supported" } });
+  });
+
+  it("does not count a tool that threw as done, and reports the pass as ended on the platform's side", async () => {
+    const { executeStewardTool } = await import("../../../src/llm/tools/steward-tools.js");
+    vi.mocked(executeStewardTool).mockImplementationOnce(async () => "Error: connection reset");
+    const { outcome, opts } = await runWith(
+      async (exec) => {
+        await exec("update_claim_assessment", { status: "doubtful" });
+        await exec("log_stewardship_decision", { action_taken: "reassessed", judgment_stands: false });
+      },
+      { current: true }
+    );
+    expect(opts.finalToolNudge.when()).toBe(true);
+    expect(outcome).toMatchObject({
+      kind: "unconcluded",
+      platform_side: true,
+      logged: "reassessed",
+      failed: [{ tool: "update_claim_assessment", error: "connection reset" }],
+    });
+  });
+
+  it("reports the turn guard when the loop ran out of turns", async () => {
+    const { outcome } = await runWith(async () => {}, { current: true, stopReason: "tool_use" });
+    expect(outcome).toMatchObject({ kind: "unconcluded", ended_by: "turn_guard", platform_side: false });
   });
 });

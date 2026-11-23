@@ -13,6 +13,7 @@
  * Discovery (/mandates) gives pride of place to the largest mandates and
  * to the platform's own (Mathematics, AI Economics to start).
  */
+import { outcomeClause, type PassOutcome } from "../llm/agents/pass-outcome.js";
 import { correspondentPublic, listCorrespondents, type CorrespondentPublic } from "./correspondent-service.js";
 import { rawQuery } from "../db/client.js";
 import { microUsdToOwls } from "./owl.js";
@@ -994,6 +995,14 @@ export interface OperationsCommissionRow {
   spent_owls: number;
   /** waiting: commissioned, not yet started; running; settled: finished and refunded. */
   state: "waiting" | "running" | "settled";
+  /**
+   * What the run concluded, once settled, in a reader's words (#1027): a new
+   * assessment, a logged decision that the one in force stands, a pause, or
+   * no conclusion. Null for kinds that do not report one, and while it runs.
+   */
+  outcome: string | null;
+  /** The outcome's kind (llm/agents/pass-outcome.ts), for sorting and display. */
+  outcome_kind: string | null;
   reason: string | null;
   created_at: string;
 }
@@ -1247,11 +1256,12 @@ export async function getMandateAllocationView(
       spent: string;
       released: boolean;
       status: string;
+      outcome: PassOutcome | null;
       reason: string | null;
       created_at: string;
       total: number;
     }>(
-      `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by,
+      `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by, a.outcome,
               al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
               (al.released_at IS NOT NULL OR al.spent_micro_usd >= al.amount_micro_usd) AS released, a.status, al.reason,
               al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
@@ -1339,6 +1349,8 @@ export async function getMandateAllocationView(
       budget_owls: microUsdToOwls(Number(c.amount)),
       spent_owls: microUsdToOwls(Number(c.spent)),
       state: c.released ? "settled" : c.status === "running" ? "running" : "waiting",
+      outcome: c.outcome ? outcomeClause(c.outcome) : null,
+      outcome_kind: c.outcome?.kind ?? null,
       reason: c.reason,
       created_at: c.created_at,
     })),

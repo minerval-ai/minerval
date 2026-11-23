@@ -78,6 +78,8 @@ vi.mock("../../src/llm/agents/claim-steward.js", async (orig) => ({
       stage.during = null;
       await during?.();
     });
+    // The stand-in concludes as a real pass may: the assessment stands (pass-outcome.ts).
+    return { kind: "stood" as const, logged: "no_action_needed", audit_log_id: null, before: null };
   }),
 }));
 // The officers' sitting runs a tool loop. The stand-in keeps the run that

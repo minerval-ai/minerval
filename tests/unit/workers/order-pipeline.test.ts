@@ -31,6 +31,8 @@ const { state, runCalls } = vi.hoisted(() => ({
     claimReleases: [] as Array<{ id: string; to: string }>,
     throwFor: null as null | ((claimId: string) => Error | null),
     passBudgets: [] as unknown[],
+    // What the mocked pass concludes (pass-outcome.ts).
+    outcome: null as null | Record<string, unknown>,
   },
 }));
 
@@ -80,6 +82,7 @@ vi.mock("../../../src/llm/agents/claim-steward.js", async () => {
         state.passBudgets.push(runBudget());
         const err = state.throwFor?.(input.claimId);
         if (err) throw err;
+        return state.outcome ?? { kind: "recorded", tool: "update_claim_assessment", status_after: "supported", before: null };
       }
     ),
   };
@@ -138,6 +141,7 @@ beforeEach(() => {
   state.refunds = [];
   state.settlements = [];
   state.stakes = [];
+  state.outcome = null;
   state.orderUpdates = [];
   state.claimReleases = [];
   state.throwFor = null;
@@ -294,5 +298,52 @@ describe("processNextOrderTask", () => {
     expect(state.orderUpdates.some((u) => u.sql.includes("'failed'"))).toBe(
       true
     );
+  });
+
+  it("stores what the pass concluded on the order and settles at the meter", async () => {
+    state.orders = [order()];
+    const r = await processNextOrderTask();
+    expect(r).toMatchObject({ status: "processed", ok: true });
+    expect(state.settlements).toHaveLength(1);
+    expect(state.refunds).toHaveLength(0);
+    const done = state.orderUpdates.find((u) => u.sql.includes("'done'"))!;
+    expect(done.sql).toContain("outcome = $2::jsonb");
+    expect(JSON.parse(done.params[1] as string)).toMatchObject({ kind: "recorded", refunded: false });
+  });
+
+  it("refunds a pass that ended without a conclusion for a reason on the platform's side (#1027)", async () => {
+    state.orders = [order()];
+    state.outcome = {
+      kind: "unconcluded",
+      ended_by: "output_limit",
+      spent_all: false,
+      platform_side: true,
+      wrote: [],
+      before: null,
+    };
+    const r = await processNextOrderTask();
+    // The order is done, not failed: the pass ran and its outcome is told.
+    expect(r).toMatchObject({ status: "processed", ok: true });
+    expect(state.settlements).toHaveLength(0);
+    expect(state.refunds).toEqual([
+      expect.objectContaining({ userId: "user-1", amountMicroUsd: 1_000_000, idempotencyKey: "refund:order:order-1" }),
+    ]);
+    const done = state.orderUpdates.find((u) => u.sql.includes("'done'"))!;
+    expect(JSON.parse(done.params[1] as string)).toMatchObject({ kind: "unconcluded", refunded: true });
+  });
+
+  it("settles at the meter a pass that stopped without a conclusion of its own accord", async () => {
+    state.orders = [order()];
+    state.outcome = {
+      kind: "unconcluded",
+      ended_by: "stopped",
+      spent_all: true,
+      platform_side: false,
+      wrote: [],
+      before: null,
+    };
+    await processNextOrderTask();
+    expect(state.refunds).toHaveLength(0);
+    expect(state.settlements).toHaveLength(1);
   });
 });

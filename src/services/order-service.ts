@@ -13,6 +13,7 @@
  * again — this is what guarantees a paid proposal's claim doesn't sit in the
  * background queue (#284).
  */
+import { outcomeClause, type PassOutcome } from "../llm/agents/pass-outcome.js";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { assessmentOrders, claims, type AssessmentOrder } from "../db/schema.js";
@@ -291,6 +292,16 @@ export function serializeOrder(o: AssessmentOrder, costMicroUsd?: number) {
     // while it is open, and where the cost was not looked up.
     cost_owls: costMicroUsd === undefined ? null : microUsdToOwls(costMicroUsd),
     error: o.error,
+    // What the Steward pass concluded (#1027): its kind, the clause a reader
+    // is told, and whether the buyer was refunded because it ended without a
+    // conclusion for a reason on the platform's side. Null while it is open.
+    outcome: o.outcome
+      ? {
+          kind: (o.outcome as PassOutcome).kind,
+          summary: outcomeClause(o.outcome as PassOutcome),
+          refunded: (o.outcome as { refunded?: boolean }).refunded === true,
+        }
+      : null,
     created_at: o.createdAt?.toISOString(),
     started_at: o.startedAt?.toISOString() ?? null,
     completed_at: o.completedAt?.toISOString() ?? null,

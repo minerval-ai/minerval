@@ -3968,6 +3968,11 @@ export const assessmentOrders = pgTable(
     // pending | running | done | cancelled | failed
     status: text("status").notNull().default("pending"),
     error: text("error"),
+    // What the Steward pass concluded (llm/agents/pass-outcome.ts, #1027):
+    // a new assessment, a logged decision that the one in force stands, a
+    // pause, or no conclusion. Null until the pass ends, and for orders that
+    // ended before it was kept.
+    outcome: jsonb("outcome"),
     // The label of the request or run that placed the order (src/labels.ts);
     // the Steward pass the order buys runs at it.
     sensitivityLabel: sensitivityLabelColumn(),
@@ -4032,6 +4037,10 @@ export const actions = pgTable(
     // open | running | done | superseded | cancelled
     status: text("status").notNull().default("open"),
     meteredCostMicroUsd: bigint("metered_cost_micro_usd", { mode: "number" }),
+    // What came of the run, beside what it spent (§19, #1027): for a
+    // Steward pass, what it concluded (llm/agents/pass-outcome.ts). Null for
+    // kinds that do not report one yet.
+    outcome: jsonb("outcome"),
     // The budget job the run's llm_usage metering was attributed to (the
     // largest funder's job), stamped at completion. Lets escrow accounting
     // subtract ledger-consumed metering from a job's llm_usage total so a
