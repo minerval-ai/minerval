@@ -79,7 +79,7 @@
     "smol-toml": "^1.9.1",
     "stripe": "^23.1.0",
     "tsx": "^4.19.0",
-    "unpdf": "^1.9.1",
+    "unpdf": "^2.2.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
