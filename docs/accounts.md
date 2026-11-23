@@ -326,6 +326,24 @@ account lacks, and is told which and why: the Assistant in its brief
 (`src/llm/permissions-note.ts`), an outside client in the server's
 instructions.
 
+Both are also told that the deployment is a private one
+(`src/llm/deployment-note.ts`, #1120). The Assistant's role, the caller
+skills and the server's instructions are one text everywhere and describe
+public Minerval, so on a members-only deployment a passage headed "This
+deployment" says what differs: that only members read the graph and what is
+added stays inside unless a page is released outside, the deployment's own
+site, API and MCP addresses in place of minerval.ai and api.claimgraph.io,
+that an administrator connects the organization's systems on
+`/admin/connections`, and whether a mirror of the public graph is held. The
+Assistant has it as a section of its system prompt, with its site named in
+place of minerval.ai; an outside client has it in the server's
+instructions; and a caller skill read from the deployment
+(`minerval://skills/{name}`, `load_skill`) is headed by it, or for the
+Assistant by a line pointing to it. It names no label. Until the layer
+every member reads has a name of its own (#1203), a conversation at
+`public` is also told that the word there means that layer and not the
+public graph. On the public graph nothing is added.
+
 ### The label a request works at
 
 Reading is held to a clearance, a set of labels. Writing needs one label:

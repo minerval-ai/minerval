@@ -2255,7 +2255,11 @@ is shown as "a reader" unless they chose to be named on the mandate
 (`funder_named`); their account is never served. The conversation page
 says so before the first message, and the Grantmaker is told it, and asked
 to stop a funder who starts to share something they would not publish
-(`PUBLIC_CONVERSATION_SECTION`, src/llm/prompts/grantmaker.ts). A mandate
+(`PUBLIC_CONVERSATION_SECTION`, src/llm/prompts/grantmaker.ts). In a
+members-only deployment the conversation is open to the members who read
+the mandate's label and to nobody outside, and the Grantmaker is told that
+in its place (`MEMBERS_CONVERSATION_SECTION`), at whichever label the
+mandate works. A mandate
 it makes is public in every state, its planning and its wait for approval
 included, with its working notes (`workspace`), the notes its review passes
 left for its funder (`funder_notes`) and its conversation. Every run that

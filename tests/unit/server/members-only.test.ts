@@ -364,7 +364,7 @@ describe("the settings", () => {
 });
 
 describe("what an outside MCP caller is told", () => {
-  it("is nothing more on the public graph, and the tools its permissions leave out in a members-only deployment", async () => {
+  it("is nothing more on the public graph, and in a members-only deployment that it is one and the tools its permissions leave out", async () => {
     const auth = (grants: Array<{ permission: string }>) => ({
       method: "api_key" as const,
       userId: "u",
@@ -406,6 +406,13 @@ describe("what an outside MCP caller is told", () => {
     expect(limited.instructions).not.toMatch(/Without the permission to fund work/);
 
     const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }, { permission: "consent" }]);
-    expect(all.instructions).toBe(all.base);
+    // Nothing about permissions, since none is missing. What every caller
+    // of a private deployment is told still stands: that it is one, at its
+    // own address and not the public graph's (llm/deployment-note.ts, #1120).
+    expect(all.instructions.startsWith(all.base)).toBe(true);
+    expect(all.instructions).not.toContain("your user does not hold all of them");
+    expect(all.instructions).toContain("## This deployment");
+    expect(all.instructions).toMatch(/It is not the public graph at minerval\.ai/);
+    expect(limited.instructions).toContain("## This deployment");
   });
 });
