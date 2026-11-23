@@ -1,0 +1,1410 @@
+{
+  "version": null,
+  "settings": [
+    {
+      "key": "accounts.first_administrator",
+      "env": "FIRST_ADMINISTRATOR",
+      "default": ""
+    },
+    {
+      "key": "accounts.reads",
+      "env": "READS",
+      "default": "open"
+    },
+    {
+      "key": "accounts.sign_in_valid_hours",
+      "env": "SIGN_IN_VALID_HOURS",
+      "default": "12"
+    },
+    {
+      "key": "allocation.background_fallback_lane",
+      "env": "BACKGROUND_FALLBACK_LANE_ENABLED",
+      "default": "false"
+    },
+    {
+      "key": "allocation.consistency_min_tag_claims",
+      "env": "CONSISTENCY_MIN_TAG_CLAIMS",
+      "default": "10"
+    },
+    {
+      "key": "allocation.consistency_sweeps",
+      "env": "CONSISTENCY_SWEEPS_ENABLED",
+      "default": "false"
+    },
+    {
+      "key": "allocation.correspondent_runs",
+      "env": "CORRESPONDENT_RUNS_ENABLED",
+      "default": "true"
+    },
+    {
+      "key": "allocation.cost_estimate_min_runs",
+      "env": "COST_ESTIMATE_MIN_RUNS",
+      "default": "5"
+    },
+    {
+      "key": "allocation.cost_estimate_percentile",
+      "env": "COST_ESTIMATE_PERCENTILE",
+      "default": "0.8"
+    },
+    {
+      "key": "allocation.cost_estimate_window_days",
+      "env": "COST_ESTIMATE_WINDOW_DAYS",
+      "default": "14"
+    },
+    {
+      "key": "allocation.curator_max_runs",
+      "env": "CURATOR_MAX_RUNS",
+      "default": "0"
+    },
+    {
+      "key": "allocation.est_steward_run_cost_owls",
+      "env": "EST_STEWARD_RUN_COST_OWLS",
+      "default": "1.4"
+    },
+    {
+      "key": "allocation.est_steward_run_cost_strong_owls",
+      "env": "EST_STEWARD_RUN_COST_STRONG_OWLS",
+      "default": "3.3"
+    },
+    {
+      "key": "allocation.grant_maintain_cadence_days",
+      "env": "GRANT_MAINTAIN_CADENCE_DAYS",
+      "default": "30"
+    },
+    {
+      "key": "allocation.lookout_runs",
+      "env": "LOOKOUT_RUNS_ENABLED",
+      "default": "true"
+    },
+    {
+      "key": "allocation.mandate_review",
+      "env": "MANDATE_REVIEW_ENABLED",
+      "default": "true"
+    },
+    {
+      "key": "allocation.mandate_review_move_fraction_per_day",
+      "env": "MANDATE_REVIEW_MOVE_FRACTION_PER_DAY",
+      "default": "0.5"
+    },
+    {
+      "key": "allocation.mandate_review_move_fraction_per_pass",
+      "env": "MANDATE_REVIEW_MOVE_FRACTION_PER_PASS",
+      "default": "0.25"
+    },
+    {
+      "key": "allocation.officer_sittings",
+      "env": "OFFICER_SITTINGS_ENABLED",
+      "default": "false"
+    },
+    {
+      "key": "allocation.proposed_claim_importance_prior",
+      "env": "PROPOSED_CLAIM_IMPORTANCE_PRIOR",
+      "default": "0.3"
+    },
+    {
+      "key": "allocation.staleness_base_days",
+      "env": "STALENESS_BASE_DAYS",
+      "default": "60"
+    },
+    {
+      "key": "allocation.steward_concurrency",
+      "env": "STEWARD_CONCURRENCY",
+      "default": "8"
+    },
+    {
+      "key": "allocation.steward_enqueue_min_importance",
+      "env": "STEWARD_ENQUEUE_MIN_IMPORTANCE",
+      "default": "0.25"
+    },
+    {
+      "key": "allocation.steward_max_iterations",
+      "env": "STEWARD_MAX_ITERATIONS",
+      "default": "200"
+    },
+    {
+      "key": "allocation.steward_max_runs",
+      "env": "STEWARD_MAX_RUNS",
+      "default": "0"
+    },
+    {
+      "key": "allocation.sweep_interval_hours",
+      "env": "ALLOCATION_SWEEP_INTERVAL_HOURS",
+      "default": "6"
+    },
+    {
+      "key": "budgets.arbitration_usd",
+      "env": "ARBITRATION_BUDGET_USD",
+      "default": "3"
+    },
+    {
+      "key": "budgets.audit_run_owls",
+      "env": "AUDIT_RUN_BUDGET_OWLS",
+      "default": "5"
+    },
+    {
+      "key": "budgets.background_daily_owls",
+      "env": "BACKGROUND_DAILY_BUDGET_OWLS",
+      "default": "50"
+    },
+    {
+      "key": "budgets.cap_consistency_sweep_owls",
+      "env": "CAP_CONSISTENCY_SWEEP_OWLS",
+      "default": "2"
+    },
+    {
+      "key": "budgets.cap_consistency_sweep_strong_owls",
+      "env": "CAP_CONSISTENCY_SWEEP_STRONG_OWLS",
+      "default": "10"
+    },
+    {
+      "key": "budgets.cap_correspondent_run_owls",
+      "env": "CAP_CORRESPONDENT_RUN_OWLS",
+      "default": "0.25"
+    },
+    {
+      "key": "budgets.cap_lookout_run_owls",
+      "env": "CAP_LOOKOUT_RUN_OWLS",
+      "default": "0.05"
+    },
+    {
+      "key": "budgets.contribution_award_owl_per_point",
+      "env": "CONTRIBUTION_AWARD_OWL_PER_POINT",
+      "default": "0"
+    },
+    {
+      "key": "budgets.contribution_review_estimate_usd",
+      "env": "CONTRIBUTION_REVIEW_ESTIMATE_USD",
+      "default": "0.25"
+    },
+    {
+      "key": "budgets.contribution_review_usd",
+      "env": "CONTRIBUTION_REVIEW_BUDGET_USD",
+      "default": "1"
+    },
+    {
+      "key": "budgets.curate_run_owls",
+      "env": "CURATE_RUN_BUDGET_OWLS",
+      "default": "5"
+    },
+    {
+      "key": "budgets.default_officer_limit_owls",
+      "env": "DEFAULT_OFFICER_LIMIT_OWLS",
+      "default": "5"
+    },
+    {
+      "key": "budgets.default_review_pass_owls",
+      "env": "DEFAULT_REVIEW_PASS_BUDGET_OWLS",
+      "default": "5"
+    },
+    {
+      "key": "budgets.matcher_usd",
+      "env": "MATCHER_BUDGET_USD",
+      "default": "0.1"
+    },
+    {
+      "key": "budgets.officer_run_owls",
+      "env": "OFFICER_RUN_BUDGET_OWLS",
+      "default": "1"
+    },
+    {
+      "key": "budgets.paid_assessment_owls",
+      "env": "PAID_ASSESSMENT_BUDGET_OWLS",
+      "default": "5"
+    },
+    {
+      "key": "budgets.review_pass_floor_owls",
+      "env": "REVIEW_PASS_FLOOR_OWLS",
+      "default": "1"
+    },
+    {
+      "key": "connections.credential_key",
+      "env": "CREDENTIAL_ENCRYPTION_KEY",
+      "default": null
+    },
+    {
+      "key": "connections.previous_credential_keys",
+      "env": "CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS",
+      "default": null
+    },
+    {
+      "key": "database.ca_file",
+      "env": "DATABASE_CA_FILE",
+      "default": null
+    },
+    {
+      "key": "database.cleared_role_password",
+      "env": "CLEARED_ROLE_PASSWORD",
+      "default": null
+    },
+    {
+      "key": "database.host",
+      "env": "DB_HOST",
+      "default": null
+    },
+    {
+      "key": "database.name",
+      "env": "DB_NAME",
+      "default": null
+    },
+    {
+      "key": "database.password",
+      "env": "DB_PASSWORD",
+      "default": null
+    },
+    {
+      "key": "database.port",
+      "env": "DB_PORT",
+      "default": null
+    },
+    {
+      "key": "database.sql_agent_password",
+      "env": "SQL_AGENT_DB_PASSWORD",
+      "default": null
+    },
+    {
+      "key": "database.sql_agent_url",
+      "env": "SQL_AGENT_DATABASE_URL",
+      "default": null
+    },
+    {
+      "key": "database.sql_agent_user",
+      "env": "SQL_AGENT_DB_USERNAME",
+      "default": null
+    },
+    {
+      "key": "database.sql_caller_password",
+      "env": "SQL_CALLER_DB_PASSWORD",
+      "default": null
+    },
+    {
+      "key": "database.sql_caller_url",
+      "env": "SQL_CALLER_DATABASE_URL",
+      "default": null
+    },
+    {
+      "key": "database.sql_caller_user",
+      "env": "SQL_CALLER_DB_USERNAME",
+      "default": null
+    },
+    {
+      "key": "database.sql_host",
+      "env": "SQL_DB_HOST",
+      "default": null
+    },
+    {
+      "key": "database.sql_port",
+      "env": "SQL_DB_PORT",
+      "default": null
+    },
+    {
+      "key": "database.tls",
+      "env": "DATABASE_TLS",
+      "default": null
+    },
+    {
+      "key": "database.url",
+      "env": "DATABASE_URL",
+      "default": null
+    },
+    {
+      "key": "database.user",
+      "env": "DB_USERNAME",
+      "default": null
+    },
+    {
+      "key": "features.off",
+      "env": "FEATURES_OFF",
+      "default": ""
+    },
+    {
+      "key": "file_sets.directory_root",
+      "env": "FILE_SET_DIRECTORY_ROOT",
+      "default": ""
+    },
+    {
+      "key": "file_sets.store_dir",
+      "env": "FILE_SET_STORE_DIR",
+      "default": ""
+    },
+    {
+      "key": "hosting.anonymous_rate_limit_per_minute",
+      "env": "ANONYMOUS_RATE_LIMIT_PER_MINUTE",
+      "default": "300"
+    },
+    {
+      "key": "hosting.api_base_url",
+      "env": "PUBLIC_API_BASE_URL",
+      "default": "http://localhost:3000"
+    },
+    {
+      "key": "hosting.api_keys",
+      "env": "API_KEYS",
+      "default": null
+    },
+    {
+      "key": "hosting.citation_url_base",
+      "env": "CITATION_URL_BASE",
+      "default": ""
+    },
+    {
+      "key": "hosting.cors_origins",
+      "env": "CORS_ORIGINS",
+      "default": ""
+    },
+    {
+      "key": "hosting.environment",
+      "env": "ENVIRONMENT",
+      "default": "development"
+    },
+    {
+      "key": "hosting.host",
+      "env": "HOST",
+      "default": "0.0.0.0"
+    },
+    {
+      "key": "hosting.log_level",
+      "env": "LOG_LEVEL",
+      "default": "info"
+    },
+    {
+      "key": "hosting.operator_key",
+      "env": "MINERVAL_OPERATOR_KEY",
+      "default": null
+    },
+    {
+      "key": "hosting.port",
+      "env": "PORT",
+      "default": "3000"
+    },
+    {
+      "key": "hosting.web_base_url",
+      "env": "PUBLIC_WEB_BASE_URL",
+      "default": "https://minerval.ai"
+    },
+    {
+      "key": "limits.agentic_rate_limit_per_hour",
+      "env": "AGENTIC_RATE_LIMIT_PER_HOUR",
+      "default": "30"
+    },
+    {
+      "key": "limits.contribution_rate_limit_per_hour",
+      "env": "CONTRIBUTION_RATE_LIMIT_PER_HOUR",
+      "default": "10"
+    },
+    {
+      "key": "limits.extension_max_claims",
+      "env": "EXTENSION_MAX_CLAIMS",
+      "default": "25"
+    },
+    {
+      "key": "limits.file_set_upload_max_bytes",
+      "env": "FILE_SET_UPLOAD_MAX_BYTES",
+      "default": "10737418240"
+    },
+    {
+      "key": "limits.grant_conversation_rate_limit_per_hour",
+      "env": "GRANT_CONVERSATION_RATE_LIMIT_PER_HOUR",
+      "default": "30"
+    },
+    {
+      "key": "limits.llm_daily_call_limit",
+      "env": "LLM_DAILY_CALL_LIMIT",
+      "default": "0"
+    },
+    {
+      "key": "limits.llm_daily_token_limit",
+      "env": "LLM_DAILY_TOKEN_LIMIT",
+      "default": "0"
+    },
+    {
+      "key": "limits.llm_hourly_call_limit",
+      "env": "LLM_HOURLY_CALL_LIMIT",
+      "default": "0"
+    },
+    {
+      "key": "limits.llm_hourly_token_limit",
+      "env": "LLM_HOURLY_TOKEN_LIMIT",
+      "default": "0"
+    },
+    {
+      "key": "limits.llm_long_run_timeout_ms",
+      "env": "LLM_LONG_RUN_TIMEOUT_MS",
+      "default": "3600000"
+    },
+    {
+      "key": "limits.llm_max_retries",
+      "env": "LLM_MAX_RETRIES",
+      "default": "4"
+    },
+    {
+      "key": "limits.llm_request_timeout_ms",
+      "env": "LLM_REQUEST_TIMEOUT_MS",
+      "default": "180000"
+    },
+    {
+      "key": "limits.new_contributor_rate_limit_per_hour",
+      "env": "NEW_CONTRIBUTOR_RATE_LIMIT_PER_HOUR",
+      "default": "3"
+    },
+    {
+      "key": "limits.public_read_max_age_seconds",
+      "env": "PUBLIC_READ_MAX_AGE_SECONDS",
+      "default": "60"
+    },
+    {
+      "key": "limits.public_read_stale_while_revalidate_seconds",
+      "env": "PUBLIC_READ_STALE_WHILE_REVALIDATE_SECONDS",
+      "default": "300"
+    },
+    {
+      "key": "limits.published_page_max_bytes",
+      "env": "PUBLISHED_PAGE_MAX_BYTES",
+      "default": "4000000"
+    },
+    {
+      "key": "limits.report_rate_limit_per_hour",
+      "env": "REPORT_RATE_LIMIT_PER_HOUR",
+      "default": "5"
+    },
+    {
+      "key": "mathematics.attempt_overage_fraction",
+      "env": "ATTEMPT_OVERAGE_FRACTION",
+      "default": "0.25"
+    },
+    {
+      "key": "mathematics.bounty_autonomy_threshold_owls",
+      "env": "BOUNTY_AUTONOMY_THRESHOLD_OWLS",
+      "default": "1000"
+    },
+    {
+      "key": "mathematics.bounty_default_expiry_days",
+      "env": "BOUNTY_DEFAULT_EXPIRY_DAYS",
+      "default": "365"
+    },
+    {
+      "key": "mathematics.bounty_escrow_fraction_per_day",
+      "env": "BOUNTY_ESCROW_FRACTION_PER_DAY",
+      "default": "0.5"
+    },
+    {
+      "key": "mathematics.bounty_escrow_fraction_per_pass",
+      "env": "BOUNTY_ESCROW_FRACTION_PER_PASS",
+      "default": "0.4"
+    },
+    {
+      "key": "mathematics.bounty_notice_days",
+      "env": "BOUNTY_NOTICE_DAYS",
+      "default": "30"
+    },
+    {
+      "key": "mathematics.formalization_review_award_owls",
+      "env": "FORMALIZATION_REVIEW_AWARD_OWLS",
+      "default": "100"
+    },
+    {
+      "key": "mathematics.formalization_review_period_days",
+      "env": "FORMALIZATION_REVIEW_PERIOD_DAYS",
+      "default": "14"
+    },
+    {
+      "key": "mathematics.lean_check_overhead_micro_usd",
+      "env": "LEAN_CHECK_OVERHEAD_MICRO_USD",
+      "default": "20000"
+    },
+    {
+      "key": "mathematics.lean_checker_token",
+      "env": "LEAN_CHECKER_TOKEN",
+      "default": null
+    },
+    {
+      "key": "mathematics.lean_checker_url",
+      "env": "LEAN_CHECKER_URL",
+      "default": ""
+    },
+    {
+      "key": "mathematics.lean_cpu_hour_cost_micro_usd",
+      "env": "LEAN_CPU_HOUR_COST_MICRO_USD",
+      "default": "200000"
+    },
+    {
+      "key": "mathematics.mandate_daily_owls",
+      "env": "MATH_MANDATE_DAILY_OWLS",
+      "default": "200"
+    },
+    {
+      "key": "mathematics.mandate_escrow_owls",
+      "env": "MATH_MANDATE_ESCROW_OWLS",
+      "default": "2500"
+    },
+    {
+      "key": "mathematics.max_bounty_per_claim_owls",
+      "env": "MAX_BOUNTY_PER_CLAIM_OWLS",
+      "default": "5000"
+    },
+    {
+      "key": "mathematics.min_bounty_per_claim_owls",
+      "env": "MIN_BOUNTY_PER_CLAIM_OWLS",
+      "default": "250"
+    },
+    {
+      "key": "mathematics.prize_challenge_window_days_large",
+      "env": "PRIZE_CHALLENGE_WINDOW_DAYS_LARGE",
+      "default": "30"
+    },
+    {
+      "key": "mathematics.prize_challenge_window_days_small",
+      "env": "PRIZE_CHALLENGE_WINDOW_DAYS_SMALL",
+      "default": "14"
+    },
+    {
+      "key": "mathematics.prize_check_max_attempts",
+      "env": "PRIZE_CHECK_MAX_ATTEMPTS",
+      "default": "3"
+    },
+    {
+      "key": "mathematics.prize_check_max_concurrent",
+      "env": "PRIZE_CHECK_MAX_CONCURRENT",
+      "default": "2"
+    },
+    {
+      "key": "mathematics.prize_check_reclaim_minutes",
+      "env": "PRIZE_CHECK_RECLAIM_MINUTES",
+      "default": "30"
+    },
+    {
+      "key": "mathematics.prize_checks_per_day",
+      "env": "PRIZE_CHECKS_PER_DAY",
+      "default": "50"
+    },
+    {
+      "key": "mathematics.prize_claims_per_day_platform",
+      "env": "PRIZE_CLAIMS_PER_DAY_PLATFORM",
+      "default": "5"
+    },
+    {
+      "key": "mathematics.prize_claims_per_statement_per_30_days",
+      "env": "PRIZE_CLAIMS_PER_STATEMENT_PER_30_DAYS",
+      "default": "3"
+    },
+    {
+      "key": "mathematics.prize_defect_award_cap_owls",
+      "env": "PRIZE_DEFECT_AWARD_CAP_OWLS",
+      "default": "500"
+    },
+    {
+      "key": "mathematics.prize_defect_award_fraction",
+      "env": "PRIZE_DEFECT_AWARD_FRACTION",
+      "default": "0.1"
+    },
+    {
+      "key": "mathematics.prize_human_signoff_importance",
+      "env": "PRIZE_HUMAN_SIGNOFF_IMPORTANCE",
+      "default": "0.6"
+    },
+    {
+      "key": "mathematics.prize_human_signoff_owls",
+      "env": "PRIZE_HUMAN_SIGNOFF_OWLS",
+      "default": "1000"
+    },
+    {
+      "key": "mathematics.prize_owl_tranche_owls",
+      "env": "PRIZE_OWL_TRANCHE_OWLS",
+      "default": "2000"
+    },
+    {
+      "key": "mathematics.prize_payee_steps_days",
+      "env": "PRIZE_PAYEE_STEPS_DAYS",
+      "default": "90"
+    },
+    {
+      "key": "mathematics.prize_review_reserve_fraction",
+      "env": "PRIZE_REVIEW_RESERVE_FRACTION",
+      "default": "0.1"
+    },
+    {
+      "key": "mathematics.prize_window_tier_owls",
+      "env": "PRIZE_WINDOW_TIER_OWLS",
+      "default": "1000"
+    },
+    {
+      "key": "mathematics.prizes_escrow_owls",
+      "env": "MATH_PRIZES_ESCROW_OWLS",
+      "default": "2500"
+    },
+    {
+      "key": "mathematics.solver_calibration_daily_cap_owls",
+      "env": "SOLVER_CALIBRATION_DAILY_CAP_OWLS",
+      "default": "100"
+    },
+    {
+      "key": "mathematics.solver_daily_cap_owls",
+      "env": "SOLVER_DAILY_CAP_OWLS",
+      "default": "400"
+    },
+    {
+      "key": "mathematics.solver_enabled",
+      "env": "SOLVER_ENABLED",
+      "default": "false"
+    },
+    {
+      "key": "mirror.apply_interval_seconds",
+      "env": "MIRROR_APPLY_INTERVAL_SECONDS",
+      "default": "300"
+    },
+    {
+      "key": "mirror.batch_max_bytes",
+      "env": "MIRROR_BATCH_MAX_BYTES",
+      "default": "8000000"
+    },
+    {
+      "key": "mirror.feed_dir",
+      "env": "MIRROR_FEED_DIR",
+      "default": ""
+    },
+    {
+      "key": "mirror.feed_next_public_keys",
+      "env": "MIRROR_FEED_NEXT_PUBLIC_KEYS",
+      "default": ""
+    },
+    {
+      "key": "mirror.feed_public_keys",
+      "env": "MIRROR_FEED_PUBLIC_KEYS",
+      "default": ""
+    },
+    {
+      "key": "mirror.feed_url",
+      "env": "MIRROR_FEED_URL",
+      "default": ""
+    },
+    {
+      "key": "mirror.publish",
+      "env": "MIRROR_PUBLISH",
+      "default": "false"
+    },
+    {
+      "key": "mirror.publish_interval_seconds",
+      "env": "MIRROR_PUBLISH_INTERVAL_SECONDS",
+      "default": "900"
+    },
+    {
+      "key": "mirror.publisher_worker",
+      "env": "MIRROR_PUBLISHER_WORKER",
+      "default": "false"
+    },
+    {
+      "key": "mirror.signing_key",
+      "env": "MIRROR_SIGNING_KEY",
+      "default": null
+    },
+    {
+      "key": "model_providers.anthropic_api_key",
+      "env": "ANTHROPIC_API_KEY",
+      "default": null
+    },
+    {
+      "key": "model_providers.endpoints",
+      "env": "MODEL_ENDPOINTS",
+      "default": ""
+    },
+    {
+      "key": "model_providers.openai_api_key",
+      "env": "OPENAI_API_KEY",
+      "default": null
+    },
+    {
+      "key": "model_providers.openrouter_api_key",
+      "env": "OPENROUTER_API_KEY",
+      "default": null
+    },
+    {
+      "key": "model_providers.openrouter_provider_sort",
+      "env": "OPENROUTER_PROVIDER_SORT",
+      "default": null
+    },
+    {
+      "key": "models.arbitration",
+      "env": "ARBITRATION_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.assistant",
+      "env": "ASSISTANT_MODEL",
+      "default": "claude-fable-5-2"
+    },
+    {
+      "key": "models.assistant_markup",
+      "env": "ASSISTANT_MARKUP_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.assistant_standard",
+      "env": "ASSISTANT_STANDARD_MODEL",
+      "default": "claude-opus-5-5"
+    },
+    {
+      "key": "models.assistant_title",
+      "env": "ASSISTANT_TITLE_MODEL",
+      "default": "claude-haiku-5-5"
+    },
+    {
+      "key": "models.audit",
+      "env": "AUDIT_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.consistency",
+      "env": "CONSISTENCY_MODEL",
+      "default": "openai/gpt-6-luna"
+    },
+    {
+      "key": "models.consistency_strong",
+      "env": "CONSISTENCY_STRONG_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.contribution_reviewer",
+      "env": "GOVERNANCE_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.correspondent",
+      "env": "CORRESPONDENT_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.curator",
+      "env": "CURATOR_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.extractor",
+      "env": "EXTRACTOR_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.extractor_fallback",
+      "env": "EXTRACTOR_FALLBACK_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.grantmaker",
+      "env": "GRANTMAKER_MODEL",
+      "default": "claude-fable-5-2"
+    },
+    {
+      "key": "models.judge",
+      "env": "JUDGE_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.lookout",
+      "env": "LOOKOUT_MODEL",
+      "default": "openai/gpt-6-luna"
+    },
+    {
+      "key": "models.matcher",
+      "env": "MATCHER_MODEL",
+      "default": "openai/gpt-6-luna"
+    },
+    {
+      "key": "models.program_officer",
+      "env": "PROGRAM_OFFICER_MODEL",
+      "default": "openai/gpt-6-luna"
+    },
+    {
+      "key": "models.redactor",
+      "env": "REDACTOR_MODEL",
+      "default": ""
+    },
+    {
+      "key": "models.researcher_cheap",
+      "env": "RESEARCHER_CHEAP_MODEL",
+      "default": "openai/gpt-6-luna"
+    },
+    {
+      "key": "models.researcher_standard",
+      "env": "RESEARCHER_STANDARD_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.researcher_strong",
+      "env": "RESEARCHER_STRONG_MODEL",
+      "default": "claude-fable-5-2"
+    },
+    {
+      "key": "models.solver",
+      "env": "SOLVER_MODEL",
+      "default": "claude-fable-5-2"
+    },
+    {
+      "key": "models.steward",
+      "env": "STEWARD_MODEL",
+      "default": "claude-sonnet-5-5"
+    },
+    {
+      "key": "models.steward_strong",
+      "env": "STEWARD_STRONG_MODEL",
+      "default": ""
+    },
+    {
+      "key": "models.tagger",
+      "env": "TAGGER_MODEL",
+      "default": "openai/gpt-6-luna"
+    },
+    {
+      "key": "oidc.signing_key",
+      "env": "OIDC_SIGNING_KEY",
+      "default": null
+    },
+    {
+      "key": "outside_services.elicit.api_key",
+      "env": "ELICIT_API_KEY",
+      "default": null
+    },
+    {
+      "key": "outside_services.elicit.url",
+      "env": "ELICIT_MCP_URL",
+      "default": "https://elicit.com/api/mcp"
+    },
+    {
+      "key": "outside_services.elicit.usd_per_call",
+      "env": "ELICIT_USD_PER_CALL",
+      "default": "2"
+    },
+    {
+      "key": "outside_services.elicit.use",
+      "env": "ELICIT_ENABLED",
+      "default": null
+    },
+    {
+      "key": "outside_services.github_issues.api_base_url",
+      "env": "GITHUB_API_BASE_URL",
+      "default": "https://api.github.com"
+    },
+    {
+      "key": "outside_services.github_issues.app_id",
+      "env": "GITHUB_APP_ID",
+      "default": ""
+    },
+    {
+      "key": "outside_services.github_issues.app_installation_id",
+      "env": "GITHUB_APP_INSTALLATION_ID",
+      "default": ""
+    },
+    {
+      "key": "outside_services.github_issues.app_private_key",
+      "env": "GITHUB_APP_PRIVATE_KEY",
+      "default": null
+    },
+    {
+      "key": "outside_services.github_issues.include_external_reports",
+      "env": "GITHUB_ISSUES_INCLUDE_EXTERNAL",
+      "default": "false"
+    },
+    {
+      "key": "outside_services.github_issues.label",
+      "env": "GITHUB_ISSUES_LABEL",
+      "default": "agent-generated"
+    },
+    {
+      "key": "outside_services.github_issues.repo",
+      "env": "GITHUB_ISSUES_REPO",
+      "default": ""
+    },
+    {
+      "key": "outside_services.github_issues.token",
+      "env": "GITHUB_TOKEN",
+      "default": null
+    },
+    {
+      "key": "outside_services.pangram.ai_usd_per_word",
+      "env": "PANGRAM_AI_USD_PER_WORD",
+      "default": "0.0005"
+    },
+    {
+      "key": "outside_services.pangram.api_key",
+      "env": "PANGRAM_API_KEY",
+      "default": null
+    },
+    {
+      "key": "outside_services.pangram.max_words",
+      "env": "PANGRAM_MAX_WORDS",
+      "default": "1500"
+    },
+    {
+      "key": "outside_services.pangram.model",
+      "env": "PANGRAM_MODEL",
+      "default": "pangram-4"
+    },
+    {
+      "key": "outside_services.pangram.plagiarism_url",
+      "env": "PANGRAM_PLAGIARISM_API_URL",
+      "default": "https://plagiarism.api.pangram.com"
+    },
+    {
+      "key": "outside_services.pangram.plagiarism_usd_per_word",
+      "env": "PANGRAM_PLAGIARISM_USD_PER_WORD",
+      "default": "0.0005"
+    },
+    {
+      "key": "outside_services.pangram.url",
+      "env": "PANGRAM_API_URL",
+      "default": "https://text.external-api.pangram.com"
+    },
+    {
+      "key": "outside_services.pangram.use",
+      "env": "PANGRAM_ENABLED",
+      "default": null
+    },
+    {
+      "key": "outside_services.payments.stripe_secret_key",
+      "env": "STRIPE_SECRET_KEY",
+      "default": null
+    },
+    {
+      "key": "outside_services.payments.stripe_webhook_secret",
+      "env": "STRIPE_WEBHOOK_SECRET",
+      "default": null
+    },
+    {
+      "key": "outside_services.payments.use",
+      "env": "PAYMENTS_ENABLED",
+      "default": null
+    },
+    {
+      "key": "pricing.cap_assessment_owls",
+      "env": "CAP_ASSESSMENT_OWLS",
+      "default": "2"
+    },
+    {
+      "key": "pricing.cap_claim_proposal_owls",
+      "env": "CAP_CLAIM_PROPOSAL_OWLS",
+      "default": "2"
+    },
+    {
+      "key": "pricing.cap_extension_analysis_owls",
+      "env": "CAP_EXTENSION_ANALYSIS_OWLS",
+      "default": "1"
+    },
+    {
+      "key": "pricing.cap_source_ingest_owls",
+      "env": "CAP_SOURCE_INGEST_OWLS",
+      "default": "10"
+    },
+    {
+      "key": "pricing.cap_text_analysis_owls",
+      "env": "CAP_TEXT_ANALYSIS_OWLS",
+      "default": "0.1"
+    },
+    {
+      "key": "pricing.guest_ask_daily_owls",
+      "env": "GUEST_ASK_DAILY_OWLS",
+      "default": "100"
+    },
+    {
+      "key": "pricing.guest_ask_owls",
+      "env": "GUEST_ASK_OWLS",
+      "default": "5"
+    },
+    {
+      "key": "pricing.guest_ask_per_address_per_day",
+      "env": "GUEST_ASK_PER_ADDRESS_PER_DAY",
+      "default": "1"
+    },
+    {
+      "key": "pricing.model_price_refresh_hours",
+      "env": "MODEL_PRICE_REFRESH_HOURS",
+      "default": "6"
+    },
+    {
+      "key": "pricing.model_prices",
+      "env": "MODEL_PRICES",
+      "default": ""
+    },
+    {
+      "key": "pricing.monthly_grant_owls",
+      "env": "MONTHLY_GRANT_OWLS",
+      "default": "1"
+    },
+    {
+      "key": "pricing.owl_cost_micro_usd",
+      "env": "OWL_COST_MICRO_USD",
+      "default": "1000000"
+    },
+    {
+      "key": "pricing.owl_packs",
+      "env": "OWL_PACKS",
+      "default": "5:2000:Clutch,25:9000:Perch,100:30000:Wisdom,500:100000:Parliament"
+    },
+    {
+      "key": "pricing.owl_price_micro_usd",
+      "env": "OWL_PRICE_MICRO_USD",
+      "default": "4000000"
+    },
+    {
+      "key": "pricing.owls",
+      "env": "OWLS",
+      "default": "sold"
+    },
+    {
+      "key": "pricing.signup_grant_owls",
+      "env": "SIGNUP_GRANT_OWLS",
+      "default": "10"
+    },
+    {
+      "key": "private_runs.fetches",
+      "env": "PRIVATE_RUN_FETCHES",
+      "default": "any"
+    },
+    {
+      "key": "processing.contributions",
+      "env": "ENABLE_CONTRIBUTIONS",
+      "default": "false"
+    },
+    {
+      "key": "processing.enqueue_events",
+      "env": "ENQUEUE_EVENTS",
+      "default": null
+    },
+    {
+      "key": "processing.extraction_max_tokens",
+      "env": "EXTRACTION_MAX_TOKENS",
+      "default": "16384"
+    },
+    {
+      "key": "processing.label_posture",
+      "env": "LABEL_POSTURE",
+      "default": ""
+    },
+    {
+      "key": "processing.matching_top_k",
+      "env": "MATCHING_TOP_K",
+      "default": "20"
+    },
+    {
+      "key": "processing.pipeline_epoch",
+      "env": "PIPELINE_EPOCH",
+      "default": "2026-10-assessment-as-thinking"
+    },
+    {
+      "key": "processing.prompt_cache_ttl",
+      "env": "PROMPT_CACHE_TTL",
+      "default": "5m"
+    },
+    {
+      "key": "processing.queue_depth_sample_interval_hours",
+      "env": "QUEUE_DEPTH_SAMPLE_INTERVAL_HOURS",
+      "default": "6"
+    },
+    {
+      "key": "processing.queue_stall_minutes",
+      "env": "QUEUE_STALL_MINUTES",
+      "default": "30"
+    },
+    {
+      "key": "processing.tagging_batch_size",
+      "env": "TAGGING_BATCH_SIZE",
+      "default": "5"
+    },
+    {
+      "key": "processing.tagging_interval_seconds",
+      "env": "TAGGING_INTERVAL_SECONDS",
+      "default": "30"
+    },
+    {
+      "key": "processing.trace_always_agents",
+      "env": "TRACE_ALWAYS_AGENTS",
+      "default": "math_solver"
+    },
+    {
+      "key": "processing.url_extraction_concurrency",
+      "env": "URL_EXTRACTION_CONCURRENCY",
+      "default": "3"
+    },
+    {
+      "key": "processing.url_extraction_stall_minutes",
+      "env": "URL_EXTRACTION_STALL_MINUTES",
+      "default": "15"
+    },
+    {
+      "key": "processing.usage_report_interval_seconds",
+      "env": "USAGE_REPORT_INTERVAL_SECONDS",
+      "default": "3600"
+    },
+    {
+      "key": "provider_labels",
+      "env": "PROVIDER_LABELS",
+      "default": ""
+    },
+    {
+      "key": "public_graph.acts_by",
+      "env": "PUBLIC_ACTS_BY",
+      "default": "direct"
+    },
+    {
+      "key": "public_graph.api_url",
+      "env": "PUBLIC_GRAPH_API_URL",
+      "default": ""
+    },
+    {
+      "key": "public_graph.hosting_token",
+      "env": "MINERVAL_HOSTING_TOKEN",
+      "default": null
+    },
+    {
+      "key": "public_graph.price",
+      "env": "PUBLIC_GRAPH_PRICE",
+      "default": "metered"
+    },
+    {
+      "key": "publishing.hosting",
+      "env": "DEPLOYMENT_HOSTING",
+      "default": ""
+    },
+    {
+      "key": "publishing.signing_key",
+      "env": "PUBLISH_SIGNING_KEY",
+      "default": null
+    },
+    {
+      "key": "queues.arbitration",
+      "env": "SQS_ARBITRATION_QUEUE",
+      "default": ""
+    },
+    {
+      "key": "queues.aws_region",
+      "env": "AWS_REGION",
+      "default": "us-east-1"
+    },
+    {
+      "key": "queues.claim_pipeline",
+      "env": "SQS_CLAIM_PIPELINE_QUEUE",
+      "default": ""
+    },
+    {
+      "key": "queues.contribution",
+      "env": "SQS_CONTRIBUTION_QUEUE",
+      "default": ""
+    },
+    {
+      "key": "queues.steward",
+      "env": "SQS_STEWARD_QUEUE",
+      "default": ""
+    },
+    {
+      "key": "queues.url_extraction",
+      "env": "SQS_URL_EXTRACTION_QUEUE",
+      "default": ""
+    },
+    {
+      "key": "researcher.daily_cap_owls",
+      "env": "RESEARCHER_DAILY_CAP_OWLS",
+      "default": "50"
+    },
+    {
+      "key": "researcher.enabled",
+      "env": "RESEARCHER_ENABLED",
+      "default": "false"
+    },
+    {
+      "key": "researcher.request_max_wall_minutes",
+      "env": "RESEARCHER_REQUEST_MAX_WALL_MINUTES",
+      "default": "240"
+    },
+    {
+      "key": "run_log.level",
+      "env": "TRACE_LEVEL",
+      "default": null
+    },
+    {
+      "key": "run_log.mode",
+      "env": "RUN_LOG_MODE",
+      "default": "best_effort"
+    },
+    {
+      "key": "run_log.retention_days",
+      "env": "TRACE_RETENTION_DAYS",
+      "default": "30"
+    },
+    {
+      "key": "sandbox.hour_cost_micro_usd",
+      "env": "SANDBOX_HOUR_COST_MICRO_USD",
+      "default": "50000"
+    },
+    {
+      "key": "sandbox.token",
+      "env": "SANDBOX_TOKEN",
+      "default": null
+    },
+    {
+      "key": "sandbox.url",
+      "env": "SANDBOX_URL",
+      "default": ""
+    },
+    {
+      "key": "sessions.max_transcript_chars",
+      "env": "SESSION_MAX_TRANSCRIPT_CHARS",
+      "default": "400000"
+    },
+    {
+      "key": "sessions.officer_batch_ms",
+      "env": "OFFICER_BATCH_MS",
+      "default": "2000"
+    },
+    {
+      "key": "sessions.wait_for_answers_seconds",
+      "env": "SESSION_WAIT_FOR_ANSWERS_SECONDS",
+      "default": "60"
+    },
+    {
+      "key": "sessions.wait_hours",
+      "env": "SESSION_WAIT_HOURS",
+      "default": "24"
+    },
+    {
+      "key": "sql.agent_timeout_seconds",
+      "env": "SQL_AGENT_TIMEOUT_SECONDS",
+      "default": "20"
+    },
+    {
+      "key": "sql.caller_timeout_seconds",
+      "env": "SQL_CALLER_TIMEOUT_SECONDS",
+      "default": "5"
+    },
+    {
+      "key": "sql.free_allowance_seconds",
+      "env": "SQL_FREE_ALLOWANCE_SECONDS",
+      "default": "60"
+    },
+    {
+      "key": "sql.max_plan_cost",
+      "env": "SQL_MAX_PLAN_COST",
+      "default": "500000"
+    },
+    {
+      "key": "sql.owls_per_second",
+      "env": "SQL_OWLS_PER_SECOND",
+      "default": "0.01"
+    },
+    {
+      "key": "sql.paid_allowance_seconds",
+      "env": "SQL_PAID_ALLOWANCE_SECONDS",
+      "default": "600"
+    },
+    {
+      "key": "sweeps.audit_interval_hours",
+      "env": "AUDIT_SWEEP_INTERVAL_HOURS",
+      "default": "24"
+    },
+    {
+      "key": "sweeps.audit_stale_suspension_days",
+      "env": "AUDIT_STALE_SUSPENSION_DAYS",
+      "default": "14"
+    },
+    {
+      "key": "sweeps.github_issues_backfill_per_tick",
+      "env": "GITHUB_ISSUES_BACKFILL_PER_TICK",
+      "default": "20"
+    },
+    {
+      "key": "sweeps.github_issues_sync_interval_seconds",
+      "env": "GITHUB_ISSUES_SYNC_INTERVAL_SECONDS",
+      "default": "300"
+    },
+    {
+      "key": "sweeps.lookout_feed_poll_max_feeds",
+      "env": "LOOKOUT_FEED_POLL_MAX_FEEDS",
+      "default": "100"
+    },
+    {
+      "key": "sweeps.lookout_retraction_poll_hours",
+      "env": "LOOKOUT_RETRACTION_POLL_HOURS",
+      "default": "24"
+    },
+    {
+      "key": "sweeps.monitor_interval_hours",
+      "env": "MONITOR_SWEEP_INTERVAL_HOURS",
+      "default": "0"
+    },
+    {
+      "key": "sweeps.monitor_material_credence_delta",
+      "env": "MONITOR_MATERIAL_CREDENCE_DELTA",
+      "default": "0.1"
+    },
+    {
+      "key": "sweeps.monitor_max_flags",
+      "env": "MONITOR_SWEEP_MAX_FLAGS",
+      "default": "5"
+    },
+    {
+      "key": "sweeps.monitor_monotonicity_horizon_days",
+      "env": "MONITOR_MONOTONICITY_HORIZON_DAYS",
+      "default": "30"
+    },
+    {
+      "key": "sweeps.monitor_monotonicity_tolerance",
+      "env": "MONITOR_MONOTONICITY_TOLERANCE",
+      "default": "0.05"
+    },
+    {
+      "key": "sweeps.monitor_recent_challenge_days",
+      "env": "MONITOR_RECENT_CHALLENGE_DAYS",
+      "default": "30"
+    },
+    {
+      "key": "sweeps.monitor_reflag_days",
+      "env": "MONITOR_REFLAG_DAYS",
+      "default": "14"
+    },
+    {
+      "key": "sweeps.monitor_settled_confidence",
+      "env": "MONITOR_SETTLED_CONFIDENCE",
+      "default": "0.8"
+    },
+    {
+      "key": "sweeps.report_embedding_backfill_interval_seconds",
+      "env": "REPORT_EMBEDDING_BACKFILL_INTERVAL_SECONDS",
+      "default": "300"
+    },
+    {
+      "key": "sweeps.report_embedding_backfill_per_tick",
+      "env": "REPORT_EMBEDDING_BACKFILL_PER_TICK",
+      "default": "20"
+    },
+    {
+      "key": "sweeps.report_match_similarity",
+      "env": "REPORT_MATCH_SIMILARITY",
+      "default": "0.8"
+    },
+    {
+      "key": "sweeps.report_triage_interval_hours",
+      "env": "REPORT_TRIAGE_INTERVAL_HOURS",
+      "default": "24"
+    },
+    {
+      "key": "sweeps.source_backfill_interval_seconds",
+      "env": "SOURCE_BACKFILL_INTERVAL_SECONDS",
+      "default": "120"
+    },
+    {
+      "key": "sweeps.source_backfill_per_tick",
+      "env": "SOURCE_BACKFILL_PER_TICK",
+      "default": "20"
+    },
+    {
+      "key": "usage_report.dir",
+      "env": "USAGE_REPORT_DIR",
+      "default": ""
+    },
+    {
+      "key": "usage_report.from",
+      "env": "USAGE_REPORT_FROM",
+      "default": ""
+    },
+    {
+      "key": "usage_report.url",
+      "env": "USAGE_REPORT_URL",
+      "default": ""
+    }
+  ]
+}
