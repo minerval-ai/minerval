@@ -731,6 +731,12 @@ export interface LogEntry {
   key_id?: string;
   /** The feed the mirror started following (mirror_followed). */
   feed?: string;
+  /**
+   * For labels_split: the label that took what the organization released
+   * outside. `label` is the one that took the members' own material. Anyone
+   * may read the first and every member the second, so neither is withheld.
+   */
+  published?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -1017,6 +1023,10 @@ export async function permissionLog(
           entry.mandate = title === undefined ? { id: d.grant_id, title: "", withheld: true } : { id: d.grant_id, title };
         }
         if (typeof d.note === "string" && d.note) entry.note = d.note;
+      }
+      if (r.event === "labels_split") {
+        if (typeof d.label === "string") entry.label = d.label;
+        if (typeof d.published === "string") entry.published = d.published;
       }
       if (typeof d.key_id === "string") entry.key_id = d.key_id;
       if (r.event === "mirror_followed" && typeof d.feed === "string") entry.feed = d.feed;

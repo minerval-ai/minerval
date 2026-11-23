@@ -52,11 +52,12 @@ const MAY_NAME_PUBLIC: Record<string, string> = {
   "src/services/permission-service.ts": "The first administrator is granted every label besides the public graph's, which needs no grant.",
   "src/services/label-admin-service.ts": "Defining any label but the public graph's arms enforcement first.",
   "src/services/label-service.ts":
-    "publicIsTheOnlyLabel and labelsBesidesPublic ask about the public graph's label by definition; everyLabel leaves it out once nothing of this deployment's works there; the members-only description stands in for its stored one until a split.",
+    "publicIsTheOnlyLabel and labelsBesidesPublic ask about the public graph's label by definition, and everyLabel leaves it out once nothing of this deployment's works there.",
   "src/services/mirror-apply-service.ts": "The mirror's applier writes the public graph's own rows, at the public graph's label.",
   "src/services/mirror-feed-service.ts": "The publisher's side of the feed: the public graph serves its own rows, which are at its one label.",
   "src/services/outward-acts-service.ts": "Refuses adopting a public request at the public graph's label, where the work would be the public graph's own.",
   "src/services/request-adoption-service.ts": "Work at the public graph's label does not take up a mirrored request: that work is the public graph's own.",
+  "src/routes/permissions.ts": "Tells a page which label is the public graph's own, beside the published and base ones, under label_layers.",
   "src/server/plugins/request-label.ts": "Words the refusal for a request that names the public graph's label to file at, where nothing here files.",
   "src/services/redaction-policy.ts": "Words the refusal for a release that names the public graph's label as its destination.",
   "src/services/label-split.ts": "The split itself: it finds the rows at the public graph's label and gives each the label that says which of three things it is.",

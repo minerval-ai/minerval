@@ -280,7 +280,9 @@ code decides who should hold which.
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
-sign-in carried), and its **clearance**, the labels it may read: `public`,
+sign-in carried), and its **clearance**, the labels it may read: what every
+member reads with no grant (`public`, `published` and `members`:
+[architecture.md](architecture.md), "The three layers at the bottom"),
 each label a `read` grant names, and every label those read, following
 `label_reads` to the end. The clearance is on the request's async context
 (`currentClearance()` in `src/llm/usage-context.ts`), and where the
@@ -335,7 +337,12 @@ changes. Where it has more, every request that writes is given its label
 in one of two ways (`src/server/request-labels.ts` has the rule for each
 route, with the reason, and a test fails for a writing route that has
 none). No agent chooses a label, and a label that is missing is never read
-as `public`.
+as `public`. Nothing is filed at `public` or `published` by a person or an
+agent: the first holds the public graph's own material and the second what
+the gate to outside let through. A request that names either is refused
+(`LABEL_NOT_FILED_AT`) with the labels it may name, and a request about a
+node of the public graph works at `members`, or at a label the person names
+that reads it.
 
 - **From what the request is about.** A contribution, an appeal, an order,
   funding, a message in a conversation that already exists: each is about a
@@ -373,14 +380,11 @@ as `public`.
 `GET /labels/mine` returns what a page needs to offer the choice: the
 labels the person may read, each with its description, what else its
 readers read, and who reads it (`who_reads`, in words). A label that reads
-one of theirs and that they may not read is counted and not named. On a
-members-only deployment `public` is described in that deployment's terms,
-here and in `GET /labels`, not by the row's stored "Readable by anyone.",
-which is the public graph's: every member reads it, nobody outside reads
-what is filed at it unless it is published or released outside, and its text
-still goes to the model providers and outside services, which are cleared
-for `public` unless whoever runs the deployment says otherwise
-(`shownLabelDescription` in `src/services/label-service.ts`).
+one of theirs and that they may not read is counted and not named. It lists
+the labels work can be filed at, so not `public` or `published`. `GET /labels`
+lists every label with which bottom layer it is (`layer`: `public_graph`,
+`published`, `base`, or null for a label the deployment defines), and
+`GET /permissions/mine` says which label is which under `label_layers`.
 
 The mandate drafted in a granting conversation takes the conversation's
 label, and its Grantmaker runs there. A conversation with the Assistant
@@ -391,8 +395,8 @@ may no longer read is not served to them.
 
 What a request writes at a label it then reads at that label: while it
 runs, it reads what its label and the person's clearance both read. A
-request about a `public` node does not read the person's private labels
-while it writes the public rows.
+request about a node at `members` does not read the person's private labels
+while it writes rows there.
 
 **API keys and access tokens** work the other way round, because an agent
 holds them. A key works at one label, named by the person when they mint it
@@ -424,8 +428,8 @@ when the turn began: the user's standing is resolved once for the turn
 (`openAccountTools` in `src/llm/tools/assistant-tools.ts`), so a grant
 removed while a turn is running takes effect from the user's next message
 and not inside the turn. A turn ends with its reply or when the user stops
-it (`POST /assistant/conversations/:id/stop`). A key minted before the deployment had a second label
-works at `public`: it reads and writes public material only, and its holder
+it (`POST /assistant/conversations/:id/stop`). A key minted with no label named
+works at `members`: it reads and writes what every member reads, and its holder
 mints a new key to work at another label (`GET /api-keys` shows each key's
 label and says this). A key or a token whose label the person may no longer
 read is refused (`403 CREDENTIAL_LABEL_NOT_READABLE`). The MCP endpoint
@@ -433,7 +437,7 @@ itself takes a key or a token: a signed-in session has no label of its own
 and is refused there.
 
 The operator key names no person and carries no clearance. The routes it
-guards read and write `public` alone.
+guards work at the deployment's base label, `members`.
 
 ### Opening raw sources
 
@@ -441,8 +445,8 @@ guards read and write `public` alone.
 assessment, each instance with the passage it quotes, a reading, an
 examination's findings. `read_sources` at a label opens the sources
 themselves, and is granted separately, label by label: a grant at one
-label does not open the sources of a label it reads. `public` sources are
-open to every member.
+label does not open the sources of a label it reads. Sources at `public`,
+`published` and `members` are open to every member.
 
 The database cannot hold the two apart, since a source's stored text is a
 column of the source's own row. The permission is held at each place the

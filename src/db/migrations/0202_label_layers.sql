@@ -213,15 +213,18 @@ ALTER TABLE "api_keys" ALTER COLUMN "work_label" SET DEFAULT minerval_base_label
 ALTER TABLE "oauth_tokens" ALTER COLUMN "work_label" SET DEFAULT minerval_base_label();
 --> statement-breakpoint
 -- 'published' reads 'public' and nothing a deployment could add: what it
--- read, anyone would read. The check on label_reads can name only a fixed
--- word, so the pair is refused by a trigger, as the API refuses it.
+-- read, anyone would read. The base label reads those two and nothing a
+-- deployment could add either: what it read, every member would read, which
+-- is what the check on 'public' has always kept from happening to the
+-- members' layer. The check on label_reads can name only a fixed word, so
+-- these pairs are refused by a trigger, as the API refuses them.
 CREATE OR REPLACE FUNCTION minerval_open_label_reads_nothing() RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pg_catalog, pg_temp
 AS $$
 BEGIN
-  IF NEW.label = ANY (public.minerval_open_labels()) THEN
-    RAISE EXCEPTION 'the label "%" reads no other label: what it read, anyone would read', NEW.label
+  IF NEW.label = ANY (public.minerval_open_labels()) OR NEW.label = public.minerval_base_label() THEN
+    RAISE EXCEPTION 'the label "%" reads no other label by a pair: what it read, everyone who reads it would read', NEW.label
       USING ERRCODE = '23514', TABLE = TG_TABLE_NAME;
   END IF;
   RETURN NEW;

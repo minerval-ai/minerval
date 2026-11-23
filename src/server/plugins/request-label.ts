@@ -28,8 +28,8 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteOptions } from "fastify";
 import { deploymentHoldsLabels, rawQuery } from "../../db/client.js";
-import { PUBLIC_LABEL, baseLabel, isWorkableLabel, workLabelFor, workableLabels } from "../../labels.js";
-import { runWithUsageContext } from "../../llm/usage-context.js";
+import { PUBLIC_LABEL, baseLabel, isWorkableLabel, layersAreSplit, workLabelFor, workableLabels } from "../../labels.js";
+import { runAtLabel, runWithUsageContext } from "../../llm/usage-context.js";
 import { LABEL_DESCRIPTION, VERSIONS_DESCRIPTION } from "../../services/judgment-version-service.js";
 import { LEFT_STANDING_DESCRIPTION, NOT_EXAMINED_AT_DESCRIPTION } from "../../services/left-standing-service.js";
 import { membersOnly, standingOf } from "../../permissions.js";
@@ -375,6 +375,21 @@ export async function registerRequestLabel(app: FastifyInstance): Promise<void> 
 
   app.addHook("onRoute", (route: RouteOptions) => {
     const methods = (Array.isArray(route.method) ? route.method : [route.method]).map((m) => String(m).toUpperCase());
+    // A route the operator key guards acts for no person and so is given no
+    // clearance (members-only.ts). It has always read and written the
+    // deployment's bottom layer, which was `public`. Where that layer is a
+    // label of its own, work with nothing in context reads only what anyone
+    // may read, so the operator's request is given the base label: it then
+    // reads and writes what it always did. The handler runs only once the
+    // guard has checked the key.
+    const guards = route.preHandler === undefined || route.preHandler === null ? [] : Array.isArray(route.preHandler) ? route.preHandler : [route.preHandler];
+    if (guards.includes(app.requireOperator)) {
+      const guarded = route.handler as Handler;
+      route.handler = function atTheBaseLabel(this: FastifyInstance, request: FastifyRequest, reply: FastifyReply) {
+        if (!layersAreSplit()) return guarded.call(this, request, reply);
+        return runAtLabel(baseLabel(), "an operator's request", () => guarded.call(this, request, reply));
+      };
+    }
     if (methods.includes("GET") && routeKey("GET", route.url) === "GET /claims/:claim_id") showVersions(route);
     const rules = methods
       .filter((m) => m !== "GET" && m !== "HEAD" && m !== "OPTIONS")

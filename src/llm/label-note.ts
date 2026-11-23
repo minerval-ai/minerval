@@ -31,9 +31,17 @@
  * has no label note to put them in, and gets them as a short passage of
  * their own (mirrorNote). Where nothing is mirrored none of them is said,
  * and the note is word for word what it was.
+ *
+ * On a members-only deployment the three things `public` stood for are
+ * three labels (src/labels.ts, "The layers at the bottom"), and the note
+ * says what each of the two below a run's own label is: `public` is the
+ * public graph's own material and nothing else, and the published label is
+ * what the organization has said outside, which is the organization's and
+ * not the public graph's judgment. No run works at either, so a run is
+ * never told it is at one.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { PUBLIC_LABEL, publishedLabel, isMemberLabel, layerRank } from "../labels.js";
+import { PUBLIC_LABEL, isMemberLabel, layerRank, layersAreSplit, publishedLabel } from "../labels.js";
 import { FEATURES_OFF_NOTE_SEPARATOR } from "./features-off-note.js";
 
 type MessageParam = Anthropic.MessageParam;
@@ -59,8 +67,24 @@ const asOf = (mirror: MirrorBrief) => `${mirror.publicGraphAsOf.slice(0, 10)} ${
 
 /** Which of what the run reads is the public graph's, and as of when. */
 const mirrorWhatItIs = (mirror: MirrorBrief, where: string) =>
-  `Part of ${where} is the public graph itself, copied here by a mirror that follows it. The copy shows ` +
-  `the public graph as of ${asOf(mirror)}, not as of now, and a node's full read says so under \`mirrored\`.`;
+  // Where the public graph's rows have a label to themselves, the label says it whole.
+  layersAreSplit()
+    ? `What is labeled ${tick(PUBLIC_LABEL)} is the public graph itself, copied here by a mirror that follows it, and ` +
+      `nothing of this deployment's own is labeled so. The copy shows the public graph as of ${asOf(mirror)}, not as ` +
+      `of now, and a node's full read says so under \`mirrored\`.`
+    : `Part of ${where} is the public graph itself, copied here by a mirror that follows it. The copy shows ` +
+      `the public graph as of ${asOf(mirror)}, not as of now, and a node's full read says so under \`mirrored\`.`;
+
+/** What the published label holds, for a run that reads it: the organization's own word outside, not the public graph's. */
+const publishedWhatItIs = (published: string) =>
+  `What is labeled ${tick(published)} is what this organization has released outside this deployment: the pages its ` +
+  `gate to outside let through, what was sent, and what came back about it. Anyone may read it. It is the ` +
+  `organization's own account and not the public graph's judgment of anything.`;
+
+/** What `public` holds on a deployment that keeps no copy of the public graph. */
+const PUBLIC_WITHOUT_A_MIRROR =
+  `${tick(PUBLIC_LABEL)} is the label of the public graph's own material. This deployment keeps no copy of the ` +
+  `public graph, so nothing is labeled so here.`;
 
 /** That no run changes a mirrored row, and why. */
 const MIRROR_NOT_CHANGED =
@@ -68,10 +92,15 @@ const MIRROR_NOT_CHANGED =
   `would overwrite the change, and until then readers would take it for the public graph's own.`;
 
 /** Whose the judgment of a mirrored node at `public` is, and why none is made here. */
-const MIRROR_PUBLIC_JUDGMENT =
-  `On a mirrored node the judgment at ${tick(PUBLIC_LABEL)} is the public graph's own. None is made or paid ` +
-  `for in this deployment, because readers would take it for the public graph's; a fresh one is funded on ` +
-  `the public graph.`;
+const mirrorPublicJudgment = () =>
+  layersAreSplit()
+    ? `On a mirrored node the judgment at ${tick(PUBLIC_LABEL)} is the public graph's own. No run in this ` +
+      `deployment works at ${tick(PUBLIC_LABEL)}, so none is made here: what this deployment concludes about ` +
+      `the node is a judgment at one of its own labels, beside the public graph's. A fresh public one is ` +
+      `funded on the public graph.`
+    : `On a mirrored node the judgment at ${tick(PUBLIC_LABEL)} is the public graph's own. None is made or paid ` +
+      `for in this deployment, because readers would take it for the public graph's; a fresh one is funded on ` +
+      `the public graph.`;
 
 /** What a run does when it thinks the public graph has a mirrored node wrong, and why that goes no further on its own. */
 const MIRROR_REQUEST =
@@ -99,7 +128,7 @@ export function mirrorNote(mirror: MirrorBrief): string {
     MIRROR_NOTE_HEADING +
     `${mirrorWhatItIs(mirror, "this graph")}\n\n` +
     `${MIRROR_NOT_CHANGED} What this run adds to a mirrored node (an argument, a subclaim, a source) is ` +
-    `this deployment's own, beside what is there. ${MIRROR_PUBLIC_JUDGMENT}\n\n` +
+    `this deployment's own, beside what is there. ${mirrorPublicJudgment()}\n\n` +
     MIRROR_REQUEST
   );
 }
@@ -136,10 +165,18 @@ export function labelNote(
     others.length === 0
       ? `What you can read: what is labeled ${own}, and nothing else.`
       : `What you can read: what is labeled ${own}, and what is labeled ${listed(others, "or")}, which ${own} reads.`;
-  const whoReads =
-    isMemberLabel(label)
-      ? `Every reader of this graph may read it.`
-      : `Readers who are not cleared for ${own} do not see it.`;
+  const whoReads = !isMemberLabel(label)
+    ? `Readers who are not cleared for ${own} do not see it.`
+    : layersAreSplit()
+      ? `Every member of this deployment may read it, and nobody outside it does unless it is released.`
+      : `Every reader of this graph may read it.`;
+  // The two labels below every label here, said once where the run is told what it reads.
+  const published = layersAreSplit() && others.includes(publishedLabel()) ? ` ${publishedWhatItIs(publishedLabel())}` : "";
+  const ofPublic = mirror
+    ? ` ${mirrorWhatItIs(mirror, `what is labeled ${tick(PUBLIC_LABEL)}`)}`
+    : layersAreSplit() && others.includes(PUBLIC_LABEL)
+      ? ` ${PUBLIC_WITHOUT_A_MIRROR}`
+      : "";
   // A run that reads no other label never meets a row at one, so it is not
   // told what happens when it tries to change one. The reason given is the
   // one that matters: what a run at this label writes is shaped by what it
@@ -168,7 +205,7 @@ export function labelNote(
       `This graph holds material that only some of its readers may see, and everything in it carries a ` +
       `label saying who may read it. This run works at one label, fixed before it started: ${own}.`,
     `${canRead} No tool returns anything else, so a search or a read that comes back empty has looked ` +
-      `only there.${mirror ? ` ${mirrorWhatItIs(mirror, `what is labeled ${tick(PUBLIC_LABEL)}`)}` : ""}`,
+      `only there.${ofPublic}${published}`,
     `What you write: everything this run records carries the label ${own}, whatever you read to write ` +
       `it. ${whoReads}${othersRows}${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}${reports}`,
     opts.posture ?? "",
@@ -213,7 +250,7 @@ const WHICH_JUDGMENT =
 
 /** What a run that records no judgment is told about a node that carries one at more than one label. */
 function judgmentsForAReader(others: readonly string[], mirror: MirrorBrief | null): string {
-  const ofMirror = mirror ? `${MIRROR_PUBLIC_JUDGMENT} ${MIRROR_REQUEST}` : "";
+  const ofMirror = mirror ? `${mirrorPublicJudgment()} ${MIRROR_REQUEST}` : "";
   // A run that reads one label sees one judgment on any node.
   if (others.length === 0) return ofMirror;
   return (
@@ -242,7 +279,7 @@ function judgmentsForAWriter(label: string, others: readonly string[], mirror: M
     return (
       `${opening} ${own} reads no other label, so the judgment at ${own} is the only one this run sees on ` +
       `any node. One made at another label does not replace it.` +
-      (mirror && label === PUBLIC_LABEL ? `\n\n${MIRROR_PUBLIC_JUDGMENT} ${MIRROR_REQUEST}` : "")
+      (mirror && label === PUBLIC_LABEL ? `\n\n${mirrorPublicJudgment()} ${MIRROR_REQUEST}` : "")
     );
   }
   const mirrored = mirror !== null && others.includes(PUBLIC_LABEL);
@@ -254,7 +291,7 @@ function judgmentsForAWriter(label: string, others: readonly string[], mirror: M
       `recorded at ${own}, and so is what you hold differently for readers at ${own}: on a row at a label ` +
       `below, set_claim_importance records your importance for the node, and remove_subclaim_edge, ` +
       `set_edge_relation and retire_argument set the edge or argument aside, at ${own} only.` +
-      (mirrored ? ` ${MIRROR_PUBLIC_JUDGMENT}` : ""),
+      (mirrored ? ` ${mirrorPublicJudgment()}` : ""),
     `On a node that carries another label you record your own judgment at ${own}, or you may leave the ` +
       `judgment you read standing (leave_judgment_standing). Leaving it standing is a complete outcome: ` +
       `readers at ${own} go on reading that judgment, and the node's page shows them that it was examined ` +

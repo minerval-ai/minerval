@@ -55,13 +55,21 @@ import { chooseLabel, decideRequestLabel } from "../../src/server/plugins/reques
 import { publicGraphJudges } from "../../src/services/mirrored-node-service.js";
 import { gateOf } from "../../src/services/gate-settings-service.js";
 import { groupAtLabel } from "../../src/services/ingest-focus-service.js";
-import { defineLabel, addLabelRead } from "../../src/services/label-admin-service.js";
+import { defineLabel, addLabelRead, listLabels } from "../../src/services/label-admin-service.js";
 import { choosableLabels, everyLabel, keyAtLabel } from "../../src/services/label-service.js";
-import { LabelSplitError, ensureLabelSplit, splitLabelNames } from "../../src/services/label-split.js";
+import {
+  LabelSplitError,
+  MEMBERS_DESCRIPTION,
+  PUBLIC_GRAPH_DESCRIPTION,
+  PUBLISHED_DESCRIPTION,
+  ensureLabelSplit,
+  splitLabelNames,
+} from "../../src/services/label-split.js";
 import { logOutwardAct } from "../../src/services/outward-acts-service.js";
 import { labelsReadableFrom, resolveStanding } from "../../src/services/permission-service.js";
 import { destinationLabel, destinationProblem, ensureBoundaryPolicy } from "../../src/services/redaction-policy.js";
 import { ReleaseError, askRelease } from "../../src/services/release-service.js";
+import { listReportsAwaitingIssue } from "../../src/services/report-service.js";
 
 const SENS = "ls-sens";
 const OTHER = "ls-other";
@@ -252,6 +260,13 @@ describe("the split", () => {
       ["public", "published"],
       ["public", "published", "members"],
     ]);
+    // Each of the three is described as what it now is: the row's own words, shown as they are stored.
+    const said = new Map((await listLabels()).map((l) => [l.name, l]));
+    expect(said.get("public")).toMatchObject({ layer: "public_graph", description: PUBLIC_GRAPH_DESCRIPTION });
+    expect(said.get("published")).toMatchObject({ layer: "published", description: PUBLISHED_DESCRIPTION });
+    expect(said.get("members")).toMatchObject({ layer: "base", description: MEMBERS_DESCRIPTION, reads: [] });
+    expect(said.get(SENS)).toMatchObject({ layer: null, description: "One team.", reads: ["members", "public"] });
+    expect([...said.keys()]).toEqual(["public", "published", "members", OTHER, SENS]);
     const layers = await every<{ name: string; layer: string | null }>(`SELECT name, layer FROM labels ORDER BY name`);
     expect(layers).toEqual([
       { name: OTHER, layer: null },
@@ -390,7 +405,7 @@ describe("the split", () => {
     );
     expect(log).toHaveLength(1);
     expect(log[0]!.actor_id).toBeNull();
-    expect(log[0]!.detail).toMatchObject({ base: "members", published: "published" });
+    expect(log[0]!.detail).toMatchObject({ label: "members", published: "published" });
     expect(Number(log[0]!.detail.rows_to_base)).toBeGreaterThan(5);
     expect(Number(log[0]!.detail.rows_to_published)).toBeGreaterThan(4);
     const again = await ensureLabelSplit();
@@ -550,14 +565,37 @@ describe("after the split", () => {
     }
   });
 
-  it("neither label anyone reads can be made to read another, and a new label reads the base only by a pair", async () => {
+  it("none of the bottom layers can be made to read another label, and a new label reads the base only by a pair", async () => {
     expect(await addLabelRead({ label: "published", reads: SENS, actorId: id.admin! })).toMatchObject({ ok: false, code: "PUBLIC_READS_NOTHING" });
+    expect(await addLabelRead({ label: "members", reads: SENS, actorId: id.admin! })).toMatchObject({ ok: false, code: "PUBLIC_READS_NOTHING" });
+    const base = (await caught(() => every(`INSERT INTO label_reads (label, reads) VALUES ('members', $1)`, [SENS]))) as { code?: string } | null;
+    expect(base?.code).toBe("23514");
     expect(await addLabelRead({ label: "public", reads: "members", actorId: id.admin! })).toMatchObject({ ok: false, code: "PUBLIC_READS_NOTHING" });
     const refused = (await caught(() => every(`INSERT INTO label_reads (label, reads) VALUES ('published', $1)`, [SENS]))) as { code?: string } | null;
     expect(refused?.code).toBe("23514");
     expect(await defineLabel({ name: "ls-apart", description: "Reads nothing of the members'.", actorId: id.admin! })).toEqual({ ok: true });
     const [apart] = await every<{ r: string[] }>(`SELECT minerval_labels_readable_from(ARRAY['ls-apart']) AS r`);
     expect(apart!.r.sort()).toEqual(["ls-apart", "public", "published"]);
+  });
+
+  it("only a report at the published label is filed outside, by work at that label", async () => {
+    const report = async (label: string) =>
+      one(
+        `INSERT INTO agent_reports (kind, severity, title, agent, dedupe_key, first_seen_at, sensitivity_label)
+         VALUES ('bug', 'low', $1, 'steward', $2, now() - interval '1 hour', $3) RETURNING id`,
+        [`A report at ${label} (${tag})`, `split-${label}-${tag}`, label]
+      );
+    const atMembers = await report("members");
+    const atPublished = await report("published");
+    // The sync's tick works at the published label (workers/github-issue-sync.ts).
+    const waiting = await runAtLabel(publishedLabel(), "the GitHub issue sync", () => listReportsAwaitingIssue(50, { includeExternal: true }));
+    expect(waiting.map((r) => r.id)).toContain(atPublished);
+    expect(waiting.map((r) => r.id)).not.toContain(atMembers);
+    // And marks it filed, which is a change to a row at that label.
+    const filed = await runAtLabel(publishedLabel(), "the GitHub issue sync", () =>
+      rawQuery<{ id: string }>(`UPDATE agent_reports SET github_issue_number = 4242 WHERE id = $1 RETURNING id`, [atPublished])
+    );
+    expect(filed).toHaveLength(1);
   });
 
   it("an outward act is recorded at the published label", async () => {

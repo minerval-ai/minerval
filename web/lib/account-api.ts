@@ -1,4 +1,5 @@
 import "server-only";
+import type { LabelLayers } from "./label-layers";
 import type {
   AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
 } from "./types";
@@ -337,6 +338,8 @@ export interface MyPermissions {
   clearance: string[];
   raw_source_labels: string[];
   groups: string[];
+  /** Which labels are the bottom layers here (lib/label-layers.ts). Absent from an API that predates them. */
+  label_layers?: LabelLayers;
 }
 
 export async function fetchMyPermissions(externalId: string): Promise<MyPermissions> {

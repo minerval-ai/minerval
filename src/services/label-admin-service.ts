@@ -13,8 +13,7 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { armEnforcement } from "../db/enforcement.js";
-import { PUBLIC_LABEL, isOpenLabel, byLayerThenName } from "../labels.js";
-import { shownLabelDescription } from "./label-service.js";
+import { PUBLIC_LABEL, baseLabel, publishedLabel, isMemberLabel, isOpenLabel, byLayerThenName, type LabelLayer } from "../labels.js";
 import { logAdministrativeEvent } from "./permission-service.js";
 import { clearanceProblem, readStoredClearance, writeClearance } from "./provider-clearance-service.js";
 
@@ -44,6 +43,13 @@ export interface LabelView {
   /** The labels a holder of this one may also read, as recorded: one step, not followed further. */
   reads: string[];
   created_at: string;
+  /**
+   * Which of the bottom layers it is (src/labels.ts): "public_graph",
+   * "published" or "base"; null for a label the deployment defines above
+   * them. On a deployment that has not been split `public` is all three and
+   * says "base", which is how every page has treated it.
+   */
+  layer: LabelLayer | null;
 }
 
 export async function listLabels(): Promise<LabelView[]> {
@@ -55,7 +61,8 @@ export async function listLabels(): Promise<LabelView[]> {
   );
   return rows.sort((a, b) => byLayerThenName(a.name, b.name)).map((r) => ({
     name: r.name,
-    description: shownLabelDescription(r.name, r.description),
+    description: r.description,
+    layer: r.name === baseLabel() ? "base" : r.name === PUBLIC_LABEL ? "public_graph" : r.name === publishedLabel() ? "published" : null,
     reads: r.reads ?? [],
     created_at: r.created_at.toISOString(),
   }));
@@ -83,10 +90,14 @@ const refuse = (code: LabelFailure, message: string): Outcome => ({ ok: false, c
 
 /** Why a pair may not be recorded, or null when it may. */
 function pairProblem(label: string, reads: string): Outcome | null {
-  if (isOpenLabel(label)) {
+  // What anyone may read, and what every member reads: a label either of
+  // them read would be read by everyone, or by every member.
+  if (isMemberLabel(label)) {
     return refuse(
       "PUBLIC_READS_NOTHING",
-      `"${label}" reads no other label: whatever it read would be readable by everyone.`
+      isOpenLabel(label)
+        ? `"${label}" reads no other label: whatever it read would be readable by everyone.`
+        : `"${label}" is what every member reads, so it is made to read no other label: whatever it read, every member would read.`
     );
   }
   if (label === reads) return refuse("READS_ITSELF", "A label always reads itself; that needs no pair.");

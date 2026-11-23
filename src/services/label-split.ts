@@ -304,7 +304,8 @@ async function split(tx: TxQuery, names: { base: string; published: string }, co
   }
 
   await logAdministrativeEvent(tx, "labels_split", null, {
-    base,
+    // `label` is the base label, as every entry about a label names its label.
+    label: base,
     published,
     rows_to_base: String(toBase),
     rows_to_published: String(toPublished),

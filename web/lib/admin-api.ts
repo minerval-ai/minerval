@@ -221,6 +221,8 @@ export interface LogEntry {
   group?: string;
   label?: string | Withheld;
   reads?: string | Withheld;
+  /** For labels_split: the label that took what the organization released outside (`label` took the members' own). */
+  published?: string;
   party?: string | Withheld;
   previous_party?: string | Withheld | null;
   source_id?: string;
@@ -290,6 +292,8 @@ export interface LabelView {
   /** The labels a holder of this one may also read, as recorded: one step. */
   reads: string[];
   created_at: string;
+  /** Which bottom layer it is (lib/label-layers.ts); null for a label the deployment defines. */
+  layer?: "public_graph" | "published" | "base" | null;
 }
 
 export interface PartyView {
@@ -329,6 +333,8 @@ export interface ProviderClearance {
   providers: ProviderView[];
   /** Each label besides public, with the providers cleared for it now. */
   labels: Array<{ label: string; cleared: string[] }>;
+  /** What is in force for public, the public graph's own text, and whether any run here works at it. */
+  public_graph?: { label: string; cleared: string[]; works_here: boolean };
 }
 
 export async function fetchProviderClearance(externalId: string): Promise<ProviderClearance> {
@@ -458,6 +464,8 @@ export interface MyLabel {
   description: string;
   /** Who reads material filed at the label, in the API's words. */
   who_reads: string;
+  /** Every member of the deployment reads it with no grant. */
+  read_by_everyone?: boolean;
 }
 
 export interface MyLabels {
