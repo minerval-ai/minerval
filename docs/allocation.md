@@ -105,10 +105,13 @@ mission would need:
 
 - **read back what its money did**: the briefing opens with what the
   mandate commissioned since the last review and how those runs used their
-  budgets, by kind; the outcomes on the nodes it paid for; the petitions it
-  heard and how its officers answered; runs that spent their whole budget,
-  or went past it, without asking (a run counts as settled when its action
-  closes, though a fully spent allocation is never stamped released); its
+  budgets, by kind; what the passes it paid for concluded, from the
+  outcome on each ledger row ("What came of a pass", below); the petitions
+  it heard and how its officers answered; the passes that ended without a
+  conclusion, whatever they spent; runs of kinds that report no outcome
+  that spent their whole budget, or went past it, without asking (a run
+  counts as settled when its action closes, though a fully spent
+  allocation is never stamped released); its
   officers' decisions and what deciding cost; the
   messages waiting on the nodes it pays for; and what its lookouts raised
   and commissioned (src/services/mandate-reflection-service.ts). It starts
@@ -1355,6 +1358,67 @@ runs on the strong model where its payer judged the node contested and
 important, or a standard pass already failed to settle it. Paid orders
 (`POST /claims/:id/order`) always get the strong model.
 
+### What came of a pass
+
+The ledger records what a run spent and what came of it (§19). For a
+Steward pass, what came of it is its outcome (`actions.outcome`, and
+`assessment_orders.outcome` for a paid order;
+src/llm/agents/pass-outcome.ts), worked out when the pass ends from the
+task's own definition of concluding: each task names the tools whose
+success is its judgment and the predicate that says whether it still owes
+one, which is also what the one nudge on an empty end_turn reads.
+
+| Outcome | When |
+|---|---|
+| `recorded` | the task's judgment tool succeeded: an assessment, an estimate, a list's judgment, a formal statement, a prize decision. The outcome keeps the status before and after. |
+| `stood` | the pass logged a decision that the judgment in force stands (`log_stewardship_decision` with `judgment_stands` true, or `no_action_needed` where that field is left out). Part VIII: "concluding that nothing needs to change is a legitimate outcome, recorded and done." |
+| `left_standing` | it left the judgment it reads at another label standing for its own (`leave_judgment_standing`). |
+| `logged` | a task whose conclusion is a logged decision of another kind: a formalization that could not proceed, an attempt that settled nothing. |
+| `waiting` | nothing concluded yet, and the session paused on what it asked for. It resumes when that is answered, paid from what it had left. A pass that concluded and also waits is `also_waiting`. |
+| `unconcluded` | none of these. The outcome says how it ended (`stopped`: it ended its turn after its nudge; `turn_guard`; `output_limit`), whether it spent its whole budget, what it wrote on the way, and the words of any logged decision that did not conclude it. |
+
+A logged decision that names a change no tool recorded ("reassessed",
+while `update_claim_assessment` failed) is not a conclusion: the
+assessment in force is unchanged, and the pass is reported as ended
+without one, with the log's words shown. `stewarded_at` is the lease
+heartbeat and moves when a pass starts, so it says nothing of how one
+ended; the node view serves `last_pass` beside it.
+
+Where the outcome goes:
+
+- **`run_settled`** carries it in its payload and says it in one clause:
+  "...: recorded a new assessment (supported → doubtful).", "...:
+  concluded the assessment stands (logged: no_action_needed).", "...:
+  ended without recording a conclusion (it reached the turn guard; budget
+  fully spent; it wrote add_decomposition_edge ×3). The assessment of
+  2026-11-12 is unchanged by this pass." A commissioning session
+  subscribed to the run reads it there.
+- **The review briefing** counts the outcomes and lists the passes that
+  ended without a conclusion, whatever they spent. A pass that concluded,
+  including a decision that the assessment stands that used its whole
+  budget, is never listed as a shortfall.
+- **The mandate page and `allocation_report`** show each commission's
+  outcome; **`get_order`** carries it, with whether the buyer was
+  refunded; a **budget job's** checkpoint counts its passes by outcome and
+  lists the nodes whose pass ended without one.
+- **The officers' inbox**: a pass on mandate money that ended without a
+  conclusion raises an `outcome` item (src/services/pass-outcome-service.ts).
+  One open item per node and mandate: a repeat folds into it with a count.
+  Whether to commission the node again, with a different budget or brief,
+  or to leave it, is the officers' decision under the policy.
+
+Nothing is re-queued on any outcome. A paused pass already resumes on its
+answer; for the rest, paying again is the payer's judgment, and the
+Steward's own route when the work needs another pass is a `follow_up`
+petition ("Petitions", below). Settlement is unchanged: the meter is what
+a mandate pays, whatever the outcome. A person who paid for an order is
+refunded whole when the pass ended without a conclusion for a reason on
+the platform's side: it was cut off at the output limit, or a concluding
+tool failed with the platform's own error (an exception, not a refusal of
+the agent's input). Any other ending settles at the meter. Every pass is
+told this up front, beside its concluding calls: whoever paid for it is
+told what it recorded.
+
 ### A stewarding item can wait for the plan's ingests
 
 An ingest takes far longer than a pass: the extractions are read one
@@ -1621,6 +1685,11 @@ with `sweepFollowUps` on the scheduler for any the lanes' settle hooks
 missed). Asking costs the petitioner nothing: the mandate pays for its own
 decision. The answer is a judgment about money, never about the
 conclusion.
+
+A pass that does not petition and ends without a conclusion is still told
+to its payer, in `run_settled`, the briefing and the officers' inbox ("What
+came of a pass", above). It is not retried: the petition is the agent's
+route to another pass, and the payer's decision is the other.
 
 ## The operating policy and program officers
 

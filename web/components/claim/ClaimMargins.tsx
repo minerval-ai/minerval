@@ -124,6 +124,13 @@ export function ClaimMargins({
             />
           )}
           <MapCard claimId={detail.claim.id} tree={detail.tree} />
+          {shownDetail.claim.last_pass && (
+            // What the last finished pass concluded (#1027), so that a pass
+            // having run is not read as a pass having judged.
+            <p className={styles.stateNote} style={{ marginTop: "0.55rem" }}>
+              Last pass, {shownDetail.claim.last_pass.ended_at.slice(0, 10)}: {shownDetail.claim.last_pass.summary}
+            </p>
+          )}
           <p style={{ marginTop: "0.55rem" }}>
             <Link className={styles.railLink} href={`/claims/${detail.claim.id}/history`}>
               view history →
