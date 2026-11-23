@@ -778,6 +778,9 @@ export interface OperationsCommissionRow {
   budget_owls: number;
   spent_owls: number;
   state: "waiting" | "running" | "settled";
+  /** What the run concluded once settled, in a reader's words; null for kinds that do not report one. */
+  outcome: string | null;
+  outcome_kind: string | null;
   reason: string | null;
   created_at: string;
 }

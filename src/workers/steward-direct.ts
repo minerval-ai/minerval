@@ -22,6 +22,7 @@
  * and refuses, loudly, when the trigger's required tools are not among the
  * active skill tools; the callers already catch and record the refusal.
  */
+import type { PassOutcome } from "../llm/agents/pass-outcome.js";
 import { loadConfig } from "../config.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { skillsForClaim } from "../llm/agents/skill-selection.js";
@@ -83,6 +84,8 @@ export interface DirectStewardInput {
 export interface DirectStewardResult {
   model: string;
   billedMicroUsd: number;
+  /** What the pass concluded (llm/agents/pass-outcome.ts, #1027). */
+  outcome: PassOutcome;
 }
 
 /** The model a money trigger runs on, or a thrown error in production. */
@@ -161,7 +164,7 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
       : null);
   const restore = await acquireStewardLock(input.claimId);
   try {
-    const { billedMicroUsd } = await withStewardLease({ claimId: input.claimId }, () =>
+    const { value: outcome, billedMicroUsd } = await withStewardLease({ claimId: input.claimId }, () =>
       runWithUsageContext(
         {
           ...(input.jobId ? { jobId: input.jobId } : {}),
@@ -179,7 +182,7 @@ export async function invokeStewardDirect(input: DirectStewardInput): Promise<Di
           )
       )
     );
-    return { model, billedMicroUsd };
+    return { model, billedMicroUsd, outcome };
   } finally {
     // A money run does not consume the queue slot: the claim goes back as
     // found (or to 'pending' if a message arrived meanwhile). A failed

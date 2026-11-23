@@ -1,5 +1,5 @@
 {
-  "id": "c77ce4a9-2d2c-40a5-8526-26b0e7c07a24",
+  "id": "31727ef8-97c6-48f8-979f-1b424f5e90ce",
   "prevId": "98f34288-21aa-4d38-b351-9f93825f4c4f",
   "version": "7",
   "dialect": "postgresql",
@@ -664,6 +664,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -4372,6 +4378,12 @@
         "error": {
           "name": "error",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -31962,320 +31974,6 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.deployment_settings": {
-      "name": "deployment_settings",
-      "schema": "",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sealed_value": {
-          "name": "sealed_value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_four": {
-          "name": "last_four",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_by": {
-          "name": "set_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_at": {
-          "name": "set_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "deployment_settings_set_by_contributors_id_fk": {
-          "name": "deployment_settings_set_by_contributors_id_fk",
-          "tableFrom": "deployment_settings",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "set_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_deployment_settings_one_value": {
-          "name": "ck_deployment_settings_one_value",
-          "value": "(\"deployment_settings\".\"value\" IS NULL) <> (\"deployment_settings\".\"sealed_value\" IS NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.first_administrator_codes": {
-      "name": "first_administrator_codes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "code_hash": {
-          "name": "code_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "used_by": {
-          "name": "used_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "first_administrator_codes_used_by_contributors_id_fk": {
-          "name": "first_administrator_codes_used_by_contributors_id_fk",
-          "tableFrom": "first_administrator_codes",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "used_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.product_release_entries": {
-      "name": "product_release_entries",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prose": {
-          "name": "prose",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signature": {
-          "name": "signature",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_id": {
-          "name": "key_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "product_release_entries_version_kind_revision_pk": {
-          "name": "product_release_entries_version_kind_revision_pk",
-          "columns": [
-            "version",
-            "kind",
-            "revision"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_product_release_entries_kind": {
-          "name": "ck_product_release_entries_kind",
-          "value": "\"product_release_entries\".\"kind\" IN ('release', 'withdrawal')"
-        },
-        "ck_product_release_entries_revision": {
-          "name": "ck_product_release_entries_revision",
-          "value": "\"product_release_entries\".\"revision\" >= 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.release_steps_done": {
-      "name": "release_steps_done",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "step": {
-          "name": "step",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "done_by": {
-          "name": "done_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "done_at": {
-          "name": "done_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "release_steps_done_done_by_contributors_id_fk": {
-          "name": "release_steps_done_done_by_contributors_id_fk",
-          "tableFrom": "release_steps_done",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "done_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "release_steps_done_version_step_pk": {
-          "name": "release_steps_done_version_step_pk",
-          "columns": [
-            "version",
-            "step"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.versions_run": {
-      "name": "versions_run",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "commit": {
-          "name": "commit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_started_at": {
-          "name": "first_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_started_at": {
-          "name": "last_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
