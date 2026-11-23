@@ -195,6 +195,9 @@ const id = {
   estimate: randomUUID(),
   standing: randomUUID(),
   listJudgment: randomUUID(),
+  safetyCase: randomUUID(),
+  caseTop: randomUUID(),
+  caseStep: randomUUID(),
   evaluation: randomUUID(),
   interest: randomUUID(),
   inputPremise: randomUUID(),
@@ -302,6 +305,31 @@ async function seedPublicGraph(): Promise<void> {
     created_by: "claim_steward",
   });
   await ins(pub, "argument_subclaims", { argument_id: id.argument, relationship_id: id.edgeChild });
+  // A safety case's structure (#1211): its top claim, and a step under it that reads the argument above.
+  await claim("safetyCase", "Safety case: zebrafish husbandry protocol, heart resection", 9, { kind: "artifact" });
+  await ins(pub, "artifact_specs", {
+    claim_id: id.safetyCase,
+    subtype: "safety_case",
+    system: "The 20% apical resection protocol",
+    deployment: "Adult zebrafish in the facility's standard tanks",
+    conclusion_claim_id: id.parent,
+    standard: "The standard the animal care committee requires",
+    standard_of: "The facility's animal care committee",
+    framework: "assurance_2_cae",
+    created_by: "user",
+  });
+  await ins(pub, "case_elements", { id: id.caseTop, case_id: id.safetyCase, element_type: "claim", node_id: id.parent, statement: "The conclusion.", created_by: "artifact_steward" });
+  await ins(pub, "case_elements", {
+    id: id.caseStep,
+    case_id: id.safetyCase,
+    element_type: "step",
+    parent_id: id.caseTop,
+    argument_id: id.argument,
+    block: "concretion",
+    statement: "Regrowth is the replacement of lost muscle.",
+    position: 1,
+    created_by: "artifact_steward",
+  });
 
   await ins(pub, "claim_instances", {
     id: id.instance,
@@ -603,7 +631,7 @@ describe("applying: a mirror from nothing", () => {
       feed_id: last.feed_id,
       key_id: keyIdOf(publicKeyString(signing.publicKey)),
       public_web_base_url: "https://public.example",
-      searchable_claims: 9,
+      searchable_claims: 10,
       last_refusal: null,
     });
     expect(Date.parse(status.applied_at!)).toBeGreaterThanOrEqual(Date.parse(last.cut_at));

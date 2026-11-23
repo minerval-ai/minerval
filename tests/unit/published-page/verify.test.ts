@@ -302,7 +302,7 @@ describe("a published page in the shape of a node's page", () => {
   });
 
   it("names kinds of part in the words the deployment's own pages use", () => {
-    for (const d of ["wording", "summary", "reasoning", "gap", "argument", "argument:for", "argument:against", "argument:neutral", "reading", "supplier", "stated_view", "subclaim"]) {
+    for (const d of ["wording", "summary", "reasoning", "gap", "argument", "argument:for", "argument:against", "argument:neutral", "reading", "supplier", "stated_view", "subclaim", "case_element"]) {
       expect(kindInWords(d)).toBe(kindWords(d));
       expect(kindInWords(d, 3)).toBe(kindWords(d, 3));
     }

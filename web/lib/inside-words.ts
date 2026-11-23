@@ -50,6 +50,7 @@ const KIND_WORDS: Record<string, string> = {
   supplier: "a source's supplier and recorded interest, by name",
   stated_view: "a stated view",
   subclaim: "a subclaim with how it bears",
+  case_element: "an element of the case's structure",
 };
 
 /** A part's kind in words, from the descriptor the fingerprint binds. */

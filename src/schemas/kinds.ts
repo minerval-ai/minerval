@@ -29,10 +29,11 @@ export type TextNodeKind = (typeof TEXT_NODE_KINDS)[number];
 // ---------------------------------------------------------------------------
 
 /**
- * The kinds of artifact with a suggested structure the code knows (§7b). Lists first;
- * safety cases and models are planned. Most artifacts need no named kind.
+ * The kinds of artifact with a suggested structure the code knows (§7b):
+ * lists (#845) and safety cases (#1211). Models are planned. Most artifacts
+ * need no named kind.
  */
-export const ARTIFACT_SUBTYPES = ["list"] as const;
+export const ARTIFACT_SUBTYPES = ["list", "safety_case"] as const;
 export type ArtifactSubtype = (typeof ARTIFACT_SUBTYPES)[number];
 
 /**
@@ -56,6 +57,62 @@ export const listSpecSchema = z
   })
   .strict();
 export type ListSpecInput = z.infer<typeof listSpecSchema>;
+
+// ---------------------------------------------------------------------------
+// Safety cases (§7b, #1211)
+// ---------------------------------------------------------------------------
+
+/**
+ * The frameworks a safety case may follow. `assurance_2_cae` is Assurance 2.0
+ * in Claims, Arguments, Evidence form (Bloomfield and Rushby, "Assurance 2.0:
+ * A Manifesto", 2020); `none` is a case whose Steward structures it without a
+ * named framework, whose form is then not checked.
+ */
+export const CASE_FRAMEWORKS = ["assurance_2_cae", "none"] as const;
+export type CaseFramework = (typeof CASE_FRAMEWORKS)[number];
+
+/** What an element of a case's structure is. */
+export const CASE_ELEMENT_TYPES = ["claim", "step", "side_claim", "evidence", "defeater"] as const;
+export type CaseElementType = (typeof CASE_ELEMENT_TYPES)[number];
+
+/**
+ * The building blocks an argument step may be under Assurance 2.0 CAE
+ * (Bloomfield and Netkachova, "Building Blocks for Assurance Cases", 2014):
+ * a claim split into parts, a claim about one thing shown of another, a
+ * claim made concrete, a value computed from others, and evidence brought in.
+ */
+export const CASE_BLOCKS = ["decomposition", "substitution", "concretion", "calculation", "evidence_incorporation"] as const;
+export type CaseBlock = (typeof CASE_BLOCKS)[number];
+
+/**
+ * Where a defeater stands in the case: not yet settled, answered by a
+ * subcase, or sustained. A sustained defeater the case proceeds past is a
+ * residual doubt, recorded with who accepted it and why. The standing is the
+ * case's own and is not the assessment of the claim the defeater points at.
+ */
+export const DEFEATER_STANDINGS = ["open", "answered", "sustained"] as const;
+export type DefeaterStanding = (typeof DEFEATER_STANDINGS)[number];
+
+/**
+ * Whether the case establishes its conclusion to the standard in its
+ * specification. The burden is on the case, so there is no third word for
+ * "not shown either way": that is not established.
+ */
+export const CASE_VERDICTS = ["established", "not_established"] as const;
+export type CaseVerdict = (typeof CASE_VERDICTS)[number];
+
+export const caseSpecSchema = z
+  .object({
+    system: z.string().trim().min(1),
+    deployment: z.string().trim().min(1),
+    conclusion_claim_id: z.string().uuid(),
+    standard: z.string().trim().min(1),
+    standard_of: z.string().trim().min(1),
+    framework: z.enum(CASE_FRAMEWORKS),
+    not_covered: z.string().trim().min(1).nullish(),
+  })
+  .strict();
+export type CaseSpecInput = z.infer<typeof caseSpecSchema>;
 
 export const leftOutSchema = z
   .array(z.object({ node_id: z.string().uuid(), reason: z.string().trim().min(1) }).strict())

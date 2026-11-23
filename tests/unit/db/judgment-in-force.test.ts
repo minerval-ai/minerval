@@ -37,6 +37,8 @@ const MAY_MENTION_IS_CURRENT: Record<string, string> = {
     "Writes the flag: recordQuestionAssessment retires the current assessment before inserting the new one.",
   "src/services/artifact-service.ts":
     "Writes the flag: recordListAssessment retires the list's current assessment before inserting the new one. Its reads go through artifact_assessments_in_force.",
+  "src/services/safety-case-service.ts":
+    "Writes the flag: recordCaseAssessment retires the case's current assessment before inserting the new one. Its reads go through artifact_assessments_in_force.",
   "src/services/reconciliation-service.ts":
     "Writes the flag: a change of kind or a split retires current judgments, and undoing it brings them back.",
   "src/services/left-standing-service.ts":

@@ -43,6 +43,7 @@ describe("the mirror manifest", () => {
       "source_segments",
       "arguments",
       "argument_subclaims",
+      "case_elements",
       "claim_instances",
       "argument_instances",
       "quantity_readings",

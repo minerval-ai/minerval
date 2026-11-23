@@ -49,7 +49,7 @@ const GROUPS: { key: string; title: string; test: RegExp }[] = [
   {
     key: "contribute",
     title: "Contributing",
-    test: /^(submit_contribution|get_contribution_status|list_contributions|submit_appeal|get_appeal|propose_claim|propose_list|state_view|list_stated_views|list_contributors|get_contributor|raise_issue|get_my_report)$/,
+    test: /^(submit_contribution|get_contribution_status|list_contributions|submit_appeal|get_appeal|propose_claim|propose_list|propose_safety_case|state_view|list_stated_views|list_contributors|get_contributor|raise_issue|get_my_report)$/,
   },
   { key: "organizations", title: "Organizations", test: /organization|account_conversion/ },
   { key: "requests", title: "Requests", test: /request/ },

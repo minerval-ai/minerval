@@ -1,5 +1,5 @@
 {
-  "id": "c77ce4a9-2d2c-40a5-8526-26b0e7c07a24",
+  "id": "8bcd70a3-f6f5-41be-a1a5-9c8a7ff80a40",
   "prevId": "31727ef8-97c6-48f8-979f-1b424f5e90ce",
   "version": "7",
   "dialect": "postgresql",
@@ -4021,6 +4021,24 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "verdict": {
+          "name": "verdict",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verdict_basis": {
+          "name": "verdict_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "would_change": {
+          "name": "would_change",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "confidence": {
           "name": "confidence",
           "type": "real",
@@ -4184,6 +4202,10 @@
           "name": "ck_artifact_assessments_origin",
           "value": "\"artifact_assessments\".\"origin\" IN ('local', 'mirror')"
         },
+        "ck_artifact_assessments_verdict": {
+          "name": "ck_artifact_assessments_verdict",
+          "value": "\"artifact_assessments\".\"verdict\" IS NULL OR (\"artifact_assessments\".\"verdict\" IN ('established', 'not_established') AND \"artifact_assessments\".\"verdict_basis\" IS NOT NULL)"
+        },
         "ck_artifact_assessments_fidelity": {
           "name": "ck_artifact_assessments_fidelity",
           "value": "\"artifact_assessments\".\"fidelity\" IN ('faithful', 'incomplete', 'misleading', 'ill_specified')"
@@ -4212,13 +4234,13 @@
           "name": "purpose",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "inclusion": {
           "name": "inclusion",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "exclusion": {
           "name": "exclusion",
@@ -4238,6 +4260,48 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'"
+        },
+        "system": {
+          "name": "system",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deployment": {
+          "name": "deployment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "conclusion_claim_id": {
+          "name": "conclusion_claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "standard": {
+          "name": "standard",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "standard_of": {
+          "name": "standard_of",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "framework": {
+          "name": "framework",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "not_covered": {
+          "name": "not_covered",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_by": {
           "name": "created_by",
@@ -4289,6 +4353,19 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
+        "artifact_specs_conclusion_claim_id_claims_id_fk": {
+          "name": "artifact_specs_conclusion_claim_id_claims_id_fk",
+          "tableFrom": "artifact_specs",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "conclusion_claim_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "artifact_specs_sensitivity_label_labels_name_fk": {
           "name": "artifact_specs_sensitivity_label_labels_name_fk",
           "tableFrom": "artifact_specs",
@@ -4322,7 +4399,15 @@
         },
         "ck_artifact_specs_subtype": {
           "name": "ck_artifact_specs_subtype",
-          "value": "\"artifact_specs\".\"subtype\" IN ('list')"
+          "value": "\"artifact_specs\".\"subtype\" IN ('list', 'safety_case')"
+        },
+        "ck_artifact_specs_list": {
+          "name": "ck_artifact_specs_list",
+          "value": "\"artifact_specs\".\"subtype\" <> 'list' OR (\"artifact_specs\".\"purpose\" IS NOT NULL AND \"artifact_specs\".\"inclusion\" IS NOT NULL)"
+        },
+        "ck_artifact_specs_safety_case": {
+          "name": "ck_artifact_specs_safety_case",
+          "value": "\"artifact_specs\".\"subtype\" <> 'safety_case' OR (\"artifact_specs\".\"system\" IS NOT NULL AND \"artifact_specs\".\"deployment\" IS NOT NULL\n          AND \"artifact_specs\".\"conclusion_claim_id\" IS NOT NULL AND \"artifact_specs\".\"standard\" IS NOT NULL AND \"artifact_specs\".\"standard_of\" IS NOT NULL\n          AND \"artifact_specs\".\"framework\" IN ('assurance_2_cae', 'none'))"
         }
       },
       "isRLSEnabled": false
@@ -27449,7 +27534,7 @@
         },
         "ck_release_pages_kind": {
           "name": "ck_release_pages_kind",
-          "value": "CASE WHEN \"release_pages\".\"node_id\" IS NULL THEN \"release_pages\".\"judgment_kind\" IS NULL AND \"release_pages\".\"version_key\" IS NOT NULL\n               ELSE \"release_pages\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment') AND \"release_pages\".\"judgment_id\" IS NOT NULL END"
+          "value": "CASE WHEN \"release_pages\".\"node_id\" IS NULL THEN \"release_pages\".\"judgment_kind\" IS NULL AND \"release_pages\".\"version_key\" IS NOT NULL\n               ELSE \"release_pages\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment', 'artifact_assessment') AND \"release_pages\".\"judgment_id\" IS NOT NULL END"
         }
       },
       "isRLSEnabled": false
@@ -31980,77 +32065,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.deployment_settings": {
-      "name": "deployment_settings",
-      "schema": "",
-      "columns": {
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "value": {
-          "name": "value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sealed_value": {
-          "name": "sealed_value",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_four": {
-          "name": "last_four",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_by": {
-          "name": "set_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_at": {
-          "name": "set_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "deployment_settings_set_by_contributors_id_fk": {
-          "name": "deployment_settings_set_by_contributors_id_fk",
-          "tableFrom": "deployment_settings",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "set_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_deployment_settings_one_value": {
-          "name": "ck_deployment_settings_one_value",
-          "value": "(\"deployment_settings\".\"value\" IS NULL) <> (\"deployment_settings\".\"sealed_value\" IS NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.first_administrator_codes": {
-      "name": "first_administrator_codes",
+    "public.case_elements": {
+      "name": "case_elements",
       "schema": "",
       "columns": {
         "id": {
@@ -32060,8 +32076,93 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "code_hash": {
-          "name": "code_hash",
+        "case_id": {
+          "name": "case_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "element_type": {
+          "name": "element_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "argument_id": {
+          "name": "argument_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "block": {
+          "name": "block",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statement": {
+          "name": "statement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "standing": {
+          "name": "standing",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "standing_reason": {
+          "name": "standing_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accepted_by": {
+          "name": "accepted_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acceptance": {
+          "name": "acceptance",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "departure": {
+          "name": "departure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raised_in_published": {
+          "name": "raised_in_published",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_by": {
+          "name": "created_by",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -32073,225 +32174,164 @@
           "notNull": true,
           "default": "now()"
         },
-        "expires_at": {
-          "name": "expires_at",
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "now()"
         },
-        "used_at": {
-          "name": "used_at",
-          "type": "timestamp with time zone",
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "minerval_default_label()"
         },
-        "used_by": {
-          "name": "used_by",
-          "type": "uuid",
+        "origin": {
+          "name": "origin",
+          "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'local'"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_case_elements_case": {
+          "name": "idx_case_elements_case",
+          "columns": [
+            {
+              "expression": "case_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_case_elements_parent": {
+          "name": "idx_case_elements_parent",
+          "columns": [
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_case_elements_node": {
+          "name": "idx_case_elements_node",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "node_id IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "first_administrator_codes_used_by_contributors_id_fk": {
-          "name": "first_administrator_codes_used_by_contributors_id_fk",
-          "tableFrom": "first_administrator_codes",
-          "tableTo": "contributors",
+        "case_elements_case_id_claims_id_fk": {
+          "name": "case_elements_case_id_claims_id_fk",
+          "tableFrom": "case_elements",
+          "tableTo": "claims",
           "columnsFrom": [
-            "used_by"
+            "case_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "case_elements_parent_id_case_elements_id_fk": {
+          "name": "case_elements_parent_id_case_elements_id_fk",
+          "tableFrom": "case_elements",
+          "tableTo": "case_elements",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "case_elements_node_id_claims_id_fk": {
+          "name": "case_elements_node_id_claims_id_fk",
+          "tableFrom": "case_elements",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "case_elements_argument_id_arguments_id_fk": {
+          "name": "case_elements_argument_id_arguments_id_fk",
+          "tableFrom": "case_elements",
+          "tableTo": "arguments",
+          "columnsFrom": [
+            "argument_id"
           ],
           "columnsTo": [
             "id"
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "case_elements_sensitivity_label_labels_name_fk": {
+          "name": "case_elements_sensitivity_label_labels_name_fk",
+          "tableFrom": "case_elements",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.product_release_entries": {
-      "name": "product_release_entries",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision": {
-          "name": "revision",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prose": {
-          "name": "prose",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "signature": {
-          "name": "signature",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_id": {
-          "name": "key_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "product_release_entries_version_kind_revision_pk": {
-          "name": "product_release_entries_version_kind_revision_pk",
-          "columns": [
-            "version",
-            "kind",
-            "revision"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_product_release_entries_kind": {
-          "name": "ck_product_release_entries_kind",
-          "value": "\"product_release_entries\".\"kind\" IN ('release', 'withdrawal')"
+        "ck_case_elements_origin": {
+          "name": "ck_case_elements_origin",
+          "value": "\"case_elements\".\"origin\" IN ('local', 'mirror')"
         },
-        "ck_product_release_entries_revision": {
-          "name": "ck_product_release_entries_revision",
-          "value": "\"product_release_entries\".\"revision\" >= 1"
+        "ck_case_elements_type": {
+          "name": "ck_case_elements_type",
+          "value": "\"case_elements\".\"element_type\" IN ('claim', 'step', 'side_claim', 'evidence', 'defeater')"
+        },
+        "ck_case_elements_step": {
+          "name": "ck_case_elements_step",
+          "value": "CASE WHEN \"case_elements\".\"element_type\" = 'step'\n               THEN \"case_elements\".\"node_id\" IS NULL AND \"case_elements\".\"block\" IN ('decomposition', 'substitution', 'concretion', 'calculation', 'evidence_incorporation')\n               ELSE \"case_elements\".\"node_id\" IS NOT NULL AND \"case_elements\".\"block\" IS NULL AND \"case_elements\".\"argument_id\" IS NULL END"
+        },
+        "ck_case_elements_defeater": {
+          "name": "ck_case_elements_defeater",
+          "value": "CASE WHEN \"case_elements\".\"element_type\" = 'defeater'\n               THEN \"case_elements\".\"standing\" IN ('open', 'answered', 'sustained')\n                    AND (\"case_elements\".\"accepted_by\" IS NULL OR (\"case_elements\".\"standing\" = 'sustained' AND \"case_elements\".\"acceptance\" IS NOT NULL))\n               ELSE \"case_elements\".\"standing\" IS NULL AND \"case_elements\".\"accepted_by\" IS NULL AND \"case_elements\".\"acceptance\" IS NULL END"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.release_steps_done": {
-      "name": "release_steps_done",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "step": {
-          "name": "step",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "done_by": {
-          "name": "done_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "done_at": {
-          "name": "done_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "release_steps_done_done_by_contributors_id_fk": {
-          "name": "release_steps_done_done_by_contributors_id_fk",
-          "tableFrom": "release_steps_done",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "done_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "release_steps_done_version_step_pk": {
-          "name": "release_steps_done_version_step_pk",
-          "columns": [
-            "version",
-            "step"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.versions_run": {
-      "name": "versions_run",
-      "schema": "",
-      "columns": {
-        "version": {
-          "name": "version",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "commit": {
-          "name": "commit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "first_started_at": {
-          "name": "first_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_started_at": {
-          "name": "last_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },
@@ -32536,6 +32576,24 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "verdict": {
+          "name": "verdict",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verdict_basis": {
+          "name": "verdict_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "would_change": {
+          "name": "would_change",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "confidence": {
           "name": "confidence",
           "type": "real",
@@ -32614,7 +32672,7 @@
           "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"fidelity\", \"summary\", \"reasoning_trace\", \"gaps\", \"entry_order\", \"left_out\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\", minerval_version_in_force('artifact_assessments', \"claim_id\", \"sensitivity_label\") as \"in_force\" from \"artifact_assessments\" where \"artifact_assessments\".\"is_current\" = true",
+      "definition": "select \"id\", \"claim_id\", \"fidelity\", \"summary\", \"reasoning_trace\", \"gaps\", \"entry_order\", \"left_out\", \"verdict\", \"verdict_basis\", \"would_change\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\", minerval_version_in_force('artifact_assessments', \"claim_id\", \"sensitivity_label\") as \"in_force\" from \"artifact_assessments\" where \"artifact_assessments\".\"is_current\" = true",
       "name": "artifact_assessments_versions",
       "schema": "public",
       "isExisting": false,
@@ -32676,6 +32734,24 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "verdict": {
+          "name": "verdict",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verdict_basis": {
+          "name": "verdict_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "would_change": {
+          "name": "would_change",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "confidence": {
           "name": "confidence",
           "type": "real",
@@ -32754,7 +32830,7 @@
           "default": "'local'"
         }
       },
-      "definition": "select \"id\", \"claim_id\", \"fidelity\", \"summary\", \"reasoning_trace\", \"gaps\", \"entry_order\", \"left_out\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\" from \"artifact_assessments\" where (\"artifact_assessments\".\"is_current\" = true and minerval_version_gone_by('artifact_assessments', \"artifact_assessments\".\"claim_id\", \"artifact_assessments\".\"sensitivity_label\"))",
+      "definition": "select \"id\", \"claim_id\", \"fidelity\", \"summary\", \"reasoning_trace\", \"gaps\", \"entry_order\", \"left_out\", \"verdict\", \"verdict_basis\", \"would_change\", \"confidence\", \"marginal_yield\", \"model\", \"funded_by_job_id\", \"run_id\", \"inputs_recorded\", \"is_current\", \"trigger\", \"trigger_context\", \"assessed_at\", \"sensitivity_label\", \"origin\" from \"artifact_assessments\" where (\"artifact_assessments\".\"is_current\" = true and minerval_version_gone_by('artifact_assessments', \"artifact_assessments\".\"claim_id\", \"artifact_assessments\".\"sensitivity_label\"))",
       "name": "artifact_assessments_in_force",
       "schema": "public",
       "isExisting": false,

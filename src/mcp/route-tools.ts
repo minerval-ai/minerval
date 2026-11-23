@@ -99,6 +99,15 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /claims/:claim_id/provenance": { name: "get_claim_provenance" },
   "GET /claims/:claim_id/nanopub": { name: "export_claim_nanopub" },
   "GET /claims/:claim_id/scasp": { name: "export_claim_scasp" },
+  "GET /claims/:claim_id/cae": {
+    name: "export_safety_case",
+    note:
+      "For a safety case only (constitution §7b); any other node is NOT_FOUND. Each element carries the graph node it " +
+      "presents and the graph's own judgment of that node, unchanged. A defeater is the case's name for the part an " +
+      "ordinary claim plays in it, and its standing is the case's, not the claim's assessment. `verdict` says whether " +
+      "the case establishes its conclusion to its standard: report it as a statement about the case, beside the " +
+      "conclusion's own assessment, never in its place.",
+  },
   "GET /claims/:claim_id/mira": { name: "export_claim_mira" },
   "GET /claims/:claim_id/record": { name: "get_claim_record" },
   "GET /claims/:claim_id/assessments": { name: "get_assessment_history" },
@@ -129,6 +138,18 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "criteria, not for truth. Write criteria a reader could check a node against, whichever way it " +
       "points. When a list with a very close specification exists nothing is minted: read it with " +
       "get_claim first, and propose again with confirm_new only if your criteria differ. " +
+      SPENDS_OWLS,
+  },
+
+  "POST /claims/propose-case": {
+    name: "propose_safety_case",
+    note:
+      "A safety case (constitution §7b) argues one conclusion about one system in one deployment, to a stated " +
+      "standard. Name the system and the deployment specifically enough that a later model or another deployment is " +
+      "plainly another case, and say whose standard it is. The conclusion is a claim the graph holds: find it with " +
+      "match_claim or propose it with propose_claim first, then give its id. The case's Steward builds the structure; " +
+      "you supply the specification, not the argument. When a case with a very close specification exists nothing is " +
+      "minted: read it with get_claim first, and propose again with confirm_new only if yours is another case. " +
       SPENDS_OWLS,
   },
 

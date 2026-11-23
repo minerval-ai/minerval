@@ -42,7 +42,10 @@ version of its judgment at that label (the status, estimate or answer, with
 its confidence and any credence, the summary and the reasoning), its
 arguments with their written forms, stances and evaluations, the readings of
 its sources, its subclaims with how each bears, the requests it records, and
-a stated view where one is recorded. No run produces it and no table holds
+a stated view where one is recorded. An artifact's page (a list, a safety
+case) is released the same way, carrying its judgment in
+`artifact_assessments`: its fidelity, and for a safety case whether the
+case establishes its conclusion, with the case's structure as parts. No run produces it and no table holds
 a special form of it. It is read from the rows the Steward's ordinary work
 wrote (`readPage` in `src/services/release-service.ts`).
 
@@ -107,7 +110,8 @@ kinds.
 | `reading` | A source's reading: the passage, its context and how it was read |
 | `supplier` | Who supplied one source, by name, and the words of any interest recorded for it |
 | `stated_view` | A stated view recorded on the node |
-| `subclaim` | A subclaim with how it bears |
+| `subclaim` | A subclaim with how it bears. On a list's page, an entry with why it qualifies |
+| `case_element` | One element of a safety case's structure ([safety-cases.md](safety-cases.md), "Through the gate") |
 
 An argument that is another label's row, evaluated at the page's label,
 contributes this label's evaluation and not the argument's text.

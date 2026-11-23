@@ -25,7 +25,10 @@ Facts specific to Minerval that bear on making a document from it.
 - **Four kinds, four judgments.** A claim has a status, a quantity an
   estimate with an interval, a question a standing and best answer, and a
   list (kind `artifact`, §7b) a judgment of how far it can be relied on
-  under its stated criteria, which is not a verdict on its entries. Normative claims are assessed like any
+  under its stated criteria, which is not a verdict on its entries. A safety
+  case is an artifact too, with a second judgment: whether the case
+  establishes its conclusion to its stated standard, which is a statement
+  about the case and is not the conclusion's own status. Normative claims are assessed like any
   other (§8, §25). A list is a ready-made table for a document: its
   entries come in its Steward's order with why each qualifies and what was
   left out, and `{{nodes ...}}` of its entries shows their verdicts live.

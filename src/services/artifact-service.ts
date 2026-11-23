@@ -1,6 +1,7 @@
 /**
  * Artifacts (constitution §7b, #845): nodes made from other nodes, judged
- * for fidelity rather than truth. Lists first.
+ * for fidelity rather than truth. Lists, here; safety cases are in
+ * safety-case-service.ts.
  *
  * A list is a claims row of kind 'artifact' with:
  *   - its specification in artifact_specs (what it is for, what qualifies
@@ -98,7 +99,7 @@ export async function similarLists(embedding: number[], limit = 5): Promise<Simi
   const rows = await rawQuery<SimilarList>(
     `SELECT c.id, c.text, s.inclusion, (1 - (c.embedding <=> $1::vector))::float8 AS similarity
        FROM claims c
-       JOIN artifact_specs s ON s.claim_id = c.id${oneSpecForArtifactSql("s")}
+       JOIN artifact_specs s ON s.claim_id = c.id AND s.subtype = 'list'${oneSpecForArtifactSql("s")}
       WHERE c.kind = 'artifact' AND c.state = 'active' AND c.embedding IS NOT NULL
       ORDER BY c.embedding <=> $1::vector
       LIMIT $2`,

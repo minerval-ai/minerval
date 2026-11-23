@@ -80,6 +80,7 @@ export const ORGANIZATION_ROUTES: Readonly<Record<string, OrganizationRouteRule>
   // A deployment also proposes the nodes the pages it publishes cite.
   "POST /claims/propose": { member: "propose", deployment: ["propose", "publish"] },
   "POST /claims/propose-list": propose,
+  "POST /claims/propose-case": propose,
   "POST /sources": propose,
 
   // ---- take_up: committing the organization to a request's work ----
