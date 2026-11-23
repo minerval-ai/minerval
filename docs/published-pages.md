@@ -6,7 +6,13 @@ releases what an agent concluded from evidence and holds the evidence back:
 redaction under a policy, Audit's check, a fingerprint recorded before
 any party consents, and a gate where each party consents. For a release outside
 the deployment those steps end with what was released recorded inside, at
-`public`. This document is the rest of the way: out of the deployment in a
+the published label: `published` on a members-only deployment, where it is a
+label of its own that anyone may read and only the gate to outside and the
+outbound work write ([architecture.md](architecture.md), "The three layers at
+the bottom"). It is the organization's own and not the public graph's: once
+the public graph has admitted a page, the page comes back with the mirror at
+`public`, as the public graph's row, beside the record at `published` of what
+was sent. This document is the rest of the way: out of the deployment in a
 form anyone can check, onto the public graph as a source its publisher
 submits, and in front of a reader of the public node's page.
 
@@ -50,8 +56,9 @@ carries the page last released.
 
 ### Nothing else crosses
 
-The package is built by work at `public` (`runAtLabel`), on a connection the
-database holds to `public` alone, from the rows the gate wrote there
+The package is built by work at the published label (`runAtLabel`), on a
+connection the database holds to what anyone may read, from the rows the
+gate wrote there
 (`outsideRecord` in `release-gate-service.ts`,
 `buildOutboundPackages` in `outbound-service.ts`). A row at any other label
 cannot be read by that work, whatever the code asks for. So what a package

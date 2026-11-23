@@ -40,10 +40,11 @@
  * passage the agents chose to record from it. An agent's own run is not
  * held to this at all: it reads what its label reads, sources included.
  *
- * `public` sources are open to every member, and on the public graph none
- * of this applies.
+ * Sources at a label every member reads (what anyone may read, and the base
+ * label) are open to every member, and on the public graph none of this
+ * applies.
  */
-import { PUBLIC_LABEL } from "./labels.js";
+import { isMemberLabel } from "./labels.js";
 import { membersOnly, standingOf, type Standing } from "./permissions.js";
 
 /**
@@ -57,7 +58,7 @@ export function rawSourceLabelsOf(auth: { standing?: Standing } | null | undefin
 
 /** Whether sources at `label` may be opened with `rawSourceLabels` (null: nothing is held). */
 export function mayOpenRawSources(rawSourceLabels: readonly string[] | null, label: string): boolean {
-  return rawSourceLabels === null || label === PUBLIC_LABEL || rawSourceLabels.includes(label);
+  return rawSourceLabels === null || isMemberLabel(label) || rawSourceLabels.includes(label);
 }
 
 /** What a response carries in place of text it withholds. */

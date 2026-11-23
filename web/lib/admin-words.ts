@@ -835,6 +835,11 @@ export function logSentence(entry: LogEntry): string {
       return isWithheld(entry.label)
         ? `${who} defined ${labelWords(entry.label)}.`
         : `${who} defined the label ${labelWords(entry.label)}.`;
+    case "labels_split":
+      return (
+        `This deployment's "public" was split into three labels when it started on a version that has them: "public" keeps the public graph's own material, ` +
+        `"${entry.published ?? "published"}" took what the organization released outside, and ${labelWords(entry.label)} took the organization's own material that every member reads.`
+      );
     case "label_read_added":
       return `${who} recorded that ${labelWords(entry.label)} reads ${labelWords(entry.reads)}.`;
     case "label_read_removed":

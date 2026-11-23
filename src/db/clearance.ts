@@ -70,7 +70,7 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, openLabels, noteLabelLayers, resetLabelLayers } from "../labels.js";
 
 /** The role every connection that is held to a clearance logs in as. */
 export const CLEARED_ROLE = "minerval_cleared";
@@ -267,6 +267,8 @@ export type Session =
   | { role: "cleared"; clearance: readonly string[]; label?: string };
 
 const OWNER: Session = Object.freeze({ role: "owner" });
+// Work with nothing in context reads what anyone may read and nothing of
+// the deployment's own: normalizeClearance adds what was published.
 const PUBLIC_ONLY: Session = Object.freeze({ role: "cleared", clearance: Object.freeze([PUBLIC_LABEL]) });
 
 function plainName(label: string): string {
@@ -279,9 +281,9 @@ function plainName(label: string): string {
   return label;
 }
 
-/** A clearance as it is keyed and written: each label once, `public` included, sorted. */
+/** A clearance as it is keyed and written: each label once, what anyone may read included, sorted. */
 export function normalizeClearance(labels: readonly string[]): string[] {
-  return [...new Set([PUBLIC_LABEL, ...labels.map(plainName)])].sort();
+  return [...new Set([...openLabels(), ...labels.map(plainName)])].sort();
 }
 
 /** One string per distinct session: the key of its pool. */
@@ -393,12 +395,37 @@ async function readEnforcement(ownerQuery: OwnerQuery): Promise<boolean> {
   // Stamped on arrival, a slow check could have kept this process on the
   // owner's pool for a whole interval after the switch.
   const asked = Date.now();
-  const [row] = await ownerQuery<{ on: boolean }>(
-    `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'label_clearance') AS on`
-  );
+  // The layers are asked in the same breath, so the check is no slower.
+  const [[row]] = await Promise.all([
+    ownerQuery<{ on: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'label_clearance') AS on`
+    ),
+    readLabelLayers(ownerQuery),
+  ]);
   const on = row?.on === true;
   enforcement = { on, at: asked };
   return on;
+}
+
+/**
+ * Which label is which of the bottom layers (src/labels.ts, "The layers at
+ * the bottom"), read with the check on enforcement: a process then knows
+ * the base label before the first query it sends, and learns of a split
+ * as soon as it learns of anything about the labels. A database the
+ * migration has not reached has no such column, or no such table, and no
+ * layers: `public` is all three.
+ */
+async function readLabelLayers(ownerQuery: OwnerQuery): Promise<void> {
+  try {
+    const rows = await ownerQuery<{ name: string; layer: string | null; created_at: Date | null }>(
+      `SELECT name, layer, created_at FROM labels WHERE layer IS NOT NULL`
+    );
+    noteLabelLayers(rows.filter((r) => typeof r?.name === "string" && typeof r?.layer === "string"));
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code !== "42703" && code !== "42P01") throw err;
+    noteLabelLayers([]);
+  }
 }
 
 /**
@@ -540,6 +567,7 @@ export function resetClearanceState(): void {
   enforcementCheck = null;
   unsettledUntil = 0;
   labelClearances.clear();
+  resetLabelLayers();
 }
 
 // ---- the session of the work in progress ------------------------------------
@@ -579,7 +607,7 @@ export function describeRefusal(session: Session, table: string | undefined): st
   const reads = normalizeClearance(session.clearance)
     .map((l) => `"${l}"`)
     .join(", ");
-  const own = session.label ?? PUBLIC_LABEL;
+  const own = session.label ?? baseLabel();
   return (
     `The write${where} was refused. This work is at the label "${own}" and reads ${reads}: it may ` +
     `add a row only at its own label, and change one only at a label it reads. Either the row it ` +

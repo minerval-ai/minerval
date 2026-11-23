@@ -180,9 +180,9 @@ JSON object).
 
 ```toml
 [provider_labels]
-anthropic = ["public", "internal"]
-"endpoint:local" = ["public", "internal", "restricted"]
-embeddings = ["public", "internal"]
+anthropic = ["public", "published", "members", "internal"]
+"endpoint:local" = ["public", "published", "members", "internal", "restricted"]
+embeddings = ["public", "published", "members", "internal"]
 ```
 
 The names are `anthropic`, `openai` and `openrouter`; `"endpoint:<name>"`
@@ -190,9 +190,16 @@ for each declared endpoint, in quotes because of the colon; and the outside
 services `embeddings`, `web_search`, `web_pages`, `elicit` and `pangram`.
 
 Where the group is written, a provider with no line is cleared for `public`
-and for nothing else, so a deployment that defines another label sends
-nothing at that label anywhere until a line here says who may receive it,
-whatever the labels page says. A provider with a line
+and for nothing else, so a deployment sends
+nothing at any other label anywhere until a line here says who may receive it,
+whatever the labels page says. `public` is the public graph's own material.
+The organization's own work is at `members` (what every member reads, and
+where work that names no other label is done) and `published` (what it
+released outside), so a provider that is to serve the deployment's agents
+needs both on its line. A deployment set up before those two labels existed
+has to add them by hand: it is the one change the split of `public` asks of
+whoever runs the deployment, and the preflight check `provider_labels` fails,
+naming the lines to change, until it is made. A provider with a line
 is cleared for exactly the labels on it, so `[]` clears it for none,
 `public` included. Labels are named, never created, here: a name that is not
 a defined label refuses every call until it is defined or corrected, and the
@@ -426,7 +433,16 @@ ways:
 Some checks only matter, and some only block, when a deployment holds
 private material. For now that has one definition: **the deployment has
 defined a label other than `public`** (a row in the `labels` table;
-`src/labels.ts`). Reads are not yet held to labels, so there is nothing
+`src/labels.ts`). A members-only deployment always has: when it first starts
+it is given `members`, for the organization's own material that every member
+reads, and `published`, for what it released outside, beside `public`, which
+there holds only the public graph's own material
+([architecture.md](architecture.md), "The three layers at the bottom"). A
+deployment that was running before those labels existed is split into them
+at its next start; the start log says what was moved, and the Activity log
+keeps the entry. If it had already defined a label called `members` or
+`published`, the API stops at start and says which of `MEMBERS_LABEL` and
+`PUBLISHED_LABEL` to set to another name. Reads are not yet held to labels, so there is nothing
 finer to ask: a deployment that defines its second label has said it means
 to hold something that is not for everyone, and from then on it is held to
 the blocking checks.
@@ -455,7 +471,7 @@ at that label does not run at all.
 | `database` | The database can be reached, has the pgvector extension, and has applied every migration the code has. It also fails when the database was migrated by newer code, and when a migration is waiting that the migrator would pass over. | yes |
 | `run_log` | A test run is written to the run log, sealed, checked against its seal and removed. Where private material is held, the log must also be in record mode. | yes |
 | `models` | Every role's model resolves to a provider whose key is set. A model on one of the deployment's own endpoints needs the endpoint declared, and the variable its `key_env` names set if it has one. Roles of a feature that is off are left out. No provider is called. | no |
-| `provider_labels` | Every label `[provider_labels]` names is a defined label. A name that is not refuses every model call and every call to an outside service, at every label, so nothing is lost by holding agent work back until it is put right. Where the group is not written it does not apply: the choice is the labels page's, which can name only a defined label. | yes |
+| `provider_labels` | Every label `[provider_labels]` names is a defined label. A name that is not refuses every model call and every call to an outside service, at every label, so nothing is lost by holding agent work back until it is put right. On a members-only deployment the group must also name `members` and `published` for some provider: the organization's own work is at those two labels, a provider is sent neither until a line says so, and the check fails with the lines to change until one does. Where the group is not written it does not apply: the choice is the labels page's, which can name only a defined label. | yes |
 | `model_clearance` | For each label besides `public`, the provider of every role's model is cleared for it. It fails naming the label, the provider and the roles whose runs there would be refused. It does not block: there is one gate for the whole deployment, so closing it would also stop the work at the labels that are served, and a refused run sends nothing. | no |
 | `embeddings` | `OPENAI_API_KEY` is set. | no |
 | `embeddings_clearance` | For each label besides `public`, whether embeddings are cleared for it. Where they are not, it passes and says what that label goes without: rows written there have no vector, and a search there matches on keywords. | no |

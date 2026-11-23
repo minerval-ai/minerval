@@ -22,6 +22,7 @@ import {
   type OwnerQuery,
   type Session,
 } from "./clearance.js";
+import { PUBLIC_LABEL, openLabels } from "../labels.js";
 
 let _pool: pg.Pool | null = null;
 
@@ -306,7 +307,7 @@ async function sessionPool(): Promise<{ pool: pg.Pool; session: Session }> {
 let loginEnsuredAt = 0;
 let clearedLoginWorked = false;
 
-const PUBLIC_SESSION: Session = { role: "cleared", clearance: ["public"] };
+const PUBLIC_SESSION: Session = { role: "cleared", clearance: [PUBLIC_LABEL] };
 
 /** Whether a connection as the cleared role can be opened with this process's password. */
 async function clearedLoginWorks(): Promise<boolean> {
@@ -357,13 +358,13 @@ export async function setClearedLogin(): Promise<void> {
 }
 
 /**
- * One query on a connection held to `public` alone, whatever the work in
+ * One query on a connection held to what anyone may read, whatever the work in
  * progress is: for checking what such a connection really is and sees
  * (db/enforcement.ts). Only where enforcement is on; before that the
  * cleared role has no login.
  */
 export async function queryAtPublicClearance<T>(text: string, params: unknown[] = []): Promise<T[]> {
-  const session: Session = { role: "cleared", clearance: ["public"] };
+  const session: Session = { role: "cleared", clearance: [PUBLIC_LABEL] };
   const run = async () => (await poolOf(session).query(text, params)).rows as T[];
   try {
     return await run();
@@ -380,12 +381,12 @@ export async function queryAtPublicClearance<T>(text: string, params: unknown[] 
  * carry the clearance somewhere this client does not reach: read-only SQL
  * runs on its own login role (services/sql-service.ts), and a run is told
  * what it reads (llm/label-note.ts). System work, which is held to nothing
- * here, is answered `public`: neither of those is for it.
+ * here, is answered what anyone may read: neither of those is for it.
  */
 export async function currentReadClearance(): Promise<string[] | null> {
   if (!(await enforcementOn(ownerQuery))) return null;
   const session = await currentSession(ownerQuery);
-  return session.role === "cleared" ? normalizeClearance(session.clearance) : ["public"];
+  return session.role === "cleared" ? normalizeClearance(session.clearance) : openLabels();
 }
 
 /**

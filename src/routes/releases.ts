@@ -59,7 +59,7 @@ import { listParties } from "../services/party-service.js";
 import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES } from "../services/gate-kinds.js";
 import { fundBelow, offerToGate } from "../services/gate-service.js";
 import { FLOW_WORDS, GateError, endGateSetting, gatesFor, keepCurrentWords, setGate, setGateMode } from "../services/gate-settings-service.js";
-import { keptReferWhen, policyVersionRecord, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
+import { destinationProblem, keptReferWhen, policyVersionRecord, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
 import {
   HOLD_REASONS,
   askedReleases,
@@ -98,6 +98,7 @@ const STATUS: Record<string, number> = {
   PAGE_NOT_FOUND: 404,
   RULE_NOT_FOUND: 404,
   UNKNOWN_LABEL: 404,
+  NOT_A_DESTINATION: 400,
   ALREADY_STANDING: 409,
   PASS_RUNNING: 409,
   ALREADY_ENDED: 409,
@@ -828,6 +829,8 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
         if (!labels.has(request.body.from_label) || (to !== null && !labels.has(to))) {
           return reply.code(404).send({ error: "One of those labels is not defined in this deployment.", code: "UNKNOWN_LABEL" });
         }
+        const notADestination = destinationProblem(to);
+        if (notADestination) return reply.code(400).send({ error: notADestination, code: "NOT_A_DESTINATION" });
         const boundary = { from: request.body.from_label, to };
         // Left out, the guidelines for asking a person stay as the version in force has them.
         const referWhen = request.body.refer_when ?? (await keptReferWhen(boundary));

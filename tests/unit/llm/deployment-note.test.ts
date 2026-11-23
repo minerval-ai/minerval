@@ -105,9 +105,13 @@ describe("the Assistant on a private deployment", () => {
       ...(label ? { label } : {}),
     });
 
-  it("is told that the label called public is the members' layer and not the public graph", () => {
-    expect(context("public")).toMatch(/It is not the public graph\./);
-    expect(context("sensitive")).not.toMatch(/It is not the public graph\./);
-    expect(context()).not.toMatch(/It is not the public graph\./);
+  // The members' layer has a name of its own, `members` (#1203), and no
+  // conversation works at `public` on a members-only deployment, so the
+  // sentence that explained "public" there is gone.
+  it("says the conversation's label as it is named, with no word about what public means", () => {
+    expect(context("members")).toMatch(/This conversation works at the label `members`/);
+    for (const said of [context("members"), context("sensitive"), context()]) {
+      expect(said).not.toMatch(/It is not the public graph\./);
+    }
   });
 });

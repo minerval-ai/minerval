@@ -9,7 +9,7 @@
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, openLabels, memberLabels } from "../labels.js";
 import { microUsdToOwls } from "./owl.js";
 import {
   PERMISSION_DEFINITIONS,
@@ -41,8 +41,8 @@ function sqlState(err: unknown): string | undefined {
 
 /**
  * Every label readable from `labels`: the labels themselves, and each label
- * one of them reads, followed through label_reads to the end. `public` is
- * always in the answer. Sorted.
+ * one of them reads, followed through label_reads to the end. What anyone
+ * may read (openLabels) is always in the answer. Sorted.
  *
  * The answer is the database's (minerval_labels_readable_from), which is
  * also what a run's label is turned into a clearance with
@@ -50,7 +50,7 @@ function sqlState(err: unknown): string | undefined {
  * for runs.
  */
 export async function labelsReadableFrom(labels: readonly string[]): Promise<string[]> {
-  const start = [...new Set([PUBLIC_LABEL, ...labels])];
+  const start = [...new Set([...openLabels(), ...labels])];
   if (start.length === 1) return start;
   const [row] = await rawQuery<{ labels: string[] }>(
     `SELECT minerval_labels_readable_from($1::text[]) AS labels`,
@@ -107,8 +107,9 @@ export async function resolveStanding(accountId: string): Promise<Standing> {
   return {
     member: true,
     grants,
-    clearance: await labelsReadableFrom(readAt),
-    rawSourceLabels: [...new Set([PUBLIC_LABEL, ...rawAt])].sort(),
+    // Every member reads the base label and opens its sources with no grant.
+    clearance: await labelsReadableFrom([baseLabel(), ...readAt]),
+    rawSourceLabels: [...new Set([...memberLabels(), ...rawAt])].sort(),
     groups,
   };
 }
@@ -587,6 +588,10 @@ export type AdministrativeAction =
   | "label_read_removed"
   | "label_face_shown"
   | "label_face_withdrawn"
+  // A members-only deployment's `public` was split into the public graph's
+  // label, the published label and the base label (services/label-split.ts).
+  // It happens once, at start, and no person does it.
+  | "labels_split"
   // Which model providers and outside services may be sent a label's text
   // was chosen (provider-clearance-service.ts).
   | "provider_clearance_set"
@@ -644,6 +649,7 @@ export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, L
   label_read_removed: "labels",
   label_face_shown: "labels",
   label_face_withdrawn: "labels",
+  labels_split: "labels",
   provider_clearance_set: "providers",
   party_added: "parties",
   own_organization_named: "parties",
@@ -740,6 +746,12 @@ export interface LogEntry {
   key_id?: string;
   /** The feed the mirror started following (mirror_followed). */
   feed?: string;
+  /**
+   * For labels_split: the label that took what the organization released
+   * outside. `label` is the one that took the members' own material. Anyone
+   * may read the first and every member the second, so neither is withheld.
+   */
+  published?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -1026,6 +1038,10 @@ export async function permissionLog(
           entry.mandate = title === undefined ? { id: d.grant_id, title: "", withheld: true } : { id: d.grant_id, title };
         }
         if (typeof d.note === "string" && d.note) entry.note = d.note;
+      }
+      if (r.event === "labels_split") {
+        if (typeof d.label === "string") entry.label = d.label;
+        if (typeof d.published === "string") entry.published = d.published;
       }
       if (typeof d.key_id === "string") entry.key_id = d.key_id;
       if (r.event === "mirror_followed" && typeof d.feed === "string") entry.feed = d.feed;

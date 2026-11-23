@@ -33,7 +33,7 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { requestAudit } from "../services/queue-service.js";
 import { countNewReportsSince } from "../services/report-service.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { baseLabel } from "../labels.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { everyLabel, keyAtLabel } from "../services/label-service.js";
@@ -105,7 +105,7 @@ export async function auditSchedulerTick(
     `SELECT count(*)::int AS count
      FROM contribution_reviews
      WHERE superseded = false AND reviewed_at > $1${oneLabelOnly() ? "" : " AND sensitivity_label = $2"}`,
-    oneLabelOnly() ? [new Date(now - intervalMs)] : [new Date(now - intervalMs), label ?? PUBLIC_LABEL]
+    oneLabelOnly() ? [new Date(now - intervalMs)] : [new Date(now - intervalMs), label ?? baseLabel()]
   );
   if ((decided?.count ?? 0) > 0) {
     // The window is named as a time the agent can pass to since (#696).

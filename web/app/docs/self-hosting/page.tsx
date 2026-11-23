@@ -113,7 +113,7 @@ docker compose logs -f api`}</Code>
             </tr>
             <tr>
               <td><code>PROVIDER_LABELS</code></td>
-              <td>Leave it unset: your administrators then choose, on <code>/admin/labels</code>, which model providers and outside services each label may be sent text at, with nothing cleared until someone ticks it and no restart for a change. Set it only to make that choice here alone: it then overrides the page and fixes the clearance, and a provider with no entry is cleared for <code>public</code> only</td>
+              <td>Leave it unset: your administrators then choose, on <code>/admin/labels</code>, which model providers and outside services each label may be sent text at, with nothing cleared until someone ticks it and no restart for a change. Set it only to make that choice here alone: it then overrides the page and fixes the clearance, and a provider with no entry is cleared for <code>public</code> only. <code>public</code> is the public graph&rsquo;s own material: your own work is at <code>members</code> and <code>published</code>, so name both on the line of each provider that is to serve your agents</td>
             </tr>
             <tr>
               <td><code>MODEL_ENDPOINTS</code></td>
