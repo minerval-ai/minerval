@@ -20,7 +20,7 @@
  */
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { GATE_KINDS, type GateKind } from "./gate-kinds.js";
 import { gateOf } from "./gate-settings-service.js";
@@ -373,7 +373,7 @@ export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; 
   if (oneLabelOnly()) return null;
   if (offer.toLabel === null && !GOES_OUTSIDE.includes(offer.kind)) return null;
   return bothSides(async () => {
-    const destination = offer.toLabel ?? PUBLIC_LABEL;
+    const destination = offer.toLabel ?? publishedLabel();
     const [reach] = await rawQuery<{ reads: string[] }>(`SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads`, [destination]);
     if (offer.toLabel === offer.fromLabel || reach!.reads.includes(offer.fromLabel)) return null;
     const own = await ownOrganizationParty();

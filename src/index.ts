@@ -47,6 +47,7 @@ import type {
   ContributionMessage,
   ArbitrationMessage,
 } from "./services/queue-service.js";
+import { PUBLIC_LABEL } from "./labels.js";
 
 type WorkLogger = {
   info: (...args: unknown[]) => void;
@@ -302,7 +303,7 @@ async function main() {
   } catch (err) {
     const others = await withSystemClearance(
       "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",
-      () => rawQuery(`SELECT 1 FROM labels WHERE name <> 'public' LIMIT 1`)
+      () => rawQuery(`SELECT 1 FROM labels WHERE name <> $1 LIMIT 1`, [PUBLIC_LABEL])
     ).catch(() => null);
     if (others === null || others.length > 0) throw err;
     console.error("[labels] the enforcement step failed; public is the only label, so nothing is held:", err);

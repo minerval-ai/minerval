@@ -22,7 +22,7 @@
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 
 export interface PolicyCategory {
   /** The words used in the mark: "[redacted: <name>]". */
@@ -281,8 +281,8 @@ export interface Boundary {
   to: string | null;
 }
 
-/** The label the destination side's rows are kept at: the destination label, or `public` for outside. */
-export const destinationLabel = (boundary: Boundary): string => boundary.to ?? PUBLIC_LABEL;
+/** The label the destination side's rows are kept at: the destination label, or the published label for outside. */
+export const destinationLabel = (boundary: Boundary): string => boundary.to ?? publishedLabel();
 
 export interface PolicyView {
   id: string;

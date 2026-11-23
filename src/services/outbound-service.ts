@@ -41,7 +41,7 @@ import { liveConnection, publicGraphFetch } from "./public-graph-client.js";
 import { loadConfig } from "../config.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { PUBLISHED_PAGE_FORMAT, packageHash, registrationStatement, type PublishedPagePackage } from "../published-page/verify.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
@@ -63,8 +63,8 @@ const REASON_OUTBOUND =
   "A person's act on what leaves the deployment is recorded at `public`, where the record of a release outside is kept, once the route has checked the person.";
 const asOwner = <T>(fn: () => Promise<T>) => withSystemClearance(REASON_OUTBOUND, fn);
 
-/** Work at `public`: it reads `public` rows alone, and what it writes is `public`. */
-const atPublic = <T>(what: string, fn: () => Promise<T>) => runAtLabel(PUBLIC_LABEL, what, fn);
+/** Work at the published label: it reads what anyone may read and nothing else, and what it writes is published. */
+const atPublished = <T>(what: string, fn: () => Promise<T>) => runAtLabel(publishedLabel(), what, fn);
 
 // ---- what the person who asks for a standing release is told ---------------------
 
@@ -318,7 +318,7 @@ export async function writeProposal(input: { releaseId: string; nodeId: string; 
     const [row] = await rawQuery<{ id: string }>(
       `INSERT INTO outbound_proposals (release_id, node_id, node_kind, text, written_by, written_holding, needs, state, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8, $9) RETURNING id`,
-      [input.releaseId, input.nodeId, node.kind, text, input.actor.id, input.actor.holding, needs, state, PUBLIC_LABEL]
+      [input.releaseId, input.nodeId, node.kind, text, input.actor.id, input.actor.holding, needs, state, publishedLabel()]
     );
     // Words that have not been through the gate go to it now, as anything written for readers outside does: an
     // item of the kind `proposal`, resting on the parties the node's wording rests on, under the gate's setting.
@@ -372,7 +372,7 @@ export async function buildOutboundPackages(opts: { releaseId?: string } = {}): 
   // assessment when a version here changes (keep-current.ts).
   const { keepCurrentStamp } = await import("./keep-current.js");
   const { saidBackFor } = await import("./inbound-service.js");
-  return atPublic("building the packages of pages released outside", async () => {
+  return atPublished("building the packages of pages released outside", async () => {
     const nodes = await rawQuery<{ release_id: string; node_id: string; boundary_id: string }>(
       `SELECT DISTINCT n.release_id, n.node_id, s.boundary_id FROM received_nodes n JOIN received_releases s ON s.id = n.release_id
         WHERE s.to_outside AND ($1::uuid IS NULL OR s.id = $1) ORDER BY n.release_id, n.node_id`,
@@ -416,7 +416,7 @@ export async function buildOutboundPackages(opts: { releaseId?: string } = {}): 
       await rawQuery(
         `INSERT INTO outbound_packages (release_id, node_id, public_node_id, sequence, content_hash, hash, package, sensitivity_label)
          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
-        [n.release_id, n.node_id, publicNodeId, body.sequence, contentHash, hash, JSON.stringify(signed), PUBLIC_LABEL]
+        [n.release_id, n.node_id, publicNodeId, body.sequence, contentHash, hash, JSON.stringify(signed), publishedLabel()]
       );
       built++;
     }
@@ -496,7 +496,7 @@ async function logSend(row: { packageId?: string; proposalId?: string; sender: S
   await rawQuery(
     `INSERT INTO outbound_sends (package_id, proposal_id, sent_by, holding, under_standing_choice, how, result, detail, public_page_id, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [row.packageId ?? null, row.proposalId ?? null, actor?.id ?? null, actor?.holding ?? [], actor === null, row.how, row.result, row.detail, row.publicPageId ?? null, PUBLIC_LABEL]
+    [row.packageId ?? null, row.proposalId ?? null, actor?.id ?? null, actor?.holding ?? [], actor === null, row.how, row.result, row.detail, row.publicPageId ?? null, publishedLabel()]
   );
 }
 

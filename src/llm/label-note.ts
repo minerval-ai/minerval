@@ -33,7 +33,7 @@
  * and the note is word for word what it was.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, publishedLabel, isMemberLabel, layerRank } from "../labels.js";
 import { FEATURES_OFF_NOTE_SEPARATOR } from "./features-off-note.js";
 
 type MessageParam = Anthropic.MessageParam;
@@ -127,16 +127,17 @@ export function labelNote(
 ): string {
   const mirror = opts.mirror ?? null;
   const own = tick(label);
-  // The labels it reads besides its own, `public` last.
+  // The labels it reads besides its own, the bottom layers last: the base,
+  // what was published, then the public graph.
   const others = [...new Set(reads)]
     .filter((l) => l !== label)
-    .sort((a, b) => (a === PUBLIC_LABEL ? 1 : b === PUBLIC_LABEL ? -1 : a < b ? -1 : 1));
+    .sort((a, b) => layerRank(b) - layerRank(a) || (a < b ? -1 : 1));
   const canRead =
     others.length === 0
       ? `What you can read: what is labeled ${own}, and nothing else.`
       : `What you can read: what is labeled ${own}, and what is labeled ${listed(others, "or")}, which ${own} reads.`;
   const whoReads =
-    label === PUBLIC_LABEL
+    isMemberLabel(label)
       ? `Every reader of this graph may read it.`
       : `Readers who are not cleared for ${own} do not see it.`;
   // A run that reads no other label never meets a row at one, so it is not
@@ -155,7 +156,7 @@ export function labelNote(
   // staysInside), and a run is told that before it files one, with how a
   // report does reach them (docs/outward-acts.md, "An agent's report, sent to Minerval's maintainers").
   const reports =
-    label === PUBLIC_LABEL
+    label === publishedLabel()
       ? ""
       : ` A problem report this run files (raise_issue) is kept in this deployment and not filed as an ` +
         `issue for Minerval's maintainers, because a report quotes what its run was working on; it reaches ` +

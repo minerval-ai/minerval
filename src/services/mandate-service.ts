@@ -1094,7 +1094,7 @@ export interface MandateWatching {
 
 async function mandateWatching(grantId: string): Promise<MandateWatching> {
   const { describeSubscription } = await import("./subscription-service.js");
-  const { PUBLIC_LABEL } = await import("../labels.js");
+  const { publishedLabel } = await import("../labels.js");
   const [session] = await rawQuery<{ id: string; status: string }>(
     `SELECT s.id, s.status FROM grants g JOIN agent_sessions s ON s.id = g.grantmaker_session_id
       WHERE g.id = $1`,
@@ -1121,7 +1121,7 @@ async function mandateWatching(grantId: string): Promise<MandateWatching> {
         AND ((subscriber_kind = 'session' AND subscriber_ref = $2)
              OR (subscriber_kind = 'mandate_inbox' AND subscriber_ref = $1))
       ORDER BY due_at NULLS LAST, created_at`,
-    [grantId, session?.id ?? "", PUBLIC_LABEL]
+    [grantId, session?.id ?? "", publishedLabel()]
   );
   const subscriptions = rows.map((r) => ({
     id: r.id,

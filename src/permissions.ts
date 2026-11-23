@@ -33,7 +33,7 @@
  * but who it is.
  */
 import { loadConfig } from "./config.js";
-import { PUBLIC_LABEL } from "./labels.js";
+import { memberLabels } from "./labels.js";
 
 export const PERMISSIONS = [
   "direct",
@@ -181,14 +181,22 @@ export interface Standing {
 
 /**
  * The standing of a request on the public graph, and of any request no
- * standing was resolved for: no grants, and `public` to read. A missing
- * standing is never read as a wide one.
+ * standing was resolved for: no grants, and to read what every account
+ * here reads with none (memberLabels in src/labels.ts: `public`, and on a
+ * members-only deployment that has been split what was published and the
+ * members' own label). A missing standing is never read as a wide one. The
+ * two lists are read when asked for, since which labels those are is the
+ * deployment's data.
  */
 export const PUBLIC_STANDING: Standing = Object.freeze({
   member: false,
   grants: Object.freeze([]),
-  clearance: Object.freeze([PUBLIC_LABEL]),
-  rawSourceLabels: Object.freeze([PUBLIC_LABEL]),
+  get clearance(): readonly string[] {
+    return memberLabels();
+  },
+  get rawSourceLabels(): readonly string[] {
+    return memberLabels();
+  },
   groups: Object.freeze([]),
 });
 

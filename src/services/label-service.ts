@@ -1,6 +1,6 @@
 import { enforcementLastKnown } from "../db/clearance.js";
 import { currentReadClearance, rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, isOpenLabel, isMemberLabel, byLayerThenName, layersAreSplit } from "../labels.js";
 import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 import { membersOnly } from "../permissions.js";
 
@@ -26,8 +26,10 @@ export async function publicIsTheOnlyLabel(): Promise<boolean> {
 }
 
 /**
- * Every label this deployment has, `public` first: for a sweep that works
- * label by label. A sweep that looks for something to say about a node
+ * Every label this deployment's own work is done at, the base label first:
+ * for a sweep that works label by label. On a deployment that has been
+ * split into the three bottom layers that leaves out `public`, where the
+ * public graph's rows are and nothing here works (src/labels.ts). A sweep that looks for something to say about a node
  * (a candidate for audit, a partition due a consistency sweep, how many
  * reports are waiting) and then writes it down has to find it with the
  * clearance of the label it writes at, or the words it writes are made of
@@ -38,22 +40,23 @@ export async function publicIsTheOnlyLabel(): Promise<boolean> {
  * Where this process knows of no label but `public` nothing is asked.
  */
 export async function everyLabel(): Promise<string[]> {
-  if (enforcementLastKnown() !== true) return [PUBLIC_LABEL];
+  if (enforcementLastKnown() !== true) return [baseLabel()];
   const rows = await rawQuery<{ name: string }>(`SELECT name FROM labels`);
-  const names = rows.map((r) => r.name).filter((name) => name !== PUBLIC_LABEL);
-  return [PUBLIC_LABEL, ...names.sort()];
+  const base = baseLabel();
+  const names = rows.map((r) => r.name).filter((name) => name !== base && (name !== PUBLIC_LABEL || !layersAreSplit()));
+  return [base, ...names.sort(byLayerThenName)];
 }
 
 /**
  * A key that says which piece of work something is, at a label: the plain
- * key at `public`, and the key with the label after it elsewhere, as a
+ * key at the base label, and the key with the label after it elsewhere, as a
  * ledger group has (groupAtLabel in ingest-focus-service.ts). For a key
  * that is unique across a table whatever the labels (an audit's dedupe
  * key), so that one label's work neither stands in for another's nor
  * collides with it.
  */
 export function keyAtLabel(key: string, label: string): string {
-  return label === PUBLIC_LABEL ? key : `${key} @${label}`;
+  return label === baseLabel() ? key : `${key} @${label}`;
 }
 
 /**
@@ -201,7 +204,7 @@ export interface ChoosableLabel {
   description: string;
   /** The other labels whose material a reader of this one also reads. */
   reads: string[];
-  /** Every member of the deployment reads it. True of `public` alone. */
+  /** Every member of the deployment reads it with no grant: the base label, and what anyone may read. */
   read_by_everyone: boolean;
   /**
    * The other labels whose readers also read this one, as far as the asker
@@ -240,14 +243,18 @@ export const MEMBERS_PUBLIC_DESCRIPTION =
   "is published or released outside. Text at it is still sent to the deployment's model providers and " +
   "outside services, which are all cleared for it unless whoever runs the deployment says otherwise.";
 
-/** A label's description as it is shown: the stored one, but for `public` on a members-only deployment. */
+/**
+ * A label's description as it is shown: the stored one, but for `public` on a
+ * members-only deployment where it is still the members' own label too (one
+ * that has not been split).
+ */
 export function shownLabelDescription(name: string, stored: string): string {
-  return name === PUBLIC_LABEL && membersOnly() ? MEMBERS_PUBLIC_DESCRIPTION : stored;
+  return name === PUBLIC_LABEL && baseLabel() === PUBLIC_LABEL && membersOnly() ? MEMBERS_PUBLIC_DESCRIPTION : stored;
 }
 
 /** Who reads material filed at a label, in words (the `who_reads` of a ChoosableLabel). */
 export function whoReads(label: Pick<ChoosableLabel, "name" | "also_read_from" | "also_read_from_others">): string {
-  if (label.name === PUBLIC_LABEL) {
+  if (isMemberLabel(label.name)) {
     return "Every member of this deployment can read it and can open its sources.";
   }
   const also: string[] = [];
@@ -277,7 +284,7 @@ export function whoReads(label: Pick<ChoosableLabel, "name" | "also_read_from" |
  * administrators' log), and the count says that there are some.
  */
 export async function choosableLabels(): Promise<ChoosableLabel[]> {
-  const readable = (await currentReadClearance()) ?? [PUBLIC_LABEL];
+  const readable = (await currentReadClearance()) ?? [baseLabel()];
   const rows = await rawQuery<{ name: string; description: string; reads: string[] }>(
     `SELECT l.name, l.description, minerval_labels_readable_from(ARRAY[l.name]) AS reads FROM labels l`
   );
@@ -285,20 +292,20 @@ export async function choosableLabels(): Promise<ChoosableLabel[]> {
   const byName = new Map(rows.map((r) => [r.name, r]));
   return readable
     .filter((name) => byName.has(name))
-    .sort((a, b) => (a === PUBLIC_LABEL ? -1 : b === PUBLIC_LABEL ? 1 : a < b ? -1 : 1))
+    .sort(byLayerThenName)
     .map((name) => {
       const row = byName.get(name)!;
       const readers = rows.filter((r) => r.name !== name && r.reads.includes(name)).map((r) => r.name);
       const facts = {
         name,
-        also_read_from: name === PUBLIC_LABEL ? [] : readers.filter((r) => mine.has(r)).sort(),
-        also_read_from_others: name === PUBLIC_LABEL ? 0 : readers.filter((r) => !mine.has(r)).length,
+        also_read_from: isOpenLabel(name) ? [] : readers.filter((r) => mine.has(r)).sort(),
+        also_read_from_others: isOpenLabel(name) ? 0 : readers.filter((r) => !mine.has(r)).length,
       };
       return {
         ...facts,
         description: shownLabelDescription(name, row.description),
         reads: row.reads.filter((r) => r !== name).sort(),
-        read_by_everyone: name === PUBLIC_LABEL,
+        read_by_everyone: isMemberLabel(name),
         who_reads: whoReads(facts),
       };
     });

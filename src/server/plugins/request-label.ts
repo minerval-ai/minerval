@@ -28,7 +28,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteOptions } from "fastify";
 import { deploymentHoldsLabels, rawQuery } from "../../db/client.js";
-import { PUBLIC_LABEL } from "../../labels.js";
+import { baseLabel } from "../../labels.js";
 import { runWithUsageContext } from "../../llm/usage-context.js";
 import { LABEL_DESCRIPTION, VERSIONS_DESCRIPTION } from "../../services/judgment-version-service.js";
 import { LEFT_STANDING_DESCRIPTION, NOT_EXAMINED_AT_DESCRIPTION } from "../../services/left-standing-service.js";
@@ -105,7 +105,7 @@ export const LABEL_MESSAGES = {
     `This ${credentialName(fixed)} works at the label "${fixed.label}", which this account may no longer ` +
     `read, so it is refused. A run or a credential never reads more than the person it acts for.`,
   unknownOnOneLabel: (named: string) =>
-    `The request named the label "${named}", and this deployment has one label, "${PUBLIC_LABEL}".`,
+    `The request named the label "${named}", and this deployment has one label, "${baseLabel()}".`,
 } as const;
 
 type Refusal = { status: 400 | 403 | 404 | 409; code: string; error: string } & Record<string, unknown>;
@@ -136,7 +136,7 @@ export function chooseLabel(
   if (!held) {
     // One label: nothing is asked. A name other than the one label there is
     // can only be a mistake, and saying so is kinder than ignoring it.
-    if (typeof named === "string" && named !== PUBLIC_LABEL) {
+    if (typeof named === "string" && named !== baseLabel()) {
       return { refusal: { status: 400, code: "UNKNOWN_LABEL", error: LABEL_MESSAGES.unknownOnOneLabel(named) } };
     }
     return {};

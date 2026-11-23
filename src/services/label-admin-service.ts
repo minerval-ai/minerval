@@ -13,7 +13,7 @@
 import { rawQuery, withTransaction } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { armEnforcement } from "../db/enforcement.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, isOpenLabel, byLayerThenName } from "../labels.js";
 import { shownLabelDescription } from "./label-service.js";
 import { logAdministrativeEvent } from "./permission-service.js";
 import { clearanceProblem, readStoredClearance, writeClearance } from "./provider-clearance-service.js";
@@ -51,10 +51,9 @@ export async function listLabels(): Promise<LabelView[]> {
     `SELECT l.name, l.description, l.created_at,
             (SELECT array_agg(lr.reads ORDER BY lr.reads) FROM label_reads lr WHERE lr.label = l.name) AS reads
        FROM labels l
-      ORDER BY (l.name = $1) DESC, l.name`,
-    [PUBLIC_LABEL]
+      ORDER BY l.name`
   );
-  return rows.map((r) => ({
+  return rows.sort((a, b) => byLayerThenName(a.name, b.name)).map((r) => ({
     name: r.name,
     description: shownLabelDescription(r.name, r.description),
     reads: r.reads ?? [],
@@ -84,10 +83,10 @@ const refuse = (code: LabelFailure, message: string): Outcome => ({ ok: false, c
 
 /** Why a pair may not be recorded, or null when it may. */
 function pairProblem(label: string, reads: string): Outcome | null {
-  if (label === PUBLIC_LABEL) {
+  if (isOpenLabel(label)) {
     return refuse(
       "PUBLIC_READS_NOTHING",
-      `"${PUBLIC_LABEL}" reads no other label: whatever it read would be readable by everyone.`
+      `"${label}" reads no other label: whatever it read would be readable by everyone.`
     );
   }
   if (label === reads) return refuse("READS_ITSELF", "A label always reads itself; that needs no pair.");

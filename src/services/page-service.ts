@@ -17,7 +17,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
-import { PUBLIC_LABEL } from "../labels.js";
+import { isOpenLabel } from "../labels.js";
 import { getDb } from "../db/client.js";
 import { assistantPages, type AssistantPage } from "../db/schema.js";
 import { loadConfig } from "../config.js";
@@ -212,7 +212,7 @@ export type ShareResult =
 export async function sharePage(id: string, userId: string): Promise<ShareResult> {
   const page = await getPage(id, userId);
   if (!page) return { ok: false, code: "NOT_FOUND", message: "Page not found" };
-  if (page.sensitivityLabel !== PUBLIC_LABEL) {
+  if (!isOpenLabel(page.sensitivityLabel)) {
     return {
       ok: false,
       code: "NOT_PUBLIC",
@@ -245,7 +245,7 @@ export async function getSharedPage(token: string): Promise<AssistantPage | null
     .from(assistantPages)
     .where(eq(assistantPages.shareToken, token))
     .limit(1);
-  return page && page.sensitivityLabel === PUBLIC_LABEL ? page : null;
+  return page && isOpenLabel(page.sensitivityLabel) ? page : null;
 }
 
 export function sharedPageUrl(token: string): string {

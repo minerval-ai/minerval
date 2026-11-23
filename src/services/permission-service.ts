@@ -9,7 +9,7 @@
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { PUBLIC_LABEL, baseLabel, openLabels, memberLabels } from "../labels.js";
 import { microUsdToOwls } from "./owl.js";
 import {
   PERMISSION_DEFINITIONS,
@@ -41,8 +41,8 @@ function sqlState(err: unknown): string | undefined {
 
 /**
  * Every label readable from `labels`: the labels themselves, and each label
- * one of them reads, followed through label_reads to the end. `public` is
- * always in the answer. Sorted.
+ * one of them reads, followed through label_reads to the end. What anyone
+ * may read (openLabels) is always in the answer. Sorted.
  *
  * The answer is the database's (minerval_labels_readable_from), which is
  * also what a run's label is turned into a clearance with
@@ -50,7 +50,7 @@ function sqlState(err: unknown): string | undefined {
  * for runs.
  */
 export async function labelsReadableFrom(labels: readonly string[]): Promise<string[]> {
-  const start = [...new Set([PUBLIC_LABEL, ...labels])];
+  const start = [...new Set([...openLabels(), ...labels])];
   if (start.length === 1) return start;
   const [row] = await rawQuery<{ labels: string[] }>(
     `SELECT minerval_labels_readable_from($1::text[]) AS labels`,
@@ -107,8 +107,9 @@ export async function resolveStanding(accountId: string): Promise<Standing> {
   return {
     member: true,
     grants,
-    clearance: await labelsReadableFrom(readAt),
-    rawSourceLabels: [...new Set([PUBLIC_LABEL, ...rawAt])].sort(),
+    // Every member reads the base label and opens its sources with no grant.
+    clearance: await labelsReadableFrom([baseLabel(), ...readAt]),
+    rawSourceLabels: [...new Set([...memberLabels(), ...rawAt])].sort(),
     groups,
   };
 }

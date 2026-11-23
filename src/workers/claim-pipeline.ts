@@ -5,7 +5,7 @@ import { enqueueSteward } from "../services/queue-service.js";
 import type { QueuedClaimPipelineMessage } from "../services/queue-service.js";
 import { labelIsDefined, publicIsTheOnlyLabel } from "../services/label-service.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
-import { MissingLabelError, PUBLIC_LABEL, UndefinedLabelError } from "../labels.js";
+import { MissingLabelError, UndefinedLabelError, baseLabel } from "../labels.js";
 
 /**
  * Claim onboarding dispatcher.
@@ -84,7 +84,7 @@ export async function handleClaimPipeline(
  */
 async function labelToRunAt(message: QueuedClaimPipelineMessage, work: string): Promise<string> {
   if (!("label" in message)) {
-    if (await publicIsTheOnlyLabel()) return PUBLIC_LABEL;
+    if (await publicIsTheOnlyLabel()) return baseLabel();
     throw new MissingLabelError(work);
   }
   // The type says string, but this was parsed from a queue, so it is

@@ -16,7 +16,7 @@
  * prompt: the integrity of the claim graph and the truth outrank the
  * funder, and ideology-warping mandates are declined outright.
  */
-import { PUBLIC_LABEL } from "../../labels.js";
+import { isOpenLabel } from "../../labels.js";
 import { grantmakingPromisedPrivate, PRIVATE_GRANTMAKING_REASON } from "../private-grantmaking.js";
 import {
   draftWarnings,
@@ -750,7 +750,7 @@ async function runGrantmakerTurnImpl(input: {
   }
   if (input.funder === "platform") {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
-  } else if (!promisedPrivate && currentLabel() === PUBLIC_LABEL) {
+  } else if (!promisedPrivate && isOpenLabel(currentLabel())) {
     // At another label, inside a private graph, the conversation is open to
     // the members who read that label, which the Grantmaker is told there
     // (constitution §30); "anyone may read this" would be false.

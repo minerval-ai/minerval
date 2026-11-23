@@ -33,7 +33,7 @@
  */
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery, withTransaction } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { publishedLabel } from "../labels.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import {
@@ -980,7 +980,7 @@ async function partiesFor(sourceIds: readonly string[], release: ReleaseRow, own
             CASE WHEN $3::boolean THEN s.origin = 'mirror'
                  ELSE s.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text])) END AS already_read
        FROM sources s WHERE s.id = ANY($1::uuid[])`,
-    [[...sourceIds], release.to_label ?? PUBLIC_LABEL, release.to_outside]
+    [[...sourceIds], release.to_label ?? publishedLabel(), release.to_outside]
   );
   const parties = new Set<string>();
   const analysed = await partiesOfAnalyses(rows.filter((s) => !s.already_read && s.party_id === null).map((s) => s.id));

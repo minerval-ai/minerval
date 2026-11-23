@@ -309,14 +309,167 @@
  * The mirror is the lowest layer, and what holds between a label and a
  * label it reads holds between a deployment's own rows and the mirror's.
  *
+ * The layers at the bottom. On the public graph, and on an open deployment,
+ * `public` is three things at once: the public graph's own rows, what is
+ * published, and the bottom layer of the deployment's own work. A
+ * members-only deployment holds material nobody outside reads, and there
+ * the three are three labels (#1203), each named in `labels.layer`:
+ *
+ *  - `public` is the public graph's own rows, as the mirror brings them.
+ *    Anyone reads it, every label reads it, it reads nothing, and no run
+ *    works at it: only the mirror's applier writes there.
+ *  - the published label (publishedLabel below) is what the organization
+ *    released outside: what passed the gate to outside, the packages and
+ *    proposals built from it, what was sent and what came back about it.
+ *    Anyone may read it, so every clearance holds it beside `public`. It
+ *    is the organization's and not the public graph's.
+ *  - the base label (baseLabel below) is the organization's own material
+ *    that every member reads: the work of any run, request or key that
+ *    names no other label. It reads the two below. A label above reads it
+ *    by a pair in `label_reads`, like any other.
+ *
+ * Until a deployment is split (services/label-split.ts) all three names
+ * answer `public`, which is what they are there. Code says which layer it
+ * means and never the bare word: tests/unit/labels/layer-names.test.ts
+ * fails on a file that names `public` as a label without being listed
+ * with its reason.
+ *
  * One thing is held to a run's label already: where its text may be sent.
  * A model provider or an outside service receives text only from runs at
  * the labels it is cleared for (src/provider-labels.ts), and one that
  * nobody has cleared for a label other than this one is sent none of it.
  */
 
-/** The label of everything on the public graph, and of any write made outside a run. */
+/**
+ * The public graph's label: its own rows, here by the mirror or because this
+ * is the public graph. Anyone reads it. It is not "the bottom of this
+ * deployment's own work" (baseLabel) nor "what this deployment released
+ * outside" (publishedLabel), though on the public graph and on a deployment
+ * that has not been split all three are this one.
+ */
 export const PUBLIC_LABEL = "public";
+
+/** Which of the bottom layers a label is, as `labels.layer` holds it. */
+export type LabelLayer = "public_graph" | "published" | "base";
+
+/** The labels of the layers, as the deployment's `labels` rows name them. */
+export interface LabelLayers {
+  /** The bottom layer of the deployment's own work. */
+  base: string;
+  /** What the deployment released outside. */
+  published: string;
+  /** When the deployment was split; null where it has not been. */
+  splitAt: Date | null;
+}
+
+const UNSPLIT: LabelLayers = Object.freeze({ base: PUBLIC_LABEL, published: PUBLIC_LABEL, splitAt: null });
+
+// What this process last read from `labels.layer`. The database client
+// reads it with its check on enforcement (db/clearance.ts, readEnforcement),
+// before the first query a process sends and again at each interval, so
+// this is never older than what the process believes about enforcement.
+// Before any read it is the unsplit answer, which is right wherever no
+// split has happened and is what the database's own functions say there.
+let layers: LabelLayers = UNSPLIT;
+
+/**
+ * The base label: the bottom layer of this deployment's own work. What a
+ * run, a request or a key works at when nothing names another label, what
+ * every member reads with no grant, and the label whose ledger keys are
+ * bare. `public` on the public graph and wherever no split has happened;
+ * the members' label on a members-only deployment that has been split.
+ * The database says the same (minerval_base_label()).
+ */
+export function baseLabel(): string {
+  return layers.base;
+}
+
+/**
+ * The label of what this deployment released outside: where the gate to
+ * outside writes, and where the outbound and inbound work runs. `public`
+ * wherever no split has happened. The database says the same
+ * (minerval_published_label()).
+ */
+export function publishedLabel(): string {
+  return layers.published;
+}
+
+/**
+ * The labels anyone may read, which every clearance therefore holds: the
+ * public graph's, and what was published where that is a label of its own.
+ * `public` first.
+ */
+export function openLabels(): string[] {
+  return layers.published === PUBLIC_LABEL ? [PUBLIC_LABEL] : [PUBLIC_LABEL, layers.published];
+}
+
+/** Whether anyone may read a label: it is the public graph's, or what was published. */
+export function isOpenLabel(label: string): boolean {
+  return label === PUBLIC_LABEL || label === layers.published;
+}
+
+/**
+ * What a member reads with no grant: what anyone may read, and the base
+ * label. Lowest layer first.
+ */
+export function memberLabels(): string[] {
+  const open = openLabels();
+  return open.includes(layers.base) ? open : [...open, layers.base];
+}
+
+/** Whether every member reads a label with no grant (memberLabels). */
+export function isMemberLabel(label: string): boolean {
+  return isOpenLabel(label) || label === layers.base;
+}
+
+/**
+ * Where a label stands among the bottom layers, for an order people are
+ * shown labels in: the public graph's first, then what was published, then
+ * the base, then every label the deployment defines (which share a rank
+ * and are told apart by name).
+ */
+export function layerRank(label: string): number {
+  if (label === PUBLIC_LABEL) return 0;
+  if (label === layers.published) return 1;
+  if (label === layers.base) return 2;
+  return 3;
+}
+
+/** Labels in the order people are shown them: by layer from the bottom, then by name. */
+export function byLayerThenName(a: string, b: string): number {
+  return layerRank(a) - layerRank(b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+/** Whether this deployment has been split into the three layers. */
+export function layersAreSplit(): boolean {
+  return layers.base !== PUBLIC_LABEL;
+}
+
+/** The layers as this process last read them. */
+export function labelLayers(): LabelLayers {
+  return layers;
+}
+
+/**
+ * Tell this process what `labels.layer` holds: the rows that name a layer,
+ * or none where the deployment has not been split. Called by the database
+ * client's own check and by the split itself.
+ */
+export function noteLabelLayers(rows: ReadonlyArray<{ name: string; layer: string | null; created_at?: Date | string | null }>): void {
+  const base = rows.find((r) => r.layer === "base");
+  const published = rows.find((r) => r.layer === "published");
+  if (!base || !published) {
+    layers = UNSPLIT;
+    return;
+  }
+  const at = base.created_at ? new Date(base.created_at) : null;
+  layers = Object.freeze({ base: base.name, published: published.name, splitAt: at && !Number.isNaN(at.getTime()) ? at : null });
+}
+
+/** Forget what was read (closeDb, and tests). */
+export function resetLabelLayers(): void {
+  layers = UNSPLIT;
+}
 
 /**
  * Work was picked up from a row or a message that carries no label. Thrown

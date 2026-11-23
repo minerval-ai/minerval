@@ -70,7 +70,7 @@ import { agentPrivateReason } from "../llm/run-visibility.js";
 import { agentRuns, agentSteps } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { genesisHash, stepHash } from "./run-log.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { baseLabel } from "../labels.js";
 
 /** Mutable trace handle carried on the usage context for the run's duration. */
 export interface AgentTrace {
@@ -234,7 +234,7 @@ export function openAgentRun(agent: string, attribution: RunAttribution): AgentT
   ];
   // The label the run writes at, from the context that opened it, so the
   // run row, its steps and the rows the run writes carry the same one.
-  const label = attribution.label ?? PUBLIC_LABEL;
+  const label = attribution.label ?? baseLabel();
   const trace: AgentTrace = {
     runId,
     label,

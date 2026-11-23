@@ -33,7 +33,7 @@ import {
 } from "../services/trace-service.js";
 import { setStatementObserver } from "../db/statement-observer.js";
 import { writesGraph } from "../db/graph-writes.js";
-import { MissingLabelError, PUBLIC_LABEL } from "../labels.js";
+import { MissingLabelError, baseLabel, openLabels } from "../labels.js";
 import { leaveSystemClearance, setSessionContextReader, startedHere } from "../db/clearance.js";
 
 export interface UsageContext {
@@ -178,11 +178,11 @@ export function getUsageContext(): UsageContext {
 
 /**
  * The label a write made now carries: the enclosing run's or request's, and
- * public outside any. The write seams of the labelled tables call this the
+ * the base label outside any (`public` wherever no split has happened). The write seams of the labelled tables call this the
  * way they read the funder and the run id from the context.
  */
 export function currentLabel(): string {
-  return getUsageContext().label ?? PUBLIC_LABEL;
+  return getUsageContext().label ?? baseLabel();
 }
 
 /**
@@ -196,11 +196,10 @@ export function labelInContext(): string | null {
   return getUsageContext().label ?? null;
 }
 
-const PUBLIC_CLEARANCE: readonly string[] = Object.freeze([PUBLIC_LABEL]);
 
 /**
- * The labels the enclosing request may read, and `public` alone where none
- * was set: a path that never resolved a standing sees what anyone may see
+ * The labels the enclosing request may read, and what anyone may read
+ * where none was set: a path that never resolved a standing sees what anyone may see
  * and nothing more. This is the request's clearance as its routes may want
  * to show or test it. It is not what holds a read: the database does that,
  * for a request from this clearance and for a run from its label
@@ -208,7 +207,7 @@ const PUBLIC_CLEARANCE: readonly string[] = Object.freeze([PUBLIC_LABEL]);
  * while the run reads what its label reads.
  */
 export function currentClearance(): readonly string[] {
-  return getUsageContext().clearance ?? PUBLIC_CLEARANCE;
+  return getUsageContext().clearance ?? openLabels();
 }
 
 /**
@@ -278,9 +277,9 @@ export function withAgent<T>(agent: string, fn: () => T): T {
   // No agent's run reads at system clearance (db/clearance.ts), whoever
   // opened it, and none reads with the clearance of a request it was
   // started from: a run reads what its label reads. A run nothing gave a
-  // label works at `public`, which is what its rows were always stamped,
+  // label works at the base label, which is what its rows are stamped,
   // and says so on its context so that the reads agree with the stamps.
-  const label = getUsageContext().label ?? PUBLIC_LABEL;
+  const label = getUsageContext().label ?? baseLabel();
   return leaveSystemClearance(() =>
     runWithUsageContext({ label, clearance: undefined }, () => openAgentRun(agent, () => startedHere(fn())))
   );
