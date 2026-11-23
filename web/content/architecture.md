@@ -249,7 +249,9 @@ node only, and each change is written to the audit log with its reason (#741):
 `remove_subclaim_edge`, `set_edge_relation` (retypes an edge in place, keeping
 its argument groupings; given the edge's current relation, it rewrites the
 edge's reasoning note, #833), `ungroup_subclaim`, `revise_argument` (rename, or flip
-a stance, which retires the current evaluation), and `retire_argument`. A
+a stance, which retires the current evaluation), `retire_argument`, and
+`set_related_link` (rewrites the note of a lateral link, or changes its kind,
+#1189; removing a link stays with the Curator's `unlink_claims`). A
 retired argument keeps its row, evaluations and reason (`retired_at`,
 `retired_reason`) but leaves every listing; its subclaims return to the basis
 or their other arguments. Renderers resolve the ids to the

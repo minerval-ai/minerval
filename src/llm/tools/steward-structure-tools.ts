@@ -1,7 +1,8 @@
 /**
  * Steward tools that correct structure the Steward already built (#741):
  * remove an edge, change its relation, take a subclaim out of an argument,
- * rename an argument or flip its stance, and retire an argument.
+ * rename an argument or flip its stance, retire an argument, and rewrite the
+ * note or kind of a lateral link (#1189).
  *
  * The add-only tools in steward-tools.ts let a Steward build its node's
  * decomposition (Part VIII: it owns the node's structure), but a wrong edge
@@ -17,7 +18,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { getDb, rawQuery, withTransaction } from "../../db/client.js";
 import { auditLog } from "../../db/schema.js";
-import { RELATION_TYPES, RELATION_GUIDANCE } from "../../schemas/common.js";
+import { CLAIM_LINK_GUIDANCE, CLAIM_LINK_KINDS, RELATION_TYPES, RELATION_GUIDANCE } from "../../schemas/common.js";
+import { getLinksBetween, isClaimLinkKind, reviseLink, type HeldLink } from "../../services/claim-link-service.js";
 import {
   getArgument,
   retireArgument,
@@ -35,6 +37,7 @@ import {
 import { notYourNode } from "./steward-ownership.js";
 import { writeIdCandidates } from "./id-repair.js";
 import { currentLabel } from "../usage-context.js";
+import { mirroredRowMessage } from "../../services/mirrored-node-service.js";
 import {
   overlaid,
   ownOverlay,
@@ -50,6 +53,7 @@ export const STEWARD_STRUCTURE_TOOL_NAMES = [
   "ungroup_subclaim",
   "revise_argument",
   "retire_argument",
+  "set_related_link",
 ] as const;
 
 /** The structure tools that act on arguments, which a question does not have (§7a). */
@@ -198,6 +202,36 @@ export function getStewardStructureToolDefinitions(): Tool[] {
           reasoning: { type: "string", description: "Why the argument should be left out; kept as its retirement reason" },
         },
         required: ["argument_id", "reasoning"],
+      },
+    },
+    {
+      name: "set_related_link",
+      description:
+        "Correct a lateral link (add_related_claim) between your node and another: rewrite a " +
+        "reasoning note that misdescribes how the two stand to each other, or change the link's " +
+        "kind. Calling add_related_claim again leaves an existing link as it is. Your reasoning " +
+        "becomes the link's note, which readers of both claims see beside the see-also, so write " +
+        "it as the note and not as an account of the correction; pass the link's current kind to " +
+        "correct the note alone. If a link of the new kind already exists, the two become one. " +
+        "A link that should not be there at all is the Curator's to remove (escalate_to_curator). " +
+        "Logged with the note it replaces.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          claim_id: { type: "string", description: "The UUID of the node you steward" },
+          other_claim_id: { type: "string", description: "The UUID of the claim it is linked to" },
+          kind: { type: "string", enum: [...CLAIM_LINK_KINDS], description: CLAIM_LINK_GUIDANCE },
+          from_kind: {
+            type: "string",
+            description:
+              "The link's current kind. Needed only when the two claims are joined by more than one link.",
+          },
+          reasoning: {
+            type: "string",
+            description: "Why a reader of either claim would want the other. It replaces the link's reasoning note.",
+          },
+        },
+        required: ["claim_id", "other_claim_id", "kind", "reasoning"],
       },
     },
     ...(overlaid() ? [RESTORE_BELOW_DEFINITION] : []),
@@ -566,6 +600,75 @@ export async function executeStewardStructureTool(
               `their other arguments: ${released.map((r) => `${r.id} ("${r.text.slice(0, 60)}")`).join("; ")}. ` +
               `Remove any that no longer belong with remove_subclaim_edge.`
             : ""),
+      });
+    }
+
+    case "set_related_link": {
+      const claimId = String(input.claim_id ?? "");
+      const otherClaimId = String(input.other_claim_id ?? "");
+      const kind = String(input.kind ?? "").toLowerCase();
+      const fromKind = input.from_kind ? String(input.from_kind).toLowerCase() : null;
+      const foreign = notYourNode(claimId, "that link");
+      if (foreign) return foreign;
+      if (!isClaimLinkKind(kind)) {
+        return refuse(`Unknown link kind "${kind}". Use one of: ${CLAIM_LINK_KINDS.join(", ")}.`);
+      }
+      const links = await getLinksBetween(claimId, otherClaimId);
+      if (links.length === 0) {
+        return JSON.stringify({
+          success: false,
+          message: `There is no lateral link between ${claimId} and ${otherClaimId}; record one with add_related_claim.`,
+          ...(await writeIdCandidates(otherClaimId)),
+        });
+      }
+      const kinds = [...new Set(links.map((l) => l.kind))];
+      if (fromKind && !kinds.includes(fromKind)) {
+        return refuse(`There is no ${fromKind} link between ${claimId} and ${otherClaimId}. Their links: ${kinds.join(", ")}.`);
+      }
+      if (!fromKind && kinds.length > 1) {
+        return refuse(
+          `${claimId} and ${otherClaimId} are joined by ${kinds.length} links (${kinds.join(", ")}); pass from_kind to say which.`
+        );
+      }
+      const current = fromKind ?? kinds[0]!;
+      // A link is read from the lowest layer that holds it (claim-link-service.ts), and a row
+      // at a layer below this run's label is that layer's words: there is no setting a link
+      // aside, so it is refused, as an edge's note at a layer below is.
+      const belowMessage = (l: HeldLink) =>
+        l.origin === "mirror"
+          ? mirroredRowMessage("the link's kind and note")
+          : `Not changed: the ${l.kind} link is at ${tick(l.sensitivity_label)}, which this run reads and does not ` +
+            `change, and its note is that label's words. Say how you read the relation in your own judgment.`;
+      const below = links.find((l) => l.kind === current && !l.own);
+      if (below) return refuse(belowMessage(below));
+      const link = links.find((l) => l.kind === current)!;
+      if (kind === current) {
+        if ((link.reasoning ?? "").trim() === reasoning) {
+          return JSON.stringify({ success: true, message: `The link is already ${kind} with that reasoning; nothing changed.`, link_id: link.id });
+        }
+      } else {
+        const taken = links.find((l) => l.kind === kind && !l.own);
+        if (taken) return refuse(belowMessage(taken));
+      }
+      const result = await withTransaction((tx) => reviseLink(link.id, kind, reasoning, tx));
+      await logStructureChange(
+        claimId,
+        "set_related_link",
+        (kind === current
+          ? `Rewrote the reasoning of the ${kind} link to ${otherClaimId}`
+          : `Changed the link to ${otherClaimId} from ${current} to ${kind}` +
+            (result.merged ? ` (merged into the existing ${kind} link)` : "")) +
+          ` (old link reasoning: "${link.reasoning}"): ${reasoning}`
+      );
+      return JSON.stringify({
+        success: true,
+        message:
+          (kind === current
+            ? `The link between ${claimId} and ${otherClaimId} stays ${kind}; its reasoning now reads your new note`
+            : `The link between ${claimId} and ${otherClaimId} is now ${kind}` +
+              (result.merged ? `; it was merged into the ${kind} link that already existed, which carries your note` : `, with your note`)) +
+          `, on both claims' pages.`,
+        link_id: result.id,
       });
     }
 

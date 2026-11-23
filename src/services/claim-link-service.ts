@@ -14,6 +14,7 @@ import { heldBelow, layered, lowerRowSql } from "./layer-service.js";
 /** A link held at two layers is listed once, by the lowest layer's row (layer-service.ts). Empty on a graph with one layer. */
 const oneLinkSql = (l: string) => (layered() ? ` AND ${lowerRowSql("claim_links", l, ["claim_a_id", "claim_b_id", "kind"])} IS NULL` : "");
 import { rawQuery } from "../db/client.js";
+import { asRunner, type Runner } from "./query-runner.js";
 import { markSeveralInForce } from "./judgment-version-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { CLAIM_LINK_KINDS } from "../schemas/common.js";
@@ -71,6 +72,60 @@ export async function linkClaims(input: {
     throw new Error(`Link ${a} <-> ${b} (${input.kind}) neither inserted nor found`);
   }
   return { id: existing.id, created: false };
+}
+
+/** A link between two claims as the work in progress meets it. */
+export interface HeldLink extends ClaimLinkRow {
+  sensitivity_label: string;
+  origin: string;
+  /** Recorded at the work's own label, in this deployment: the only row the work may rewrite. */
+  own: boolean;
+}
+
+/** Every link between two claims that the work in progress reads, oldest first. */
+export async function getLinksBetween(claimId: string, otherClaimId: string): Promise<HeldLink[]> {
+  const [a, b] = orderPair(claimId, otherClaimId);
+  return rawQuery<HeldLink>(
+    `SELECT id, claim_a_id, claim_b_id, kind, reasoning, created_by, sensitivity_label, origin,
+            (sensitivity_label = $3 AND origin = 'local') AS own
+       FROM claim_links
+      WHERE claim_a_id = $1 AND claim_b_id = $2
+      ORDER BY created_at, id`,
+    [a, b, currentLabel()]
+  );
+}
+
+/**
+ * Rewrite a link's reasoning note, and its kind where `kind` differs
+ * (#1189). The (pair, kind) key is unique at a label, so where the work's
+ * label already holds a link of the new kind the two become one: that row
+ * takes the note and this one is deleted. The caller has established that
+ * the row is the work's own to change.
+ */
+export async function reviseLink(
+  linkId: string,
+  kind: ClaimLinkKind,
+  reasoning: string,
+  tx?: Runner
+): Promise<{ id: string; merged: boolean }> {
+  const run = asRunner(tx);
+  const [link] = await run.query<{ claim_a_id: string; claim_b_id: string; kind: string; sensitivity_label: string; origin: string }>(
+    `SELECT claim_a_id, claim_b_id, kind, sensitivity_label, origin FROM claim_links WHERE id = $1 FOR UPDATE`,
+    [linkId]
+  );
+  if (!link) throw new Error(`Claim link not found: ${linkId}`);
+  const [existing] = await run.query<{ id: string }>(
+    `SELECT id FROM claim_links
+      WHERE claim_a_id = $1 AND claim_b_id = $2 AND kind = $3 AND sensitivity_label = $4 AND origin = $5 AND id <> $6`,
+    [link.claim_a_id, link.claim_b_id, kind, link.sensitivity_label, link.origin, linkId]
+  );
+  if (!existing) {
+    await run.query(`UPDATE claim_links SET kind = $2, reasoning = $3 WHERE id = $1`, [linkId, kind, reasoning]);
+    return { id: linkId, merged: false };
+  }
+  await run.query(`UPDATE claim_links SET reasoning = $2 WHERE id = $1`, [existing.id, reasoning]);
+  await run.query(`DELETE FROM claim_links WHERE id = $1`, [linkId]);
+  return { id: existing.id, merged: true };
 }
 
 /** Remove the link(s) between two claims; all kinds unless one is given. */
