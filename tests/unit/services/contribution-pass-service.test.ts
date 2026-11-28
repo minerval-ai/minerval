@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// What an accepted contribution's pass does (#1222): a paid contribution's
+// What an accepted contribution's pass does: a paid contribution's
 // charge funds an express order; an unpaid one is raised to the General
 // mandate's officers with the node's open reassess row.
 

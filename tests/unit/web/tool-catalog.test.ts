@@ -74,7 +74,7 @@ describe("the tool catalog", () => {
       expect(cost(n), n).toBe("write");
     }
     for (const n of ["match_claim", "extract_claims", "assess_text", "propose_claim", "submit_source", "order_assessment", "query_sql",
-      // Pays, by default, for the reassessment an accepted contribution asks for (#1222).
+      // Pays, by default, for the reassessment an accepted contribution asks for.
       "submit_contribution"]) {
       expect(cost(n), n).toBe("charged");
     }

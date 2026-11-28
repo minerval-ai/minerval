@@ -256,7 +256,7 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(422).send({ error: { code: "PUBLISHED_PAGE", message: aboutPage.message } });
       }
 
-      // Whether the pass it asks for is paid for now (#1222): decided before
+      // Whether the pass it asks for is paid for now: decided before
       // the gate, because a priced submission is bounded by its charge and
       // not by the hourly count of free ones.
       const plan = await planPassCharge(request.auth, body.contribution_type, body.assess);

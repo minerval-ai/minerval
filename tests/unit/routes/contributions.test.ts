@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
   listContributions: vi.fn(async () => [] as unknown[]),
   getRequest: vi.fn(),
   // The contributor's balance: by default it covers nothing, so a
-  // contribution is free, as it was before the pass charge (#1222).
+  // contribution is free, as it was before the pass charge.
   checkAgenticQuota: vi.fn(async () => ({ allowed: false, statusCode: 402, code: "INSUFFICIENT_OWLS", message: "no owls" })),
   chargeAgenticOp: vi.fn(async () => ({ allowed: true, entryId: "charge-1" })),
   refundAgenticOp: vi.fn(async () => {}),
@@ -124,7 +124,7 @@ beforeEach(() => {
   mocks.attachChargeContribution.mockClear();
 });
 
-describe("POST /contributions pays for the pass it asks for (#1222)", () => {
+describe("POST /contributions pays for the pass it asks for", () => {
   it("charges the assessment cap when the balance covers it, links it, and skips the free hourly count", async () => {
     mocks.checkAgenticQuota.mockResolvedValue({ allowed: true });
     const app = await buildApp();
