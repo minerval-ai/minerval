@@ -117,7 +117,7 @@ export async function passOnAccept(input: { contributionId: string; claimId: str
       // reads the inbox, this message included. The charge is not spent on
       // a second pass; it settles back with nothing metered against it.
       if (made.code === "ORDER_ALREADY_OPEN") return { kind: "ordered", orderId: made.existingOrderId ?? null };
-      console.warn(`[contribution-pass] order for ${input.contributionId} refused (${made.code}); raising instead`);
+      console.warn("[contribution-pass] order for %s refused (%s); raising instead", input.contributionId, made.code);
     }
 
     // Unpaid: the officers who pay for upkeep decide.
@@ -139,8 +139,9 @@ export async function passOnAccept(input: { contributionId: string; claimId: str
     return raised ? { kind: "raised", grantId: general.grantId } : { kind: "none", reason: "General mandate not found" };
   } catch (err) {
     console.warn(
-      `[contribution-pass] could not put the pass for contribution ${input.contributionId} in motion:`,
-      err instanceof Error ? err.message : err
+      "[contribution-pass] could not put the pass for contribution %s in motion: %s",
+      input.contributionId,
+      err instanceof Error ? err.message : String(err)
     );
     return { kind: "none", reason: "error" };
   }
