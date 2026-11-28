@@ -22,6 +22,13 @@ import {
 import { getClaimById } from "../services/claim-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
+import {
+  planPassCharge,
+  takePassCharge,
+  attachPassCharge,
+  refundPassCharge,
+  passChargeMessage,
+} from "../server/contribution-pass-charge.js";
 import { STATED_VIEW_CONTRIBUTION_TYPE } from "../schemas/common.js";
 import { statedViewForContribution } from "../services/stated-view-service.js";
 
@@ -72,6 +79,15 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
             description:
               "A published page on this node (get_published_page, or the second tab of the node's page), when the contribution is made through it: a challenge to what the page says or to how it was made, or a proposal about what the node rests on. It is reviewed as any contribution on the node is, and the graph that published the page learns of it from the public record.",
           },
+          assess: {
+            type: "boolean",
+            description:
+              "For a contribution that asks for a fresh pass on its node (challenge, support, propose_edit, add_instance, " +
+              "propose_argument, add_estimate, propose_answer): whether to pay for that pass now, up to the assessment cap. " +
+              "If it is accepted the node is reassessed at once; a rejection refunds the charge. false charges nothing and " +
+              "puts the pass to the General mandate's officers on acceptance; true refuses with 402 when the balance does " +
+              "not cover it; left out, it is charged when the balance covers it and free otherwise.",
+          },
         },
       },
       response: {
@@ -93,6 +109,9 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
                 became_claim_id: { type: "string", format: "uuid", nullable: true },
               },
             },
+            // Whether the pass it asks for was paid for now; absent for a type that asks for none.
+            assess_on_accept: { type: "boolean" },
+            message: { type: "string" },
           },
         },
         402: {
@@ -237,14 +256,26 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(422).send({ error: { code: "PUBLISHED_PAGE", message: aboutPage.message } });
       }
 
+      // Whether the pass it asks for is paid for now: decided before
+      // the gate, because a priced submission is bounded by its charge and
+      // not by the hourly count of free ones.
+      const plan = await planPassCharge(request.auth, body.contribution_type, body.assess);
+      if ("denied" in plan) return app.sendQuotaDenial(reply, plan.denied);
+
       // Shared gate (#71/#157): identity, suspension, standing, rate limit.
       const contributor = await gateContributor(request, reply, {
         displayName: body.contributor_display_name,
+        priced: plan.charge,
       });
       if (!contributor) return;
 
+      const taken = await takePassCharge(request.auth, plan, body.assess);
+      if ("denied" in taken) return app.sendQuotaDenial(reply, taken.denied);
+
       // Create contribution
-      const contribution = await createContribution({
+      let contribution;
+      try {
+        contribution = await createContribution({
         aboutPublishedPageId: aboutPage.publishedPageId,
         claimId: body.claim_id ?? null,
         contributorId: contributor.id,
@@ -255,13 +286,20 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         argumentId: argumentTarget.argumentId,
         mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
         proposedCanonicalForm: body.proposed_canonical_form,
-      });
+        });
+        await attachPassCharge(taken.entryId, contribution.id);
+      } catch (err) {
+        await refundPassCharge(request.auth, taken.charged);
+        throw err;
+      }
 
       // Enqueue for review
       await enqueueContribution({ contributionId: contribution.id });
 
+      const message = passChargeMessage(body.contribution_type, taken.charged, plan);
       return reply.code(201).send({
         contribution: formatContribution(contribution),
+        ...(message ? { assess_on_accept: taken.charged, message } : {}),
       });
     },
   });

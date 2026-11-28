@@ -359,6 +359,11 @@ support matters:
   - **A verdict you think is wrong**: `submit_contribution` with a
     `challenge` that engages the claim's recorded reasoning. Substance
     wins, not tone or volume; the reviewer answers either way (§13, §14).
+    By default it also pays, up to the assessment cap, for the reassessment
+    it asks for when your user's balance covers it: accepted, the node is
+    reassessed at once; rejected, the charge is refunded. Say so to your
+    user before you file; `assess: false` files it free, and its pass then
+    waits for the General mandate's officers.
   - **Your user, or their organization, holds a view and wants it on
     the record**: `state_view` states it on the node in their own words,
     under their account's name, with how they stand, their stake, and

@@ -70,10 +70,12 @@ describe("the tool catalog", () => {
     for (const n of ["search_claims", "get_claim", "get_claim_card", "list_graph_changes", "get_run"]) {
       expect(cost(n), n).toBe("read");
     }
-    for (const n of ["submit_contribution", "raise_issue", "state_view", "submit_appeal", "cancel_order"]) {
+    for (const n of ["raise_issue", "state_view", "submit_appeal", "cancel_order"]) {
       expect(cost(n), n).toBe("write");
     }
-    for (const n of ["match_claim", "extract_claims", "assess_text", "propose_claim", "submit_source", "order_assessment", "query_sql"]) {
+    for (const n of ["match_claim", "extract_claims", "assess_text", "propose_claim", "submit_source", "order_assessment", "query_sql",
+      // Pays, by default, for the reassessment an accepted contribution asks for.
+      "submit_contribution"]) {
       expect(cost(n), n).toBe("charged");
     }
     for (const n of ["fund_claim_assessment", "fund_deep_decomposition", "fund_mandate", "fund_grant", "fund_request_work"]) {

@@ -62,10 +62,18 @@ const TYPES = [
 
 type TypeValue = (typeof TYPES)[number]["value"];
 
+const PASS_ON_ACCEPT_TYPES: ReadonlySet<string> = new Set([
+  "challenge",
+  "support",
+  "propose_edit",
+  "add_instance",
+  "propose_argument",
+]);
+
 type SubmitState =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "sent"; contributionId: string | null }
+  | { kind: "sent"; contributionId: string | null; passMessage: string | null }
   | { kind: "error"; message: string };
 
 function isTypeValue(v: string | null): v is TypeValue {
@@ -104,6 +112,9 @@ export function Contribute({ claimId }: { claimId: string }) {
   }, []);
 
   const meta = TYPES.find((t) => t.value === type)!;
+  // The types whose acceptance asks for a fresh pass on the node
+  // (src/services/contribution-pass-service.ts, PASS_ON_ACCEPT_TYPES).
+  const asksForPass = PASS_ON_ACCEPT_TYPES.has(type);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -125,6 +136,9 @@ export function Contribute({ claimId }: { claimId: string }) {
             ? { proposed_canonical_form: data.get("proposed_wording") }
             : {}),
           ...(through ? { about_published_page_id: through } : {}),
+          // The box is ticked by default: an accepted contribution is
+          // reassessed at once when the balance covers it.
+          ...(asksForPass && !data.get("assess") ? { assess: false } : {}),
           ...(type === "propose_merge"
             ? {
                 // Accept a pasted claim-page address as well as a bare id.
@@ -138,11 +152,12 @@ export function Contribute({ claimId }: { claimId: string }) {
       });
       if (res.ok) {
         const body = (await res.json().catch(() => null)) as {
-          contribution?: { id?: string };
+          contribution?: { id?: string; pass_message?: string };
         } | null;
         setStatus({
           kind: "sent",
           contributionId: body?.contribution?.id ?? null,
+          passMessage: body?.contribution?.pass_message ?? null,
         });
       } else {
         const body = (await res.json().catch(() => null)) as {
@@ -225,6 +240,9 @@ export function Contribute({ claimId }: { claimId: string }) {
               </>
             )}
           </p>
+          {status.passMessage && (
+            <p style={{ margin: ".6rem 0 0" }}>{status.passMessage}</p>
+          )}
         </div>
       )}
 
@@ -312,6 +330,14 @@ export function Contribute({ claimId }: { claimId: string }) {
             rows={2}
             placeholder={"https://…"}
           />
+
+          {asksForPass && (
+            <label className="contribute-hint" style={{ display: "block" }}>
+              <input type="checkbox" name="assess" value="1" defaultChecked />{" "}
+              Reassess the claim at once if it is accepted (up to 2 owls; refunded if not
+              accepted, and free if your balance does not cover it)
+            </label>
+          )}
 
           <ActingLine permission="speak" />
           <div className="contribute-actions">

@@ -1132,6 +1132,33 @@ Now, by default, wherever the proposal comes from:
   with `assess: false` is filed without one. The funder's own balance is
   never charged for it.
 
+## Contributing to a node
+
+A contribution that asks for a fresh pass on its node (challenge, support,
+propose_edit, add_instance, propose_argument, add_estimate, propose_answer)
+can pay for that pass when it is made, as a proposal pays for its first
+assessment. If it is accepted, the node is reassessed at once on the express
+lane; if it is rejected, the charge is refunded, so a good-faith contribution
+that does not pass costs nothing (#71). `POST /contributions` and MCP's
+`submit_contribution` take `assess`
+(`src/server/contribution-pass-charge.ts`):
+
+- **left out** (the default): charged the `assessment` cap when the
+  balance covers it, and free otherwise. A person who has never bought owls
+  contributes exactly as before.
+- **`true`**: charged, or refused with 402 `INSUFFICIENT_OWLS` before
+  anything is written.
+- **`false`**: nothing is charged.
+
+A paid contribution does not count against the hourly limit on free
+contributions; its charge bounds it. A free one does, as before, and on
+acceptance the pass it asks for is raised to the General mandate's officers
+([allocation.md](allocation.md), "Node inboxes and messages"). The answer
+carries `assess_on_accept` and a `message` saying which happened. The
+claim page's form has it as a box, ticked by default. Merges, splits and
+requests are never charged: the first two are the Curator's, and requests
+have their own money.
+
 A node's page says when a pass on it is under way, to every reader:
 `GET /claims/:id` carries `assessment_under_way` (`running`, or `queued`
 while an order for it waits, anyone's), and the page shows "Being

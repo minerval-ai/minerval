@@ -132,6 +132,14 @@ import { getCurrentEstimate } from "../services/quantity-service.js";
 import { getCurrentStanding } from "../services/question-service.js";
 import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment-fault.js";
 import { overlaid } from "../services/overlay-service.js";
+import { passOnAcceptCapOwls } from "../services/contribution-pass-service.js";
+import {
+  planPassCharge,
+  takePassCharge,
+  attachPassCharge,
+  refundPassCharge,
+  passChargeMessage,
+} from "../server/contribution-pass-charge.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -1008,12 +1016,21 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "automatic admission: a reviewer evaluates it on its merits, the " +
         "exchange is recorded on the claim, and the graph changes only if " +
         "the contribution succeeds. Attributed to your account; returns a " +
-        "contribution id for checking the outcome. Free, and so capped at " +
-        `${loadConfig().contributionRateLimitPerHour} contributions per hour ` +
+        "contribution id for checking the outcome. A challenge, support, " +
+        "propose_edit, add_instance, propose_argument, add_estimate or " +
+        "propose_answer asks for a fresh pass on its node: by default that " +
+        `pass is paid for now, up to the assessment cap (${passOnAcceptCapOwls()} owls), ` +
+        "when your balance covers it, and runs at once if the contribution is " +
+        "accepted; a rejection refunds it. " +
+        "Spends owls from your balance; get_account shows the balance and the cap on each operation. " +
+        "assess: false charges nothing and puts the pass to the General " +
+        "mandate's officers, who decide when it runs; assess: true refuses " +
+        "with INSUFFICIENT_OWLS when the balance does not cover it. A free " +
+        `contribution is capped at ${loadConfig().contributionRateLimitPerHour} per hour ` +
         `(${loadConfig().newContributorRateLimitPerHour} for accounts under a ` +
         "day old or below 50 reputation), because each one commands a " +
         "review nobody pays for; past it you get CONTRIBUTION_RATE_LIMITED. " +
-        "Priced proposals (propose_claim, submit_source) do not count toward it.",
+        "Paid contributions and priced proposals (propose_claim, submit_source) do not count toward it.",
       inputSchema: {
         claim_id: z
           .guid()
@@ -1066,6 +1083,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
             "Required with answer_request, and only with it: the request the " +
               "material is offered for. It must bear on claim_id and be open " +
               "(get_claim lists the node's requests)."
+          ),
+        assess: z
+          .boolean()
+          .optional()
+          .describe(
+            "For a type that asks for a fresh pass on its node: pay for that pass now (true), " +
+              "never (false), or when your balance covers it (left out). Confirm with your user before " +
+              "spending their owls."
           ),
       },
     },
@@ -1157,9 +1182,17 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         );
       }
 
+      // Whether the pass it asks for is paid for now, as POST /contributions
+      // decides it (server/contribution-pass-charge.ts).
+      const passPlan = await planPassCharge(ctx.auth, input.contribution_type, input.assess);
+      if ("denied" in passPlan) {
+        const d = passPlan.denied;
+        return errorResult(d.code!, d.message!, d.entitlement ? { entitlement: d.entitlement } : undefined);
+      }
+
       // Sybil / flood sandbox (#71): low-reputation and brand-new accounts
-      // get a tighter hourly cap.
-      const rate = checkContributionRateLimit(contributor);
+      // get a tighter hourly cap. A paid contribution is bounded by its charge.
+      const rate = passPlan.charge ? { limited: false as const } : checkContributionRateLimit(contributor);
       if (rate.limited) {
         return errorResult(
           "CONTRIBUTION_RATE_LIMITED",
@@ -1169,21 +1202,37 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         );
       }
 
-      const contribution = await createContribution({
-        claimId: input.claim_id ?? null,
-        contributorId: contributor.id,
-        contributionType: input.contribution_type,
-        content: answered.content,
-        evidenceUrls: input.evidence_urls,
-        mergeTargetClaimId: input.merge_target_claim_id,
-        argumentId: argumentTarget.argumentId,
-        mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
-        proposedCanonicalForm: input.proposed_canonical_form,
-        aboutPublishedPageId: aboutPage.publishedPageId,
-      });
+      const taken = await takePassCharge(ctx.auth, passPlan, input.assess);
+      if ("denied" in taken) {
+        const d = taken.denied;
+        return errorResult(d.code!, d.message!, d.entitlement ? { entitlement: d.entitlement } : undefined);
+      }
+      let contribution;
+      try {
+        contribution = await createContribution({
+          claimId: input.claim_id ?? null,
+          contributorId: contributor.id,
+          contributionType: input.contribution_type,
+          content: answered.content,
+          evidenceUrls: input.evidence_urls,
+          mergeTargetClaimId: input.merge_target_claim_id,
+          argumentId: argumentTarget.argumentId,
+          mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
+          proposedCanonicalForm: input.proposed_canonical_form,
+          aboutPublishedPageId: aboutPage.publishedPageId,
+        });
+        await attachPassCharge(taken.entryId, contribution.id);
+      } catch (err) {
+        await refundPassCharge(ctx.auth, taken.charged);
+        throw err;
+      }
       await enqueueContribution({ contributionId: contribution.id });
 
-      return jsonResult({ contribution: formatContribution(contribution) });
+      const passMessage = passChargeMessage(input.contribution_type, taken.charged, passPlan);
+      return jsonResult({
+        contribution: formatContribution(contribution),
+        ...(passMessage ? { assess_on_accept: taken.charged, message: passMessage } : {}),
+      });
     }
   );
 
