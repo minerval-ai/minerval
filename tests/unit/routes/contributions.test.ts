@@ -28,6 +28,20 @@ const mocks = vi.hoisted(() => ({
   getReviewForContribution: vi.fn(async () => null),
   listContributions: vi.fn(async () => [] as unknown[]),
   getRequest: vi.fn(),
+  // The contributor's balance: by default it covers nothing, so a
+  // contribution is free, as it was before the pass charge (#1222).
+  checkAgenticQuota: vi.fn(async () => ({ allowed: false, statusCode: 402, code: "INSUFFICIENT_OWLS", message: "no owls" })),
+  chargeAgenticOp: vi.fn(async () => ({ allowed: true, entryId: "charge-1" })),
+  refundAgenticOp: vi.fn(async () => {}),
+  attachChargeContribution: vi.fn(async () => {}),
+}));
+vi.mock("../../../src/server/plugins/quota.js", () => ({
+  checkAgenticQuota: mocks.checkAgenticQuota,
+  chargeAgenticOp: mocks.chargeAgenticOp,
+  refundAgenticOp: mocks.refundAgenticOp,
+}));
+vi.mock("../../../src/services/owl-ledger-service.js", () => ({
+  attachChargeContribution: mocks.attachChargeContribution,
 }));
 
 // No node in these tests is a merged alias (#884): ids resolve to themselves.
@@ -84,6 +98,7 @@ async function buildApp(externalId: string | null = "github:1", userId: string |
     request.contributorExternalId = externalId;
     request.auth = userId ? { userId } : null;
   });
+  app.decorate("sendQuotaDenial", (reply: any, d: any) => reply.code(d.statusCode).send({ error: d.message, code: d.code }));
   await app.register(contributionRoutes, { prefix: "/contributions" });
   return app;
 }
@@ -101,6 +116,75 @@ beforeEach(() => {
   mocks.checkContributionRateLimit
     .mockReset()
     .mockReturnValue({ limited: false, limitPerHour: 10, sandboxed: false });
+  mocks.checkAgenticQuota
+    .mockReset()
+    .mockResolvedValue({ allowed: false, statusCode: 402, code: "INSUFFICIENT_OWLS", message: "no owls" });
+  mocks.chargeAgenticOp.mockReset().mockResolvedValue({ allowed: true, entryId: "charge-1" });
+  mocks.refundAgenticOp.mockClear();
+  mocks.attachChargeContribution.mockClear();
+});
+
+describe("POST /contributions pays for the pass it asks for (#1222)", () => {
+  it("charges the assessment cap when the balance covers it, links it, and skips the free hourly count", async () => {
+    mocks.checkAgenticQuota.mockResolvedValue({ allowed: true });
+    const app = await buildApp();
+    const res = await app.inject({ method: "POST", url: "/contributions", payload: BODY });
+    expect(res.statusCode).toBe(201);
+    expect(mocks.chargeAgenticOp).toHaveBeenCalledWith({ userId: "c-1" }, "assessment");
+    expect(mocks.attachChargeContribution).toHaveBeenCalledWith("charge-1", "co-1");
+    expect(mocks.checkContributionRateLimit).not.toHaveBeenCalled();
+    expect(res.json().assess_on_accept).toBe(true);
+    expect(res.json().message).toContain("reassessed at once");
+  });
+
+  it("is free, and says so, when the balance does not cover it and assess was left out", async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: "POST", url: "/contributions", payload: BODY });
+    expect(res.statusCode).toBe(201);
+    expect(mocks.chargeAgenticOp).not.toHaveBeenCalled();
+    expect(mocks.checkContributionRateLimit).toHaveBeenCalled();
+    expect(res.json().assess_on_accept).toBe(false);
+    expect(res.json().message).toContain("General mandate's officers");
+  });
+
+  it("refuses with 402 when assess: true and the balance does not cover it, before anything is written", async () => {
+    const app = await buildApp();
+    const res = await app.inject({ method: "POST", url: "/contributions", payload: { ...BODY, assess: true } });
+    expect(res.statusCode).toBe(402);
+    expect(mocks.createContribution).not.toHaveBeenCalled();
+  });
+
+  it("charges nothing with assess: false, whatever the balance", async () => {
+    mocks.checkAgenticQuota.mockResolvedValue({ allowed: true });
+    const app = await buildApp();
+    const res = await app.inject({ method: "POST", url: "/contributions", payload: { ...BODY, assess: false } });
+    expect(res.statusCode).toBe(201);
+    expect(mocks.checkAgenticQuota).not.toHaveBeenCalled();
+    expect(mocks.chargeAgenticOp).not.toHaveBeenCalled();
+    expect(res.json().assess_on_accept).toBe(false);
+  });
+
+  it("never charges a type that asks for no pass on its node", async () => {
+    mocks.checkAgenticQuota.mockResolvedValue({ allowed: true });
+    const app = await buildApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/contributions",
+      payload: { ...BODY, contribution_type: "propose_split" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(mocks.chargeAgenticOp).not.toHaveBeenCalled();
+    expect(res.json().assess_on_accept).toBeUndefined();
+  });
+
+  it("refunds the charge when the contribution could not be written", async () => {
+    mocks.checkAgenticQuota.mockResolvedValue({ allowed: true });
+    mocks.createContribution.mockRejectedValueOnce(new Error("db down"));
+    const app = await buildApp();
+    const res = await app.inject({ method: "POST", url: "/contributions", payload: BODY });
+    expect(res.statusCode).toBe(500);
+    expect(mocks.refundAgenticOp).toHaveBeenCalledWith({ userId: "c-1" }, "assessment");
+  });
 });
 
 describe("POST /contributions gates (#71)", () => {

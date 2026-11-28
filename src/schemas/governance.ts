@@ -33,6 +33,10 @@ export const createContributionBody = z
     request_id: uuidSchema.optional(),
     // A published page on the node, when the contribution is made through it (docs/outward-acts.md).
     about_published_page_id: uuidSchema.optional(),
+    // Whether the pass an accepted contribution asks for is paid for now
+    // (server/contribution-pass-charge.ts): false never charges, true
+    // charges or refuses, absent charges when the balance covers it.
+    assess: z.boolean().optional(),
   })
   .refine((b) => b.claim_id !== undefined || contributionMayOmitClaim(b.contribution_type), {
     message: CLAIM_ID_REQUIRED_MESSAGE,

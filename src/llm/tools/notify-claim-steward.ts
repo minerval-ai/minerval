@@ -20,6 +20,7 @@ import { rawQuery } from "../../db/client.js";
 import { enqueueSteward } from "../../services/queue-service.js";
 import { isIntakeContributionType } from "../../services/intake-service.js";
 import { STATED_VIEW_CONTRIBUTION_TYPE } from "../../schemas/common.js";
+import { passOnAccept } from "../../services/contribution-pass-service.js";
 
 export const NOTIFY_CLAIM_STEWARD = "notify_claim_steward";
 
@@ -272,8 +273,18 @@ export async function executeNotifyClaimSteward(
     context: handoff.context,
     sender: { kind: role, ref: contributionId },
   });
+  // The message is in the inbox; now the pass that reads it: the order the
+  // contributor paid for, or a raise to the officers who pay for upkeep
+  // (contribution-pass-service.ts). A ruling that rejects asks for none.
+  const pass = await passOnAccept({ contributionId, claimId: handoff.claimId });
   return JSON.stringify({
     success: true,
-    message: `The Steward of claim ${handoff.claimId} has the contribution's record.`,
+    message:
+      `The Steward of claim ${handoff.claimId} has the contribution's record.` +
+      (pass.kind === "ordered"
+        ? " The contributor paid for the pass: it starts now."
+        : pass.kind === "raised"
+          ? " The pass it asks for is in front of the General mandate's officers."
+          : ""),
   });
 }

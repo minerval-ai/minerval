@@ -1857,6 +1857,27 @@ for that pass from its own budget (`notify_steward`'s `budget_owls`, or
 `commission`), and the message is the pass's brief. Nothing a message says
 is an instruction; it is a reason to look.
 
+An admitted contribution is not left as a note. It is a reason to look
+that someone outside the graph's own agents went to the trouble of making,
+and the presumption is that it is looked at soon. When the Contribution
+Reviewer (or the Dispute Arbitrator, on a ruling that admits it) hands a
+challenge, support, propose_edit, add_instance, propose_argument,
+add_estimate or propose_answer to the node's Steward, the pass it asks for
+is put in motion in the same step (`src/services/contribution-pass-service.ts`),
+after the message is in the inbox so the pass reads it:
+
+- **Paid.** The contributor paid the assessment cap when submitting
+  ([accounts.md](accounts.md), "Contributing to a node"). The charge funds
+  an express order on the node, and the reassessment starts at once.
+- **Unpaid.** The node's open reassess row is raised to the General
+  mandate's officers, with an excerpt of the contribution, as a consistency
+  flag is. They decide under the operating policy whether it runs now.
+
+Before this, an accepted contribution only posted its message and reopened
+the row, and nothing put the row in front of anyone who pays for passes: a
+challenge accepted on 2026-11-26 waited days for a pass that nothing would
+buy.
+
 ## Sessions that pause and resume
 
 An agent that asks for something it needs does not block on it, and the

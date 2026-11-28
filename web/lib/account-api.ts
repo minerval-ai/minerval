@@ -726,6 +726,10 @@ export interface SubmittedContribution {
   evidence_urls: string[];
   submitted_at: string;
   review_status: string;
+  /** Set for a type that asks for a fresh pass on its node: whether that pass was paid for now. */
+  assess_on_accept?: boolean;
+  /** What happens to that pass on acceptance, in the API's words. */
+  pass_message?: string;
 }
 
 export async function submitContribution(
@@ -740,10 +744,12 @@ export async function submitContribution(
     /** A published page on the node, when the contribution is made through it. */
     aboutPublishedPageId?: string;
     displayName?: string;
+    /** false: never pay for the pass it asks for. Left out: pay when the balance covers it. */
+    assess?: boolean;
   },
   as: ActAs = "switch"
 ): Promise<SubmittedContribution> {
-  const r = await accountFetch<{ contribution: SubmittedContribution }>(
+  const r = await accountFetch<{ contribution: SubmittedContribution; assess_on_accept?: boolean; message?: string }>(
     "/contributions",
     {
       method: "POST",
@@ -767,10 +773,15 @@ export async function submitContribution(
         ...(input.displayName
           ? { contributor_display_name: input.displayName }
           : {}),
+        ...(input.assess === false ? { assess: false } : {}),
       },
     }
   );
-  return r.contribution;
+  return {
+    ...r.contribution,
+    ...(r.assess_on_accept !== undefined ? { assess_on_accept: r.assess_on_accept } : {}),
+    ...(r.message ? { pass_message: r.message } : {}),
+  };
 }
 
 /** Intake (#157): propose a claim not yet in the graph; reviewed before it materializes. */

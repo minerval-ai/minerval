@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
     merge_target_claim_id?: string;
     about_published_page_id?: string;
     proposed_canonical_form?: string;
+    assess?: boolean;
   };
   try {
     body = await request.json();
@@ -143,6 +144,8 @@ export async function POST(request: NextRequest) {
       // Made through a published page on the node (the second tab's "challenge this page").
       ...(/^[0-9a-f-]{36}$/i.test(body.about_published_page_id ?? "") ? { aboutPublishedPageId: body.about_published_page_id } : {}),
       displayName: session.user?.name ?? undefined,
+      // Reassessed at once if accepted unless the contributor unticked it.
+      ...(body.assess === false ? { assess: false } : {}),
     });
     return NextResponse.json({ contribution }, { status: 201 });
   } catch (err) {

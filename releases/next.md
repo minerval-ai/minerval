@@ -48,6 +48,8 @@ operator_steps: []
 
 **New checks.** `version` fails when the API, the web app and the sandbox were not built from one version. `unknown_settings` names environment variables that look like settings and are read by nothing, with the nearest name, and retired settings that are still set. `settings` says whether what was set in the app is in force. `models_chosen` fails in production while a load-bearing role's model is nobody's choice. `releases` says whether the deployment learns of new releases.
 
+**An accepted contribution gets its pass.** A challenge or other contribution the Contribution Reviewer admitted used to wait in its node's inbox until something else paid for a pass, which could be never. Now a contribution that asks for a fresh pass can pay for it when it is made (`assess`, by default whenever the contributor's balance covers the assessment cap, refunded on rejection), and the node is reassessed at once when it is accepted. A free one's pass is put to the General mandate's officers on acceptance, as a consistency flag is. [docs/accounts.md](../docs/accounts.md), "Contributing to a node", has the whole of it. A contributor with owls is now charged up to the assessment cap by default on these contributions; the claim page's form and the API say so, and `assess: false` turns it off.
+
 ## What an upgrade asks
 
 Nothing beyond the upgrade's own commands. Models set in `.env` stay fixed there; take one out of `.env` to choose it in the app instead.
